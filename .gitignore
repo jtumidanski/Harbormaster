@@ -1,0 +1,2 @@
+# Task worktrees (managed by /spec-task, /design-task, /plan-task, /execute-task)
+.worktrees/

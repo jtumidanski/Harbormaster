@@ -23,19 +23,21 @@ The most popular Go SQLite driver (`mattn/go-sqlite3`) requires CGO, which confl
 - **Why it matters:** affects the entire CI build pipeline; switching late is expensive.
 - **Mitigation direction:** design phase to commit to `modernc.org/sqlite` (pure Go, CGO-free) **or** accept `gcr.io/distroless/base-debian12:nonroot` (slightly larger, glibc available). Decide before plan phase; backtracking after binary builds are wired is costly.
 
-## R4 — `force_delete` on non-empty buckets is irreversible
+## R4 — Bucket destruction is irreversible — mitigated by empty-then-delete split
 
-The MVP allows force-deleting a non-empty bucket via typed-name confirmation. A homelab user can wipe out a thousand objects in two clicks.
+The previous PRD draft allowed force-deleting a non-empty bucket in one click. The current PRD requires an explicit **Empty bucket** step (asynchronous, progress-streamed) before **Delete bucket** is enabled. Each step demands typed bucket-name confirmation.
 
-- **Why it matters:** data-loss surface; the user owns the data and Harbormaster is the only safety rail.
-- **Mitigation direction:** require typed bucket name confirmation, surface the object count and total size in the confirmation modal, write an audit event that captures the count, and document recovery options (i.e., none unless versioning was enabled — explicitly warn about this in the modal copy).
+- **Residual risk:** the empty operation itself is still destructive — once started it deletes objects in 1000-object batches and there is no undo. An operator who reflexively types the name to dismiss the modal will lose data.
+- **Why it matters:** still the single largest data-loss surface in the product; Harbormaster is the user's only guardrail.
+- **Mitigation direction:** the Empty-bucket modal must show object count + total size + (if versioning is enabled) a note that "with versioning on, deleted objects become delete-markers and are recoverable; with versioning off, deletion is permanent"; the audit event records the final deleted count and total bytes for forensic visibility; the Delete step is intentionally a separate post-empty action so the operator must intentionally walk through two destructive confirmations.
 
-## R5 — Object browser performance at 100k objects per prefix
+## R5 — Object browser performance at scale
 
-The PRD targets responsive object listings at 100k objects per page-worth of prefix. The MinIO `ListObjectsV2` API returns up to 1000 entries per call; populating 100k entries requires 100 round-trips, plus a UI that can render that volume without jank.
+The current PRD targets responsive listings at **10,000 objects per page-worth of prefix** (revised down from an earlier 100,000 target as unrealistic against the S3 `ListObjectsV2` 1000-entries-per-call ceiling). The UI commits to virtualized rendering so DOM size stays bounded as the operator browses deep prefixes incrementally.
 
-- **Why it matters:** main user-visible performance commitment in the PRD.
-- **Mitigation direction:** server-side pagination using S3 continuation tokens (PRD already specifies); UI uses virtualized lists (`@tanstack/react-virtual` or similar) for any view that can exceed a few hundred rows; never load 100k entries client-side at once. Design phase to spec the per-page render budget.
+- **Residual risk:** virtualization alone is not sufficient — the auto-load-next-page UX must avoid runaway request fan-out if an operator scrolls aggressively through a million-object prefix.
+- **Why it matters:** the main user-visible performance commitment.
+- **Mitigation direction:** server-side pagination via S3 continuation tokens (PRD specifies); UI uses `@tanstack/react-virtual` (or equivalent — design phase decides) for the listing view; auto-load throttles outstanding requests to a small constant (e.g., 1 in flight); design phase commits per-page render budget and the throttle parameter; consider an "estimated total" hint sourced from `BucketInfo.objects` so the UI can warn before chewing through a million-object prefix.
 
 ## R6 — Login rate limit is in-memory only
 
@@ -106,3 +108,24 @@ Some MinIO admin behaviors are subtly version-specific (e.g., the way service-ac
 
 - **Why it matters:** the project assumes a single supported MinIO version range.
 - **Mitigation direction:** design phase commits to a supported MinIO release floor (e.g., "RELEASE.2025-01-01T00-00-00Z or later"); CI integration tests pin to that floor and to the latest stable; `README.md` documents the support window.
+
+## R16 — SSE streams behind reverse proxies often get buffered
+
+The empty-bucket operation streams progress via `text/event-stream`. Common reverse proxies (nginx, Caddy, Traefik) default to buffering response bodies until "complete" or until a chunk threshold is reached, which collapses real-time progress into a single end-of-stream dump and makes the progress bar look stuck.
+
+- **Why it matters:** the primary visual feedback for the most time-consuming destructive operation; if it appears broken, operators will assume the operation hung and may re-issue or kill it.
+- **Mitigation direction:** the server emits `X-Accel-Buffering: no` and `Cache-Control: no-cache` headers; the example Compose file documents reverse-proxy configuration snippets (nginx `proxy_buffering off`, Caddy `flush_interval -1`, Traefik passthrough); the SSE endpoint also emits periodic comment-only heartbeat events (`: keepalive\n\n`) so proxies that buffer up to a byte threshold still get flushed periodically; the UI shows a "no progress events received in 30 s" warning when the stream stalls.
+
+## R17 — Share links are not revocable from Harbormaster
+
+Share links are S3 presigned URLs and embed a cryptographic signature derived from the MinIO admin's secret key plus the bucket/key/expiry. There is no way to invalidate a specific URL short of rotating the MinIO admin secret key (which invalidates every other access derived from it).
+
+- **Why it matters:** an operator who shares a 7-day link with the wrong person has no in-product remedy; this contradicts a reasonable user expectation that a Harbormaster admin can "undo" their actions.
+- **Mitigation direction:** the share-link modal copy makes the no-revocation property explicit before the link is generated; the audit feed records `object.share_link.create` with bucket/key/TTL so the operator can at least find what they shared; the operator docs include the "rotate the MinIO secret to invalidate all outstanding presigned URLs" recipe with the warning that this also invalidates Harbormaster's stored connection (forcing a Connection-settings update afterward).
+
+## R18 — mc-config file access boundary
+
+The setup wizard reads `HARBORMASTER_MC_CONFIG_PATH` directly off the filesystem the Harbormaster container can see. Default of `/root/.mc/config.json` puts an unusual file path on the read surface, and a malicious or compromised image could exfiltrate it on startup before any operator interaction.
+
+- **Why it matters:** the file is only meaningful if it's bind-mounted (operators must opt in), but the convenience pulls operators toward mounting it; a future supply-chain compromise of the Harbormaster image would have read access to the mounted file.
+- **Mitigation direction:** the mc-aliases endpoint is gated on `initialized=false` so the file is not re-read after setup; the operator docs explicitly recommend mounting the file read-only and only for the duration of first-run setup; reads of the file emit a log line so the operator can audit when it was accessed; design phase to confirm we never persist file contents anywhere on disk or in the database.

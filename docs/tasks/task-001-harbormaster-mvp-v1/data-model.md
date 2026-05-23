@@ -121,18 +121,53 @@ CREATE INDEX audit_events_target_idx      ON audit_events(target_type, target_id
 
 Retention sweeper deletes rows where `occurred_at < now - HARBORMASTER_AUDIT_RETENTION` once per day.
 
+### `bucket_empty_jobs` *(conditional — design-phase decision)*
+
+Only exists if the design phase commits to the persistent-job model for the empty-bucket operation (see `prd.md` §9 question 14). When present:
+
+```sql
+CREATE TABLE bucket_empty_jobs (
+  id                TEXT PRIMARY KEY,            -- ULID
+  bucket_name       TEXT NOT NULL,
+  started_at        TEXT NOT NULL,
+  last_progress_at  TEXT NOT NULL,
+  deleted_count     INTEGER NOT NULL DEFAULT 0,
+  estimated_total   INTEGER,                     -- nullable; populated after the first list page
+  state             TEXT NOT NULL,               -- "running" | "done" | "error"
+  error_message     TEXT,
+  finished_at       TEXT
+);
+
+CREATE UNIQUE INDEX bucket_empty_jobs_active_per_bucket
+  ON bucket_empty_jobs(bucket_name)
+  WHERE state = 'running';
+```
+
+SSE handlers feed progress from a Go channel during the active operation and fall back to polling this table when an operator reconnects to a job that has already moved through state transitions. **If the in-flight-only model is chosen instead**, this table is not created and the operation lives entirely in process memory (with the trade-off that a process restart mid-empty leaves the operation in an indeterminate state — the audit feed will not record a `bucket.empty` event and the operator can re-invoke).
+
 ## Allowed `action` values (v1)
 
 `bucket.create`, `bucket.delete`, `bucket.versioning.enable`, `bucket.versioning.disable`,
-`object.upload`, `object.delete`, `object.presign_download`,
+`bucket.public_access.update`, `bucket.quota.update`, `bucket.empty`,
+`object.upload`, `object.delete`, `object.download_proxy`, `object.share_link.create`,
 `user.create`, `user.delete`, `user.disable`, `user.enable`, `user.policies.update`,
 `service_account.create`, `service_account.revoke`,
 `lifecycle_rule.create`, `lifecycle_rule.delete`,
 `session.login`, `session.logout`, `session.login_failed`,
 `connection.update`, `connection.test`,
-`admin.password.change`.
+`admin.password.change`, `admin.encryption.reset`.
+
+`admin.encryption.reset` is written by the CLI subcommand **after** generating the new key, against the freshly truncated SQLite (so the event reflects the post-reset state).
+
+`object.download_proxy` is written only for completed proxy-mode downloads (not for in-flight or aborted streams); direct-mode downloads do not produce an audit entry since the actual byte transfer happens between the browser and MinIO.
 
 Unknown actions must be rejected by the writer (compile-time enum in Go).
+
+## Allowed `target_type` values (v1)
+
+`bucket`, `object`, `user`, `service_account`, `policy_attachment`, `lifecycle_rule`,
+`session`, `connection_settings`, `admin_security` (used by `admin.password.change`,
+`admin.encryption.reset`).
 
 ## Example rows
 

@@ -21,11 +21,26 @@ Public. No auth required.
 { "initialized": false }
 ```
 
+### `GET /api/v1/setup/mc-aliases`
+
+Public, **available only while `initialized=false`**. Reads `HARBORMASTER_MC_CONFIG_PATH` (default `/root/.mc/config.json`). Returns `{"aliases": []}` when the file is absent, unreadable, or the wizard is past setup.
+
+```json
+{
+  "aliases": [
+    { "name": "myminio", "endpoint": "https://minio.lan:9000", "access_key": "AKIA...", "tls_skip_verify": false },
+    { "name": "play",    "endpoint": "https://play.min.io",    "access_key": "Q3AM...", "tls_skip_verify": false }
+  ]
+}
+```
+
+**Never** includes secret keys. The secret is read on the server only when `POST /api/v1/setup` references the alias by name.
+
 ### `POST /api/v1/setup`
 
 Public, single-use (returns `409 already_initialized` after first success).
 
-Request:
+Explicit-credentials form:
 
 ```json
 {
@@ -39,6 +54,17 @@ Request:
   }
 }
 ```
+
+mc-alias form (server re-reads the mc config to fetch the secret):
+
+```json
+{
+  "admin": { "username": "admin", "password": "correct horse battery staple!" },
+  "minio": { "from_mc_alias": "myminio" }
+}
+```
+
+When `from_mc_alias` is present, all other `minio.*` fields are ignored except `tls_skip_verify` and `custom_ca_pem`, which may be overridden by the caller.
 
 Success `201`:
 
@@ -56,6 +82,12 @@ Failure `422`:
     "details": { "underlying": "Get \"https://minio.lan:9000/minio/admin/v3/info\": x509: ..." }
   }
 }
+```
+
+Failure `422` when alias name is unknown:
+
+```json
+{ "error": { "code": "mc_alias_not_found", "message": "No alias named 'myminio' in /root/.mc/config.json" } }
 ```
 
 ### `POST /api/v1/auth/login`
@@ -194,7 +226,9 @@ JSON:API resource collection.
         "estimated_bytes": 12884901888,
         "object_count": 9421,
         "versioning_enabled": true,
-        "has_lifecycle_rules": true
+        "has_lifecycle_rules": true,
+        "public_access": "private",
+        "quota": { "kind": "hard", "bytes": 21474836480, "used_bytes": 12884901888 }
       }
     }
   ],
@@ -202,6 +236,8 @@ JSON:API resource collection.
   "links": { "self": "/api/v1/buckets?page[number]=1&page[size]=50&sort=-created" }
 }
 ```
+
+`quota` is `null` when no quota is set. `public_access` is one of `private` / `public-read` / `public-read-write`.
 
 ### `POST /api/v1/buckets`
 
@@ -214,13 +250,15 @@ Request:
     "attributes": {
       "name": "backups",
       "versioning_enabled": false,
-      "lifecycle_template": null
+      "public_access": "private",
+      "lifecycle_template": null,
+      "quota": { "kind": "hard", "bytes": 21474836480 }
     }
   }
 }
 ```
 
-Success `201` — returns the created resource. Failure `422` (e.g., invalid bucket name) uses JSON:API `errors[]`:
+`public_access` and `quota` are optional (default `private`, no quota). Success `201` returns the created resource. Failure `422` (e.g., invalid bucket name) uses JSON:API `errors[]`:
 
 ```json
 {
@@ -245,14 +283,75 @@ JSON:API single resource. Same shape as the list entry above.
 Request:
 
 ```json
-{ "confirm_name": "backups", "force": false }
+{ "confirm_name": "backups" }
 ```
 
-Success `204`. `409 bucket_not_empty` if non-empty and `force=false`. `403 confirm_name_mismatch` if `confirm_name != name`.
+Success `204`. **No `force` flag in v1.**
+
+- `409 bucket_not_empty` if any objects remain. Body: `{ "error": { "code": "bucket_not_empty", "message": "Bucket contains N objects; empty it first", "details": { "object_count": 142 } } }`. The client surfaces the link to the Empty-bucket flow.
+- `403 confirm_name_mismatch` if `confirm_name != name`.
 
 ### `PUT /api/v1/buckets/{name}/versioning`
 
 Request: `{ "enabled": true }` — Success `204`.
+
+### `PUT /api/v1/buckets/{name}/public-access`
+
+Request:
+
+```json
+{ "mode": "public-read", "confirm_name": "backups" }
+```
+
+`confirm_name` is required when transitioning into `public-read-write` (write-allowing). Success `204`. `403 confirm_name_mismatch` on mismatch.
+
+### `PUT /api/v1/buckets/{name}/quota`
+
+Set/update:
+
+```json
+{ "kind": "hard", "bytes": 21474836480 }
+```
+
+Clear:
+
+```json
+{ "kind": "none" }
+```
+
+Success `204`. `422 invalid_quota` if `bytes` is missing or non-positive while `kind != "none"`.
+
+### `POST /api/v1/buckets/{name}/empty`
+
+Initiates the asynchronous empty-bucket operation. Request:
+
+```json
+{ "confirm_name": "backups" }
+```
+
+Response: `text/event-stream`. Events:
+
+```text
+event: progress
+data: {"deleted": 1000, "estimated_total": 5210}
+
+event: progress
+data: {"deleted": 2000, "estimated_total": 5210}
+
+event: done
+data: {"deleted_total": 5210, "duration_ms": 4321}
+```
+
+On unrecoverable error:
+
+```text
+event: error
+data: {"message": "MinIO returned 503 during batch 3 of 6"}
+```
+
+Re-issuing while a job is in progress for the same bucket attaches the new stream to the existing job (no duplicate operation is started).
+
+`403 confirm_name_mismatch` returned as a normal JSON body (HTTP error path) when `confirm_name` is wrong — the SSE stream is only started after validation passes.
 
 ---
 
@@ -305,25 +404,58 @@ Success `201`:
 }
 ```
 
+Failure `413 upload_too_large` when the body exceeds `HARBORMASTER_UPLOAD_MAX_BYTES`:
+
+```json
+{ "error": { "code": "upload_too_large", "message": "Upload exceeds the configured per-request cap of 100 MiB", "details": { "limit_bytes": 104857600 } } }
+```
+
 ### `DELETE /api/v1/buckets/{name}/objects?key=<urlencoded>`
 
 Success `204`.
 
-### `POST /api/v1/buckets/{name}/objects/presign-download`
+### `GET /api/v1/buckets/{name}/objects/download?key=<urlencoded>`
+
+**Proxy mode (default, `HARBORMASTER_DOWNLOAD_PROXY_MODE=proxy`).** Streams the object body through Harbormaster to the browser with:
+
+- `Content-Type: <object MIME type or application/octet-stream>`
+- `Content-Length: <bytes>` (when known)
+- `Content-Disposition: attachment; filename="<basename>"`
+- `Cache-Control: private, no-store`
+
+Authenticated session required. No URL is exposed; only the operator's browser, within the session, can fetch the bytes.
+
+**Direct mode (`HARBORMASTER_DOWNLOAD_PROXY_MODE=direct`).** Same endpoint, but responds with:
+
+```text
+HTTP/1.1 307 Temporary Redirect
+Location: https://minio.lan:9000/photos/uploads/foo.bin?X-Amz-Algorithm=...
+```
+
+The presigned URL is short-lived (default 5 minutes, capped at 1 hour). Only works when MinIO is reachable from the browser.
+
+### `POST /api/v1/buckets/{name}/objects/share-links`
 
 Request:
 
 ```json
-{ "key": "uploads/foo.bin", "expires_seconds": 300 }
+{ "key": "uploads/foo.bin", "expires_seconds": 604800 }
 ```
 
-Response `200`:
+Response `201`:
 
 ```json
-{ "url": "https://minio.lan:9000/photos/uploads/foo.bin?X-Amz-Algorithm=...", "expires_at": "2026-05-23T15:00:00Z" }
+{
+  "url": "https://minio.lan:9000/photos/uploads/foo.bin?X-Amz-Algorithm=...",
+  "expires_at": "2026-05-30T15:00:00Z"
+}
 ```
 
-`expires_seconds` clamped to `[30, 3600]`.
+`expires_seconds` is clamped server-side to `[30, HARBORMASTER_SHARE_LINK_MAX_TTL]` (default upper bound = 7 days). The clamp is silent (the operator sees the actual `expires_at` returned).
+
+Always writes a `object.share_link.create` audit event with `{bucket, key, expires_seconds}` — **never** the URL itself, since the URL embeds the signature.
+
+`422 share_link_disabled` if a future configuration toggle disables share-link minting (placeholder — toggle not in v1).
 
 ---
 
@@ -461,6 +593,11 @@ Success `204`.
     },
     {
       "type": "policy_templates",
+      "id": "read-write",
+      "attributes": { "name": "read-write", "description": "Read/write across all buckets, no admin operations", "params_schema": null }
+    },
+    {
+      "type": "policy_templates",
       "id": "backup-target",
       "attributes": {
         "name": "backup-target",
@@ -475,6 +612,8 @@ Success `204`.
   ]
 }
 ```
+
+Three templates are bundled in v1. `administrator` (full `consoleAdmin`) is intentionally **not** in this list — see `prd.md` §4.10. Externally-attached policies (including `consoleAdmin`) still appear on the user-detail page in a read-only "Other attached policies" row, but are not surfaced here.
 
 ---
 
@@ -492,8 +631,7 @@ Success `204`.
         "managed": true,
         "kind": "expiration",
         "days": 30,
-        "prefix": "uploads/",
-        "tags": null
+        "prefix": "uploads/"
       }
     },
     {
@@ -501,12 +639,14 @@ Success `204`.
       "id": "rule-from-mc-abc",
       "attributes": {
         "managed": false,
-        "summary": "Unmanaged rule (created outside Harbormaster) — 2 actions: Transition, AbortIncompleteMultipart"
+        "summary": "Unmanaged rule (created outside Harbormaster) — 2 actions: Transition, AbortIncompleteMultipart; scoped to 1 tag filter"
       }
     }
   ]
 }
 ```
+
+Managed rule attributes never include tag filters in v1 (tag filtering is not exposed in the create form). Unmanaged rules' tag count is summarized in the human-readable `summary` string (count, not values, to avoid surfacing potentially sensitive tag values).
 
 ### `POST /api/v1/buckets/{name}/lifecycle-rules`
 
@@ -516,12 +656,12 @@ Request:
 {
   "data": {
     "type": "lifecycle_rules",
-    "attributes": { "kind": "expiration", "days": 30, "prefix": "uploads/", "tags": null }
+    "attributes": { "kind": "expiration", "days": 30, "prefix": "uploads/" }
   }
 }
 ```
 
-Success `201` returns the created rule. v1 only accepts `kind = "expiration"`.
+Success `201` returns the created rule. v1 only accepts `kind = "expiration"`. Tag filters are intentionally not accepted — see `prd.md` §4.11.
 
 ### `DELETE /api/v1/buckets/{name}/lifecycle-rules/{rule_id}`
 
@@ -564,17 +704,20 @@ Filter keys: `action`, `target_type`, `target_id`, `outcome`, `from` (RFC 3339),
 
 | Code | HTTP | Meaning |
 | ---- | ---- | ------- |
-| `unauthenticated`          | 401 | No or expired session |
+| `unauthenticated`           | 401 | No or expired session |
 | `csrf_token_invalid`        | 403 | Missing or mismatched CSRF token |
 | `invalid_credentials`       | 401 | Login form mismatch |
 | `too_many_attempts`         | 429 | Login rate-limited |
 | `already_initialized`       | 409 | `/setup` called after first success |
 | `weak_password`             | 422 | New password fails policy |
-| `minio_unreachable`         | 422 | Setup/connection-test failed at TCP / TLS layer |
+| `mc_alias_not_found`        | 422 | `/setup` referenced an unknown mc alias |
+| `minio_unreachable`         | 422 | Setup / connection-test failed at TCP / TLS layer |
 | `minio_invalid_credentials` | 422 | MinIO rejected the provided keys |
 | `minio_not_admin`           | 422 | Provided MinIO keys lack admin capability |
 | `invalid_bucket_name`       | 422 | Bucket name violates MinIO rules |
-| `bucket_not_empty`          | 409 | Delete without `force=true` |
+| `bucket_not_empty`          | 409 | Delete attempted on a non-empty bucket (no force flag in v1; use Empty-bucket first) |
+| `invalid_quota`             | 422 | Quota payload missing or non-positive `bytes` |
+| `upload_too_large`          | 413 | Upload body exceeds `HARBORMASTER_UPLOAD_MAX_BYTES` |
 | `confirm_name_mismatch`     | 403 | `confirm_name` / `confirm_access_key` did not match |
 | `not_found`                 | 404 | Resource missing |
 | `internal_error`            | 500 | Bug; correlation_id included for log lookup |

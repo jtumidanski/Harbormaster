@@ -161,6 +161,10 @@ SSE handlers feed progress from a Go channel during the active operation and fal
 
 `object.download_proxy` is written only for completed proxy-mode downloads (not for in-flight or aborted streams); direct-mode downloads do not produce an audit entry since the actual byte transfer happens between the browser and MinIO.
 
+`bucket.empty` payload_summary includes: `{"deleted_count": <int>, "duration_ms": <int>, "purge_versions": <bool>, "versioning_enabled_at_start": <bool>}`. `purge_versions` is meaningful only when `versioning_enabled_at_start=true`; on non-versioned buckets it is always `false`.
+
+`bucket.quota.update` payload_summary includes: `{"kind": "hard"|"fifo"|"none", "bytes": <int|null>, "previous_kind": ..., "previous_bytes": ...}` for full before/after visibility.
+
 Unknown actions must be rejected by the writer (compile-time enum in Go).
 
 ## Allowed `target_type` values (v1)

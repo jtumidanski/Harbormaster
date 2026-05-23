@@ -23,7 +23,7 @@ Public. No auth required.
 
 ### `GET /api/v1/setup/mc-aliases`
 
-Public, **available only while `initialized=false`**. Reads `HARBORMASTER_MC_CONFIG_PATH` (default `/root/.mc/config.json`). Returns `{"aliases": []}` when the file is absent, unreadable, or the wizard is past setup.
+Public, **available only while `initialized=false`**. Reads `HARBORMASTER_MC_CONFIG_PATH` (default `/root/.mc/config.json`). Returns `{"aliases": []}` when the file is absent, unreadable, has a `version` other than `"10"`, or the wizard is past setup. Encountered version is recorded in a single log line (`level=info component=setup mc_config_version=<v> action=ignored`) so operators can diagnose why their aliases aren't showing.
 
 ```json
 {
@@ -175,7 +175,9 @@ Any non-`ok` value carries a `failed: { reason }` shape:
 
 ## Dashboard
 
-### `GET /api/v1/dashboard`
+### `GET /api/v1/dashboard?failures_window=7d`
+
+`failures_window` accepts `24h`, `7d`, or `30d` (default `7d`). Other values return `422 invalid_failures_window`.
 
 ```json
 {
@@ -202,9 +204,26 @@ Any non-`ok` value carries a `failed: { reason }` shape:
       "target_id": "photos",
       "outcome": "success"
     }
-  ]
+  ],
+  "recent_failures": {
+    "window": "7d",
+    "count": 3,
+    "entries": [
+      {
+        "id": "01HK...",
+        "occurred_at": "2026-05-22T08:11:42Z",
+        "action": "object.upload",
+        "target_type": "object",
+        "target_id": "backups/2026-05-22.tar.gz",
+        "source_ip": "10.0.1.5",
+        "error_message": "MinIO: NoSuchBucket — bucket 'backups' does not exist"
+      }
+    ]
+  }
 }
 ```
+
+`recent_failures.entries` is capped at 10; the count reflects the full total within the window so the UI can render "3 failures in 7d" headline plus the truncated list.
 
 ---
 
@@ -319,15 +338,20 @@ Clear:
 { "kind": "none" }
 ```
 
-Success `204`. `422 invalid_quota` if `bytes` is missing or non-positive while `kind != "none"`.
+Success `204`.
+
+- `422 invalid_quota` if `bytes` is missing or non-positive while `kind != "none"`.
+- `422 fifo_requires_versioning_off` if `kind: "hard" → "fifo"` (or initial `fifo`) is set against a bucket that currently has versioning enabled. Body: `{ "error": { "code": "fifo_requires_versioning_off", "message": "FIFO quotas require bucket versioning to be off", "details": { "bucket": "backups", "versioning_enabled": true } } }`. Harbormaster never silently toggles versioning to resolve this; the operator must disable versioning explicitly first.
 
 ### `POST /api/v1/buckets/{name}/empty`
 
 Initiates the asynchronous empty-bucket operation. Request:
 
 ```json
-{ "confirm_name": "backups" }
+{ "confirm_name": "backups", "purge_versions": false }
 ```
+
+`purge_versions` is optional, defaults to `false`, and is ignored on non-versioned buckets (where every delete is permanent regardless). On versioned buckets: `false` writes delete-markers via versioned `DeleteObjects` (recoverable via version restore); `true` iterates `ListObjectVersions` and hard-deletes every version + delete-marker (permanent).
 
 Response: `text/event-stream`. Events:
 
@@ -717,6 +741,8 @@ Filter keys: `action`, `target_type`, `target_id`, `outcome`, `from` (RFC 3339),
 | `invalid_bucket_name`       | 422 | Bucket name violates MinIO rules |
 | `bucket_not_empty`          | 409 | Delete attempted on a non-empty bucket (no force flag in v1; use Empty-bucket first) |
 | `invalid_quota`             | 422 | Quota payload missing or non-positive `bytes` |
+| `fifo_requires_versioning_off` | 422 | FIFO quota submitted against a versioned bucket |
+| `invalid_failures_window`   | 422 | `failures_window` query param not in `{24h, 7d, 30d}` |
 | `upload_too_large`          | 413 | Upload body exceeds `HARBORMASTER_UPLOAD_MAX_BYTES` |
 | `confirm_name_mismatch`     | 403 | `confirm_name` / `confirm_access_key` did not match |
 | `not_found`                 | 404 | Resource missing |

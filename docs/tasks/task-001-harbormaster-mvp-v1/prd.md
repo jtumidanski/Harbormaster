@@ -6,6 +6,7 @@ Created: 2026-05-23
 Task ID: task-001-harbormaster-mvp-v1
 Repository: jtumidanski/Harbormaster
 Container image (planned): ghcr.io/jtumidanski/harbormaster
+License: AGPL-3.0-or-later
 
 ---
 
@@ -138,7 +139,7 @@ A first-run UX (gated by "has-been-initialized" flag persisted in SQLite):
 1. **Create local admin account.** Form: username (3–64 chars, lowercase alphanumerics + `_-.`), password (min 12 chars, strength meter shown, server-side bcrypt or argon2id hashing with sensible cost), password confirmation.
 2. **Connect to MinIO.** Form: endpoint URL (scheme + host + optional port), MinIO access key, MinIO secret key, `Use TLS` toggle (defaults to true if URL scheme is `https`), `Skip TLS certificate verification` toggle (defaults false, warning displayed when enabled), optional custom CA certificate paste/upload (PEM).
 
-   **Import from `mc` config (optional helper).** If a readable file is present at `HARBORMASTER_MC_CONFIG_PATH` (default `/root/.mc/config.json` inside the container; operators bind-mount their host `~/.mc/config.json` to enable this), the wizard surfaces a dropdown of detected `mc` aliases. Selecting an alias pre-fills endpoint URL, access key, secret key, and TLS flags from the alias; the operator can edit any field before submitting. The mc-config file is consulted **only** while `setup_completed=false`, the file contents are never persisted into Harbormaster's database, and aliases are never returned over the API with their secret keys — the secret is read on the server only when the operator's submission references the alias by name.
+   **Import from `mc` config (optional helper).** If a readable file is present at `HARBORMASTER_MC_CONFIG_PATH` (default `/root/.mc/config.json` inside the container; operators bind-mount their host `~/.mc/config.json` to enable this), the wizard surfaces a dropdown of detected `mc` aliases. **Only `mc` config format `version: "10"` (current) is parsed**; files with any other version field, or with no version field, are treated as "no aliases found" with a log line recording the version encountered. Selecting an alias pre-fills endpoint URL, access key, secret key, and TLS flags from the alias; the operator can edit any field before submitting. The mc-config file is consulted **only** while `setup_completed=false`, the file contents are never persisted into Harbormaster's database, and aliases are never returned over the API with their secret keys — the secret is read on the server only when the operator's submission references the alias by name.
 3. **Validate.** Backend performs: TCP connectivity test, S3 list-buckets call (validates standard credentials), admin API ping (validates admin capability). All three must succeed or the wizard surfaces the specific failing check.
 4. **Persist.** MinIO access key, secret key, and (if present) custom CA cert are encrypted with the encryption key and stored in SQLite. Admin password hash is stored separately. Setup-complete flag is set.
 
@@ -149,6 +150,7 @@ Re-running the setup wizard after completion is not exposed in v1; a "Connection
 - **Single local admin account** in v1. Username + password login form. Server rejects after 5 failed login attempts within 5 minutes from the same IP (in-memory rate limit; sliding window; reset on success).
 - **Session cookies:** name configurable, `HttpOnly`, `Secure` (always set, even on HTTP — modern browsers tolerate this when accessed via `localhost`; documentation will note the limitation), `SameSite=Lax`, `Path=<HARBORMASTER_BASE_PATH>` (defaults to `/`; matches the configured base path so reverse-proxy subpath deployments work — see §4.2), opaque random session ID. Session record persisted in SQLite with creation time, last-active time, IP-at-issue. CSRF cookie has the same `Path` scope.
 - **Session lifetime:** absolute timeout configurable via `HARBORMASTER_SESSION_TIMEOUT` (default 8h); sliding expiration is **not** implemented in v1 (keeps reasoning simple). Sessions can be explicitly revoked via logout.
+- **Concurrent sessions:** allowed. The single admin account may be logged in from multiple browsers/devices simultaneously; each session has its own row in `sessions` with its own creation/expiry/source_ip. The audit feed records `source_ip` per action so concurrent activity remains attributable. No "active sessions" management UI in v1.
 - **CSRF protection:** double-submit cookie token. All non-`GET`/`HEAD`/`OPTIONS` requests must echo a CSRF token (from a cookie) in an `X-CSRF-Token` header.
 - **No password reset flow in v1.** Operator must recover by editing/rotating the admin user via a CLI subcommand (`harbormaster admin reset-password --username <u>`).
 - **Encryption-key loss recovery.** If the encryption key file is lost, the encrypted columns (MinIO credentials, custom CA cert) become permanently undecryptable. A CLI subcommand `harbormaster admin reset-encryption --confirm` provides a one-way recovery path: it backs up the current SQLite file with a `.pre-reset-<unix-ts>.bak` suffix, generates a fresh encryption key (writing it to `HARBORMASTER_ENCRYPTION_KEY_FILE` if set, else the default path), truncates the `minio_connections` table, clears the `setup_completed` flag, and exits. The next startup returns the operator to the first-run wizard with the admin account and audit history intact. The `--confirm` flag is mandatory; running without it prints the destructive-operation warning and exits non-zero.
@@ -162,9 +164,10 @@ Single-page overview displaying:
 - Estimated total storage usage (sum of bucket-level usage reported by admin info)
 - Per-node health indicators: online/offline, drive count, drives healthy / unhealthy
 - Warnings/errors surfaced from the admin API (e.g., disk full, decommissioning in progress)
-- "Recent activity" feed: last 25 administrative actions performed **through Harbormaster** (bucket created, user disabled, etc.), sourced from the local SQLite audit table
+- **Recent failures widget.** Counts and lists audit events with `outcome=failure` within the selected window. The widget has a small dropdown to switch the window between **24 h / 7 d / 30 d** (default 7 d); the selected window is persisted in `localStorage` per-browser. The widget lists up to 10 most-recent failures (action, target, truncated error_message, source_ip, occurred_at) with a "See all" link that opens the `/activity` page pre-filtered to `outcome=failure` and the same time range.
+- "Recent activity" feed: last 25 administrative actions performed **through Harbormaster** (bucket created, user disabled, etc.), sourced from the local SQLite audit table.
 
-The dashboard reads its data via a single `/api/v1/dashboard` aggregate endpoint that fans out to the MinIO admin SDK and the local DB; it must render in under 2 seconds (see §8).
+The dashboard reads its data via a single `/api/v1/dashboard?failures_window=7d` aggregate endpoint that fans out to the MinIO admin SDK and the local DB; it must render in under 2 seconds (see §8). The `failures_window` query parameter accepts `24h`, `7d`, or `30d` (defaults to `7d`); any other value returns `422 invalid_failures_window`.
 
 ### 4.7 Bucket management
 
@@ -172,15 +175,17 @@ The dashboard reads its data via a single `/api/v1/dashboard` aggregate endpoint
 - **Create bucket:** form fields = name (validated client-side and server-side per MinIO bucket naming rules), enable-versioning toggle, initial public-access mode (default `private`), optional lifecycle template selector (see §4.10), optional quota.
 - **View bucket detail:** name, creation date, versioning status, public-access mode, quota state (current usage / limit if set), lifecycle rules summary, object count, total size, link to object browser, action buttons (toggle versioning, change public access, set/clear quota, edit/remove lifecycle rule, **empty bucket**, **delete bucket**).
 - **Change public access:** dropdown of three modes — `private` (no anonymous access; default), `public-read` (anonymous `s3:GetObject` + `s3:ListBucket` allowed), `public-read-write` (additionally `s3:PutObject` and `s3:DeleteObject`; warning copy makes clear this is rarely what you want). Implemented via MinIO's `SetBucketPolicy` / `GetBucketPolicy` admin API using deterministic canned-policy JSON for each mode; switching to `private` removes the bucket policy entirely. Switching into any mode that allows anonymous writes requires a confirmation dialog with typed bucket-name confirmation; switching to read-only or back to private requires a single-click confirmation.
-- **Quotas:** set / update / clear a per-bucket quota via MinIO admin `SetBucketQuota`. Form fields: quota kind (`hard` or `fifo`), size value with unit selector (MiB, GiB, TiB), or `Remove quota`. The bucket-detail page surfaces current usage vs limit when a quota is set, including a progress bar that turns amber at 80 % and red at 95 %.
+- **Quotas:** set / update / clear a per-bucket quota via MinIO admin `SetBucketQuota`. Form fields: quota kind (`hard` or `fifo`), size value with unit selector (MiB, GiB, TiB), or `Remove quota`. The bucket-detail page surfaces current usage vs limit when a quota is set, including a progress bar that turns amber at 80 % and red at 95 %. **FIFO quotas require bucket versioning to be off.** When versioning is enabled, the FIFO option in the kind selector is disabled with a tooltip: *"FIFO quotas require versioning to be off; disable versioning in bucket settings first."* The backend re-validates and returns `422 fifo_requires_versioning_off` if a FIFO quota is submitted against a versioned bucket — Harbormaster never silently toggles versioning on the operator's behalf.
 - **Toggle versioning:** allowed when bucket is empty or already versioned; warning shown when enabling on a non-empty bucket.
-- **Empty bucket (separate action from Delete):** runs an asynchronous "empty" operation that iteratively calls `RemoveObjects` in batches of 1000 (MinIO Go SDK bulk delete). Progress is reported to the UI via a server-sent-events stream (`POST /api/v1/buckets/{name}/empty` returns `text/event-stream` with `progress` events carrying `{deleted, estimated_total}` and a terminal `done` or `error` event). The bucket itself is **not** deleted by this action — only its contents. The UI shows a progress bar; the operator can close the tab and reopen the bucket-detail page to observe the ongoing operation (see §9 open question 14 for the operation-tracking trade-off). A single `bucket.empty` audit event is written on completion containing the final deleted count and elapsed duration. Empty must be confirmed via typed bucket-name entry before it starts.
+- **Empty bucket (separate action from Delete):** runs an asynchronous "empty" operation that iteratively calls `RemoveObjects` in batches of 1000 (MinIO Go SDK bulk delete). Progress is reported to the UI via a server-sent-events stream (`POST /api/v1/buckets/{name}/empty` returns `text/event-stream` with `progress` events carrying `{deleted, estimated_total}` and a terminal `done` or `error` event). The bucket itself is **not** deleted by this action — only its contents. The UI shows a progress bar; the operator can close the tab and reopen the bucket-detail page to observe the ongoing operation (see §9 open question 14 for the operation-tracking trade-off). A single `bucket.empty` audit event is written on completion containing the final deleted count, elapsed duration, and the `purge_versions` choice. Empty must be confirmed via typed bucket-name entry before it starts.
+
+  **Versioned-bucket behavior.** When the bucket has versioning enabled, the empty modal shows an additional checkbox: *"Also permanently delete all object versions and delete-markers."* **Default unchecked** — the operation writes delete-markers via versioned `DeleteObjects` (objects become "deleted" but every prior version is recoverable; versioning's safety net is preserved). When checked, the operation iterates `ListObjectVersions` and hard-deletes every version and delete-marker. The modal copy makes the difference explicit ("Recoverable via version restore" vs "Permanent — no recovery"). For non-versioned buckets the checkbox is hidden (deletes are always permanent regardless).
 - **Delete bucket:** modal confirmation requiring the user to type the bucket name. **Only permitted on an empty bucket.** If the bucket is non-empty, the modal disables the Delete button, shows the current object count, and links directly to the Empty-bucket flow. The backend re-checks emptiness immediately before deletion and returns `409 bucket_not_empty` if any objects remain. **No `force=true` shortcut exists in v1** — the empty-then-delete flow is mandatory.
 
 ### 4.8 Object browser
 
 - **Folder-style navigation** for objects within a bucket, treating `/` in object names as path separators (standard S3 convention). Breadcrumb navigation.
-- **Listing:** name, size, last-modified, MIME content type. Server-side paginated using S3 continuation tokens (default page size 100; user can change to 25, 50, 100, 250). The frontend uses **virtualized list rendering** (`@tanstack/react-virtual` or equivalent — final library chosen in design phase) so the UI remains responsive regardless of how many pages have been incrementally loaded. The SLO target is **10,000 objects per page-worth of prefix** server-side (see §8.1) — for prefixes that exceed a single page, the UI offers an "auto-load next page" affordance for progressive incremental browsing.
+- **Listing:** name, size, last-modified, MIME content type. Server-side paginated using S3 continuation tokens (default page size 100; user can change to 25, 50, 100, 250). The frontend uses **virtualized list rendering** (`@tanstack/react-virtual` or equivalent — final library chosen in design phase) so the UI remains responsive regardless of how many pages have been incrementally loaded. The SLO target is **10,000 objects per page-worth of prefix** server-side (see §8.1). For prefixes that exceed a single page, the UI **auto-loads the next page when the operator scrolls past 90 % of the currently-loaded rows** with a hard cap of **one outstanding request at a time** (additional scroll past 90 % while a request is in flight is a no-op until that request resolves). A manual "Load more" button is also shown at the bottom of the list as an explicit fallback.
 - **Upload object(s):** drag-and-drop and file-picker. Uses the MinIO Go SDK's `PutObject` server-side, which transparently switches to multipart. **Per-upload hard cap of `HARBORMASTER_UPLOAD_MAX_BYTES` (default 100 MiB).** Uploads larger than the cap are rejected with `413 upload_too_large`; the UI surfaces a message explaining the cap and recommending `mc` or another direct S3 client for larger files. A presigned-PUT "browser direct-to-MinIO" upload path is **not** in v1 (called out in non-goals); it is a documented follow-up to remove the cap. Single progress bar per upload; no resumable-upload UI.
 - **Download object — two modes selected via `HARBORMASTER_DOWNLOAD_PROXY_MODE`:**
   - **Proxy (default, `proxy`).** `GET /api/v1/buckets/{name}/objects/download?key=...` streams the object body through Harbormaster to the browser with `Content-Disposition: attachment`. No URL is exposed; the request inherits the operator's session/CSRF context. Use this when MinIO is on a private network and Harbormaster is the only externally-reachable endpoint.
@@ -291,7 +296,7 @@ A configurable retention policy purges entries older than `HARBORMASTER_AUDIT_RE
 
 **Dashboard**
 
-- `GET  /api/v1/dashboard` — aggregate response: server info, totals, node health, warnings, recent activity (last 25).
+- `GET  /api/v1/dashboard?failures_window=7d` — aggregate response: server info, totals, node health, warnings, recent activity (last 25), recent failures (count + up-to-10 entries within `failures_window`). `failures_window` accepts `24h`, `7d`, `30d`; defaults to `7d`; any other value returns `422 invalid_failures_window`.
 
 **Buckets**
 
@@ -302,7 +307,7 @@ A configurable retention policy purges entries older than `HARBORMASTER_AUDIT_RE
 - `PUT    /api/v1/buckets/{name}/versioning` — body: `{"enabled": bool}`.
 - `PUT    /api/v1/buckets/{name}/public-access` — body: `{"mode": "private" | "public-read" | "public-read-write", "confirm_name"?: "<bucket-name>"}`. `confirm_name` is required when transitioning into a write-allowing mode.
 - `PUT    /api/v1/buckets/{name}/quota` — body: `{"kind": "hard" | "fifo", "bytes": <int>}` or `{"kind": "none"}` to clear.
-- `POST   /api/v1/buckets/{name}/empty` — initiates the asynchronous empty-bucket operation. Body: `{"confirm_name": "<bucket-name>"}`. Response is `text/event-stream`; emits `progress` events `{deleted, estimated_total}` (every batch) and terminates with a `done` event `{deleted_total, duration_ms}` or `error` event `{message}`. Re-issuing while an operation is in progress for the same bucket attaches to the existing job (does not start a duplicate).
+- `POST   /api/v1/buckets/{name}/empty` — initiates the asynchronous empty-bucket operation. Body: `{"confirm_name": "<bucket-name>", "purge_versions": false}`. `purge_versions` defaults to `false` and is ignored on non-versioned buckets (where every delete is permanent regardless); on versioned buckets, `false` writes delete-markers (recoverable) and `true` hard-deletes every version and delete-marker (permanent). Response is `text/event-stream`; emits `progress` events `{deleted, estimated_total}` (every batch) and terminates with a `done` event `{deleted_total, duration_ms}` or `error` event `{message}`. Re-issuing while an operation is in progress for the same bucket attaches to the existing job (does not start a duplicate).
 
 **Objects**
 
@@ -435,7 +440,7 @@ Production build outputs to `apps/frontend/dist/`. The Docker build pipeline cop
 
 ### 7.3 Deployment (`deploy/`)
 
-- `deploy/docker/Dockerfile` — multi-stage build (Node stage builds SPA, Go stage builds binary with embedded assets, final stage = minimal distroless or `gcr.io/distroless/static-debian12:nonroot` image).
+- `deploy/docker/Dockerfile` — multi-stage build: (1) Node stage builds the SPA; (2) Go stage compiles a fully static binary (`CGO_ENABLED=0`) with embedded assets, using `modernc.org/sqlite` as the pure-Go SQLite driver; (3) final stage = `gcr.io/distroless/static-debian12:nonroot` for a minimal, static, non-root runtime image. No glibc, no shell, no package manager in the runtime image.
 - `deploy/docker/docker-compose.yml` — example deployment with a named volume for `/var/lib/harbormaster`, environment placeholders, optional `minio` service for local testing.
 - `deploy/docker/.env.example` — documented env vars.
 - `deploy/kubernetes/deployment.yaml`, `service.yaml`, `ingress.example.yaml`, `secret.example.yaml`, `pvc.yaml` — raw manifests. No Helm chart in v1.
@@ -531,10 +536,10 @@ These remain for the design phase to resolve:
 6. **Session store backend:** SQLite (documented above) or in-memory with periodic snapshot? — going with SQLite for survivability across restarts.
 7. **Test strategy for MinIO interactions:** `testcontainers-go` integration suite vs a hand-coded `mc`-driven integration suite vs both. Affects CI runtime budget.
 8. **Logging library:** zerolog vs zap.
-9. **Distroless variant:** `gcr.io/distroless/static-debian12:nonroot` requires fully static Go binary (means `CGO_ENABLED=0`, which conflicts with `mattn/go-sqlite3`). Either switch to `modernc.org/sqlite` (pure Go) or use `gcr.io/distroless/base-debian12:nonroot`. Design phase decides.
+9. ~~**Distroless variant:**~~ **RESOLVED:** `modernc.org/sqlite` (pure Go) + `gcr.io/distroless/static-debian12:nonroot` + `CGO_ENABLED=0`. Smaller image, simpler arm64 cross-compile; trades slight perf and battle-testing for those. Documented in §7.3.
 10. **cosign signing:** include in v1 main-branch workflow or defer to a follow-up task.
 11. **Repo URL casing:** confirm whether the GitHub repo is `jtumidanski/Harbormaster` (capital) or `jtumidanski/harbormaster` (lower). User confirmed capital `Harbormaster` for the repo; GHCR image path is `ghcr.io/jtumidanski/harbormaster` (GHCR is case-insensitive but conventionally lowercase).
-12. **License:** not specified by the operator yet — design phase or a separate task to pick (e.g., Apache-2.0, MIT, AGPL-3.0). v1 should not ship without a `LICENSE` file.
+12. ~~**License:**~~ **RESOLVED:** AGPL-3.0-or-later. `LICENSE` file ships with the standard AGPL-3.0 text; `README.md` includes the AGPL boilerplate at the top. Dependency-license compatibility check is part of `dependency-scan` in CI (any new dep with a non-AGPL-compatible license fails the build until manually allowlisted).
 13. **SSE implementation:** stdlib `http.Flusher` + handwritten SSE encoding vs a library (`r3labs/sse`). Affects the empty-bucket endpoint and any future streaming endpoints.
 14. **Empty-bucket operation tracking:** purely in-flight (the operation runs for as long as the request is open; reconnecting attaches to the in-process operation if still running, otherwise reports terminal state and exits) vs a `bucket_empty_jobs` SQLite table the worker drains in the background with the SSE endpoint subscribing to its progress. The latter is more robust against process restarts mid-operation but is meaningfully more infrastructure for a v1 MVP. Design phase to commit.
 15. **Tag-filter readout for unmanaged lifecycle rules:** confirm the read-only display summarizes tag-scoped rules without exposing tag values that might be operator-sensitive (lean: show tag count, not tag values).
@@ -547,7 +552,7 @@ A reviewer can mark v1 done when **all** of the following are demonstrably true.
 ### Foundation
 
 - [ ] Repo layout matches §4.1 (`/apps`, `/deploy`, `/scripts`, `/.github/workflows`, `/docs` all present and populated).
-- [ ] `LICENSE` file present at repo root.
+- [ ] `LICENSE` file present at repo root containing the AGPL-3.0 text; `README.md` shows the AGPL boilerplate at the top.
 - [ ] Go module initialized at `apps/backend` with module path agreed in design phase.
 - [ ] Frontend Vite/React/TS project initialized at `apps/frontend` with Tailwind, shadcn/ui, TanStack React Query, react-hook-form + Zod, React Router installed and configured.
 - [ ] `.golangci.yml`, `eslint.config.*`, `.prettierrc`, `.editorconfig` all present.
@@ -555,16 +560,19 @@ A reviewer can mark v1 done when **all** of the following are demonstrably true.
 ### Application functionality
 
 - [ ] First-run setup wizard creates the local admin and persists encrypted MinIO credentials; replaying setup returns 409.
-- [ ] Login/logout works; session cookie is HttpOnly + Secure + SameSite=Lax; CSRF tokens are required on writes.
+- [ ] Login/logout works; session cookie is HttpOnly + Secure + SameSite=Lax; CSRF tokens are required on writes. Concurrent sessions from multiple browsers are allowed; each session is independently revocable via logout from its own browser.
 - [ ] Failed login attempts beyond the rate limit return 429.
 - [ ] Admin password change works; old password validated server-side.
-- [ ] Dashboard renders server version, totals, node health, warnings, and recent local activity within the 2 s p95 SLO under a 100-bucket fixture.
+- [ ] Dashboard renders server version, totals, node health, warnings, recent local activity, and the **Recent failures** widget (window selectable from 24h / 7d / 30d, default 7d, persisted in `localStorage`) within the 2 s p95 SLO under a 100-bucket fixture.
 - [ ] Bucket list/create/versioning toggle all work end-to-end against a live MinIO. Bucket delete is gated on emptiness; non-empty deletes return `409 bucket_not_empty` and the UI links the operator into the Empty-bucket flow.
-- [ ] Empty-bucket SSE stream successfully drains a 10,000-object bucket and reports per-batch progress to the UI; closing/reopening the tab attaches to the existing job; a single `bucket.empty` audit event is written with the final deleted count and duration.
+- [ ] Empty-bucket SSE stream successfully drains a 10,000-object bucket and reports per-batch progress to the UI; closing/reopening the tab attaches to the existing job; a single `bucket.empty` audit event is written with the final deleted count, duration, and `purge_versions` choice.
+- [ ] On a versioned bucket, the Empty modal exposes the "Also permanently delete all object versions and delete-markers" checkbox; default-off produces delete-markers (objects are version-restorable via `mc cp --version-id`); checking it before submit hard-deletes every version + delete-marker (no recovery possible).
+- [ ] On a non-versioned bucket the checkbox is hidden and the audit event records `purge_versions=false` (no-op).
 - [ ] Bucket public-access mode can be set to `private` / `public-read` / `public-read-write` and the change is observable via `mc anonymous get`. Transitions to a write-allowing mode require typed bucket-name confirmation.
 - [ ] Bucket quota can be set (hard or FIFO), updated, and cleared; the bucket-detail page shows current usage vs limit when set, with amber/red thresholds.
+- [ ] FIFO quota is disabled in the UI when versioning is on (with tooltip); submitting a FIFO quota against a versioned bucket returns `422 fifo_requires_versioning_off` and Harbormaster never silently toggles versioning.
 - [ ] Object browser navigates folder-style listings with virtualized rendering, uploads (drag/drop and picker, rejected with 413 above the cap), downloads via the configured mode (proxy default, direct optional), deletes (with confirm), and previews supported MIME types.
-- [ ] Object listings remain responsive at 10,000 objects per page-worth of prefix; virtualized rendering keeps the DOM bounded as additional pages are auto-loaded.
+- [ ] Object listings remain responsive at 10,000 objects per page-worth of prefix; virtualized rendering keeps the DOM bounded as additional pages are auto-loaded. Auto-load triggers at 90 % scroll past the loaded rows, capped at one outstanding request; a manual "Load more" button is also present.
 - [ ] Share-link creation returns a URL with a server-clamped `expires_at`; the audit event records bucket + key + TTL and never the URL.
 - [ ] Users list/create/disable/enable/delete and policy attachments work; secret key shown exactly once on create. Only `read-only`, `read-write`, and `backup-target` templates are bundled; externally-attached MinIO policies (including `consoleAdmin`) are surfaced read-only under "Other attached policies" on the user-detail page.
 - [ ] Service accounts list/create/revoke work; secret shown exactly once.
@@ -572,7 +580,7 @@ A reviewer can mark v1 done when **all** of the following are demonstrably true.
 - [ ] Local activity feed records every state-changing action through Harbormaster; the `/activity` page filters and paginates entries; retention sweep deletes entries older than the configured age.
 - [ ] `harbormaster admin reset-password` CLI subcommand works against the SQLite store.
 - [ ] `harbormaster admin reset-encryption --confirm` backs up the SQLite file with a `.pre-reset-<unix-ts>.bak` suffix, generates a new encryption key, truncates `minio_connections`, clears `setup_completed`, and exits. Next startup returns the operator to the first-run wizard with the admin account and audit history intact. Running without `--confirm` prints a warning and exits non-zero.
-- [ ] Setup wizard surfaces detected `mc` aliases when `HARBORMASTER_MC_CONFIG_PATH` is mounted and `initialized=false`; selecting an alias pre-fills endpoint and credentials; the operator can still edit any field before submission. The mc-aliases endpoint never returns secret keys.
+- [ ] Setup wizard surfaces detected `mc` aliases when `HARBORMASTER_MC_CONFIG_PATH` is mounted, `initialized=false`, and the file's `version` field is `"10"`; other versions (or missing version) are silently treated as "no aliases found" with a single log line recording the encountered version. Selecting an alias pre-fills endpoint and credentials; the operator can still edit any field before submission. The mc-aliases endpoint never returns secret keys.
 - [ ] Subpath deployments work: with `HARBORMASTER_BASE_PATH=/harbormaster`, the SPA loads at `https://host/harbormaster/`, session and CSRF cookies are scoped to `/harbormaster`, and no asset URLs escape the prefix.
 
 ### Security & supply chain
@@ -588,7 +596,7 @@ A reviewer can mark v1 done when **all** of the following are demonstrably true.
 
 - [ ] `docker compose up` from `deploy/docker/` produces a running Harbormaster + optional MinIO sidecar and the SPA loads at `http://localhost:8080`.
 - [ ] Kubernetes manifests in `deploy/kubernetes/` apply cleanly to a kind/k3s cluster and the app becomes ready.
-- [ ] Multi-arch container image is produced for `linux/amd64` and `linux/arm64`.
+- [ ] Multi-arch container image is produced for `linux/amd64` and `linux/arm64`. The runtime image is `gcr.io/distroless/static-debian12:nonroot`, contains a fully static binary built with `CGO_ENABLED=0` using `modernc.org/sqlite`, and has no shell or package manager (verifiable via `docker run --rm --entrypoint sh harbormaster:test -c 'echo'` failing).
 - [ ] `/healthz` returns 200 once the listener is up; `/readyz` returns 200 only when migrations and (if configured) MinIO connectivity succeed.
 - [ ] Structured JSON logs by default; `console` format works when set.
 - [ ] Prometheus metrics endpoint serves when enabled and is absent (port not bound) when disabled.

@@ -37,7 +37,7 @@ The current PRD targets responsive listings at **10,000 objects per page-worth o
 
 - **Residual risk:** virtualization alone is not sufficient — the auto-load-next-page UX must avoid runaway request fan-out if an operator scrolls aggressively through a million-object prefix.
 - **Why it matters:** the main user-visible performance commitment.
-- **Mitigation direction:** server-side pagination via S3 continuation tokens (PRD specifies); UI uses `@tanstack/react-virtual` (or equivalent — design phase decides) for the listing view; auto-load throttles outstanding requests to a small constant (e.g., 1 in flight); design phase commits per-page render budget and the throttle parameter; consider an "estimated total" hint sourced from `BucketInfo.objects` so the UI can warn before chewing through a million-object prefix.
+- **Mitigation direction (committed):** server-side pagination via S3 continuation tokens; UI uses `@tanstack/react-virtual` (or equivalent — design phase confirms library). **Auto-load triggers at 90 % scroll past the loaded rows and is capped at one outstanding request** (additional scroll past 90 % while a fetch is in flight is a no-op until that fetch resolves). A manual "Load more" button is also surfaced at the bottom of the list. Design phase still owns the per-page render budget; consider an "estimated total" hint sourced from `BucketInfo.objects` so the UI can warn before the operator commits to walking through a million-object prefix.
 
 ## R6 — Login rate limit is in-memory only
 
@@ -95,12 +95,12 @@ If MinIO integration tests run on every PR via `testcontainers-go`, CI minutes w
 - **Why it matters:** affects iteration speed and contributor friction.
 - **Mitigation direction:** split into "unit / fast" tests (always-on, run on PR) and "integration / minio-required" tests (gated by an env var, run on a nightly schedule and locally on demand). Design phase to commit to this split and define the naming convention.
 
-## R14 — License is unset
+## R14 — License is AGPL-3.0 — dependency compatibility surface
 
-No license file has been chosen, but the PRD requires one as an acceptance criterion. Contributions cannot be accepted until a license exists.
+License is **AGPL-3.0-or-later** (committed). The risk shifts from "no license" to "dependency-license compatibility": any new runtime dependency under a license incompatible with the AGPL (e.g., some proprietary or no-license packages, and arguably MPL-2.0 if linked statically) creates a legal grey area in the published binary.
 
-- **Why it matters:** legal ambiguity blocks community contributions and complicates GHCR publish copy.
-- **Mitigation direction:** the operator chooses a license during the design phase from a short list (Apache-2.0, MIT, AGPL-3.0). Apache-2.0 is the conventional default for infrastructure tools of this shape.
+- **Why it matters:** AGPL adds reciprocal-licensing obligations for network-service distributions. Operators forking and running Harbormaster privately are unaffected; SaaS hosters must publish their changes. Adding an incompatible runtime dependency would force the project to either change license or drop the dependency.
+- **Mitigation direction:** the `dependency-scan` CI job gains an explicit license-allowlist check (compatible: Apache-2.0, MIT, BSD-2/3-Clause, ISC, AGPL-3.0-or-later, GPL-3.0-or-later). New deps with other licenses fail the build and require an explicit `tools/licenses/allowlist.yaml` entry with a justification. README boilerplate includes AGPL header.
 
 ## R15 — Operator unfamiliarity with MinIO admin API behavior
 

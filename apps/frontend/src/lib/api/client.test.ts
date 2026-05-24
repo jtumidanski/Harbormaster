@@ -57,17 +57,13 @@ describe("api", () => {
   });
 
   it("does not let caller init override managed method/credentials/body/headers", async () => {
-    await api.post(
-      "/p",
-      { real: "body" },
-      {
-        // Cast to satisfy the public surface while exercising the clobber guard.
-        method: "GET",
-        credentials: "omit",
-        body: "evil",
-        headers: { "X-CSRF-Token": "forged" },
-      } as RequestInit,
-    );
+    await api.post("/p", { real: "body" }, {
+      // Cast to satisfy the public surface while exercising the clobber guard.
+      method: "GET",
+      credentials: "omit",
+      body: "evil",
+      headers: { "X-CSRF-Token": "forged" },
+    } as RequestInit);
     const init = lastInit();
     expect(init.method).toBe("POST");
     expect(init.credentials).toBe("include");

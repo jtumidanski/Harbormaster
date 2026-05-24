@@ -6,6 +6,7 @@ import { LoginPage } from "@/features/auth/LoginPage";
 import { ChangePasswordPage } from "@/features/auth/ChangePasswordPage";
 import { SetupWizard } from "@/features/setup/SetupWizard";
 import { BucketsPlaceholder } from "@/features/buckets/BucketsPlaceholder";
+import { ConnectionSettingsPage } from "@/features/connection/ConnectionSettingsPage";
 
 export function AppRoutes() {
   const { me, isLoading: meLoading } = useAuth();
@@ -33,6 +34,7 @@ export function AppRoutes() {
         <Route path="/" element={<Navigate to="/buckets" replace />} />
         <Route path="/buckets" element={<BucketsPlaceholder />} />
         <Route path="/settings/account" element={<ChangePasswordPage />} />
+        <Route path="/settings/connection" element={<ConnectionSettingsPage />} />
         <Route path="*" element={<div className="p-8">Not found</div>} />
       </Route>
     </Routes>

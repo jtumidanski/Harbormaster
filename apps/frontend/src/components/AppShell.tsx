@@ -28,6 +28,11 @@ export function AppShell() {
                 Activity
               </Link>
             </li>
+            <li>
+              <Link to="/settings/connection" className="block rounded px-2 py-1 hover:bg-accent">
+                Settings
+              </Link>
+            </li>
           </ul>
         </nav>
         <main className="flex-1">

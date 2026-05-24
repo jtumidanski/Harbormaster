@@ -1,6 +1,7 @@
 # Go
 apps/backend/bin/
 apps/backend/dist/
+apps/backend/harbormaster
 *.test
 *.out
 coverage.txt

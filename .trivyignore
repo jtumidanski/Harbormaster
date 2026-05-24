@@ -1,0 +1,7 @@
+# Trivy ignore file. Review monthly.
+# Each entry must include: CVE/GHSA id, reason for ignoring, and a review date.
+# CRITICAL CVEs are NEVER allowlisted here.
+# HIGH CVEs require a justification comment.
+#
+# Example:
+# CVE-YYYY-XXXX  # reason: not exploitable in our config; reviewed 2026-05-23

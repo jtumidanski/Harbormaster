@@ -1,0 +1,10 @@
+# License allow-list overrides.
+# Each entry MUST include: module path, license discovered, justification, reviewer, date.
+ignore: []
+# Example:
+# ignore:
+#   - module: github.com/example/foo
+#     license: MPL-2.0
+#     reason: bundled but never linked into the runtime
+#     reviewer: jtumidanski
+#     date: 2026-05-23

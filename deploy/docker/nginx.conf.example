@@ -1,0 +1,54 @@
+# Harbormaster — nginx reverse-proxy example.
+#
+# Drop this into /etc/nginx/conf.d/harbormaster.conf (or include from your
+# main http {} block). Adjust:
+#   - server_name           — public hostname
+#   - upstream target       — service name + port if not on the default Docker
+#                             network (e.g. 127.0.0.1:8080 for host networking)
+#   - client_max_body_size  — keep >= HARBORMASTER_UPLOAD_MAX_BYTES + 8 MiB
+#                             headroom (default cap is 100 MiB)
+#   - TLS                   — terminate TLS at the proxy; the Harbormaster
+#                             binary does not need to know the public scheme
+#                             as long as X-Forwarded-Proto is set
+#
+# Notes on Server-Sent Events:
+#   The empty-bucket endpoint streams progress over SSE. nginx buffers
+#   responses by default, which would batch progress events into 4-8 KiB
+#   chunks and make the UI look frozen. The first location block below
+#   matches that endpoint and turns buffering off + raises the read timeout
+#   to 1 hour so large empties don't time out.
+#
+# See docs/operator/reverse-proxy.md for the full discussion and Caddy /
+# Traefik equivalents.
+
+upstream harbormaster_upstream {
+    server harbormaster:8080;
+}
+
+server {
+    listen 80;
+    server_name harbormaster.example.com;
+
+    # The empty-bucket endpoint streams SSE; buffering would batch progress.
+    location ~ ^/api/v1/buckets/.+/empty$ {
+        proxy_pass http://harbormaster_upstream;
+        proxy_buffering off;
+        proxy_read_timeout 1h;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_pass http://harbormaster_upstream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        # Match HARBORMASTER_UPLOAD_MAX_BYTES (default 100 MiB) plus headroom.
+        client_max_body_size 200M;
+    }
+}

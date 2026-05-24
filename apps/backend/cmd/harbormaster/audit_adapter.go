@@ -158,9 +158,31 @@ func newLifecycleClientGetter(pool *hmminio.Pool) lifecycle.ClientGetter {
 	})
 }
 
+// bucketLifecycleAdapter satisfies buckets.LifecycleCreator by wrapping
+// the live lifecycle.Processor. The bucket processor only needs success
+// vs. failure (the audit row is built inside the lifecycle processor
+// itself), so the *lifecycle.Rule return value is intentionally
+// discarded. Actor / sourceIP for the auto-applied template are left
+// empty here — the bucket.create audit row already carries the
+// operator's identity, and the auto-applied lifecycle_rule.create row is
+// a side-effect attributed to the same logical action.
+type bucketLifecycleAdapter struct {
+	lc *lifecycle.Processor
+}
+
+// Create implements buckets.LifecycleCreator.
+func (a bucketLifecycleAdapter) Create(ctx context.Context, bucket string, days int, prefix string) error {
+	if a.lc == nil {
+		return nil
+	}
+	_, err := a.lc.Create(ctx, bucket, days, prefix, "", "")
+	return err
+}
+
 // Compile-time anchors keeping the adapter types in sync with their
 // destination interfaces; a future signature drift fails the build here.
 var (
-	_ objects.S3Client   = objectS3Adapter{}
-	_ lifecycle.S3Client = lifecycleS3Adapter{}
+	_ objects.S3Client          = objectS3Adapter{}
+	_ lifecycle.S3Client        = lifecycleS3Adapter{}
+	_ buckets.LifecycleCreator  = bucketLifecycleAdapter{}
 )

@@ -57,7 +57,7 @@ func TestStartOrAttach_NewJob(t *testing.T) {
 			Bucket:       sub.bucket,
 			DeletedTotal: totalKeys,
 			DurationMS:   42,
-		}, time.Now(), totalKeys, purgeVersions)
+		}, time.Now(), totalKeys, purgeVersions, false)
 	}
 	svc := newServiceWithRun(t, gdb, audit, runFn)
 
@@ -105,7 +105,7 @@ func TestStartOrAttach_Concurrent(t *testing.T) {
 		s.broadcast(sub, Progress{Deleted: 7})
 		s.terminate(sub, Result{
 			JobID: sub.jobID, Bucket: sub.bucket, DeletedTotal: 7,
-		}, time.Now(), 7, purgeVersions)
+		}, time.Now(), 7, purgeVersions, false)
 	}
 	svc := newServiceWithRun(t, gdb, audit, runFn)
 
@@ -164,7 +164,7 @@ func TestStartOrAttach_MidFlightError(t *testing.T) {
 		s.terminate(sub, Result{
 			JobID: sub.jobID, Bucket: sub.bucket,
 			DeletedTotal: 100, ErrorMessage: "boom: connection reset",
-		}, time.Now(), 100, purgeVersions)
+		}, time.Now(), 100, purgeVersions, true)
 	}
 	svc := newServiceWithRun(t, gdb, audit, runFn)
 
@@ -233,6 +233,65 @@ func TestInsertRunning_DuplicateReturnsSentinel(t *testing.T) {
 	_, err = InsertRunning(gdb, "dup-bucket", true)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrAlreadyRunning)
+}
+
+// TestBucketEmpty_AuditPayloadCompleteness (T3.24) asserts the terminal
+// audit row carries all four required payload keys with correctly-populated
+// values: deleted_count, duration_ms, purge_versions, versioning_enabled_at_start.
+// Per the data-model spec these are the load-bearing fields operators rely on
+// when retroactively explaining a retention decision.
+func TestBucketEmpty_AuditPayloadCompleteness(t *testing.T) {
+	gdb := newTestDB(t)
+	audit := &fakeAudit{}
+
+	const totalKeys = int64(123)
+	const durationMS = int64(456)
+	// done signals that the worker fully finished the audit emission.
+	// Required because terminate emits audit *after* sending the
+	// terminal Result on sub.done, so the test cannot rely on doneCh
+	// alone to synchronise.
+	workerDone := make(chan struct{})
+	runFn := func(s *Service, ctx context.Context, sub *subscription, purgeVersions bool) {
+		s.broadcast(sub, Progress{Deleted: totalKeys})
+		s.terminate(sub, Result{
+			JobID:        sub.jobID,
+			Bucket:       sub.bucket,
+			DeletedTotal: totalKeys,
+			DurationMS:   durationMS,
+		}, time.Now(), totalKeys, purgeVersions, true /* versioning enabled at start */)
+		close(workerDone)
+	}
+	svc := newServiceWithRun(t, gdb, audit, runFn)
+
+	progressCh, doneCh, err := svc.StartOrAttach(context.Background(), "completeness-bkt", true)
+	require.NoError(t, err)
+	_ = drainProgress(t, progressCh)
+	_ = waitForResult(t, doneCh)
+	<-workerDone
+
+	calls := audit.snapshot()
+	require.Len(t, calls, 1, "expected exactly one audit call")
+	c := calls[0]
+	require.Equal(t, ActionBucketEmpty, c.Action)
+	require.Equal(t, OutcomeSuccess, c.Outcome)
+	require.NotNil(t, c.Payload, "audit payload must not be nil")
+
+	// All four required keys must be present.
+	for _, k := range []string{
+		"deleted_count",
+		"duration_ms",
+		"purge_versions",
+		"versioning_enabled_at_start",
+	} {
+		_, ok := c.Payload[k]
+		require.Truef(t, ok, "audit payload missing required key %q", k)
+	}
+
+	// Values must round-trip the worker's observations.
+	assert.EqualValues(t, totalKeys, c.Payload["deleted_count"])
+	assert.EqualValues(t, durationMS, c.Payload["duration_ms"])
+	assert.Equal(t, true, c.Payload["purge_versions"])
+	assert.Equal(t, true, c.Payload["versioning_enabled_at_start"])
 }
 
 // findByID is a tiny test helper that loads one row by primary key and maps

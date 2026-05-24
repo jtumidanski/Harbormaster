@@ -21,7 +21,7 @@ func TestSetQuotaRejectsFifoWithVersioning(t *testing.T) {
 	p, adm, s3 := newTestProcessor(t, nil, nil)
 	s3.versioning["photos"] = miniogo.BucketVersioningConfiguration{Status: "Enabled"}
 
-	err := p.SetQuota(context.Background(), "photos", QuotaKindFifo, 1<<30)
+	err := p.SetQuota(context.Background(), "photos", QuotaKindFifo, 1<<30, "", "")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -47,7 +47,7 @@ func TestSetQuotaPersistsHardQuota(t *testing.T) {
 	p, adm, _ := newTestProcessor(t, nil, nil)
 
 	const want = int64(5 * 1 << 30)
-	if err := p.SetQuota(context.Background(), "photos", QuotaKindHard, want); err != nil {
+	if err := p.SetQuota(context.Background(), "photos", QuotaKindHard, want, "", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(adm.setQuotaCalls) != 1 {
@@ -71,7 +71,7 @@ func TestDeleteReturnsConflictOnNonEmpty(t *testing.T) {
 		{Key: "ignored.jpg"},
 	}
 
-	err := p.Delete(context.Background(), "photos", "photos")
+	err := p.Delete(context.Background(), "photos", "photos", "", "")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -94,7 +94,7 @@ func TestDeleteReturnsConflictOnNonEmpty(t *testing.T) {
 func TestDeleteRequiresConfirmName(t *testing.T) {
 	p, _, s3 := newTestProcessor(t, nil, nil)
 
-	err := p.Delete(context.Background(), "photos", "wrong")
+	err := p.Delete(context.Background(), "photos", "wrong", "", "")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -112,7 +112,7 @@ func TestDeleteRequiresConfirmName(t *testing.T) {
 func TestDeleteSucceedsOnEmptyBucket(t *testing.T) {
 	p, _, s3 := newTestProcessor(t, nil, nil)
 
-	if err := p.Delete(context.Background(), "photos", "photos"); err != nil {
+	if err := p.Delete(context.Background(), "photos", "photos", "", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got := s3.removeCalls; len(got) != 1 || got[0] != "photos" {
@@ -133,7 +133,7 @@ func TestCreateAppliesOptionalSettings(t *testing.T) {
 	_, err := p.Create(context.Background(), "photos", CreateOpts{
 		VersioningEnabled: true,
 		Quota:             &Quota{Kind: QuotaKindHard, Bytes: want},
-	})
+	}, "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestCreateAppliesPublicAccessPolicy(t *testing.T) {
 
 	_, err := p.Create(context.Background(), "photos", CreateOpts{
 		PublicAccess: PublicAccessPublicRead,
-	})
+	}, "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestCreateAppliesPublicAccessPolicy(t *testing.T) {
 func TestSetPublicAccessWritesCannedPolicy(t *testing.T) {
 	p, _, s3 := newTestProcessor(t, nil, nil)
 
-	err := p.SetPublicAccess(context.Background(), "photos", "public-read", "")
+	err := p.SetPublicAccess(context.Background(), "photos", "public-read", "", "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestSetPublicAccessWritesCannedPolicy(t *testing.T) {
 func TestSetPublicAccessPrivateRemovesPolicy(t *testing.T) {
 	p, _, s3 := newTestProcessor(t, nil, nil)
 
-	if err := p.SetPublicAccess(context.Background(), "photos", "private", ""); err != nil {
+	if err := p.SetPublicAccess(context.Background(), "photos", "private", "", "", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(s3.setPolicyCalls) != 1 || s3.setPolicyCalls[0].Policy != "" {
@@ -214,7 +214,7 @@ func TestSetPublicAccessPrivateRemovesPolicy(t *testing.T) {
 func TestSetPublicAccessReadWriteRequiresConfirm(t *testing.T) {
 	p, _, s3 := newTestProcessor(t, nil, nil)
 
-	err := p.SetPublicAccess(context.Background(), "photos", "public-read-write", "wrong")
+	err := p.SetPublicAccess(context.Background(), "photos", "public-read-write", "wrong", "", "")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -256,7 +256,7 @@ func TestGetReturnsNotFoundWhenBucketAbsent(t *testing.T) {
 func TestSetVersioningHappyPath(t *testing.T) {
 	p, _, s3 := newTestProcessor(t, nil, nil)
 
-	if err := p.SetVersioning(context.Background(), "photos", true); err != nil {
+	if err := p.SetVersioning(context.Background(), "photos", true, "", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(s3.setVersioningCalls) != 1 {

@@ -139,7 +139,7 @@ func TestUpload_ReturnsEntry(t *testing.T) {
 	p, _ := newTestProcessor(t, stub, ProcessorConfig{})
 
 	entry, err := p.Upload(context.Background(), "photos", "cat.jpg",
-		bytes.NewBufferString("payload"), "image/jpeg")
+		bytes.NewBufferString("payload"), "image/jpeg", "", "")
 	if err != nil {
 		t.Fatalf("Upload: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestUpload_ReturnsEntry(t *testing.T) {
 func TestDelete_CallsRemove(t *testing.T) {
 	p, s3 := newTestProcessor(t, nil, ProcessorConfig{})
 
-	if err := p.Delete(context.Background(), "photos", "cat.jpg"); err != nil {
+	if err := p.Delete(context.Background(), "photos", "cat.jpg", "", ""); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	if len(s3.removeCalls) != 1 {
@@ -179,7 +179,7 @@ func TestDelete_CallsRemove(t *testing.T) {
 func TestMintShareLink_ClampsLowerBound(t *testing.T) {
 	p, s3 := newTestProcessor(t, nil, ProcessorConfig{ShareLinkMaxTTL: time.Hour})
 
-	_, err := p.MintShareLink(context.Background(), "photos", "cat.jpg", 10)
+	_, err := p.MintShareLink(context.Background(), "photos", "cat.jpg", 10, "", "")
 	if err != nil {
 		t.Fatalf("MintShareLink: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestMintShareLink_ClampsUpperBound(t *testing.T) {
 	p, s3 := newTestProcessor(t, nil, ProcessorConfig{ShareLinkMaxTTL: max})
 
 	requested := int(max.Seconds()) + 1000
-	_, err := p.MintShareLink(context.Background(), "photos", "cat.jpg", requested)
+	_, err := p.MintShareLink(context.Background(), "photos", "cat.jpg", requested, "", "")
 	if err != nil {
 		t.Fatalf("MintShareLink: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestMintShareLink_ClampsUpperBound(t *testing.T) {
 func TestMintShareLink_ResponseHasContentDisposition(t *testing.T) {
 	p, s3 := newTestProcessor(t, nil, ProcessorConfig{ShareLinkMaxTTL: time.Hour})
 
-	if _, err := p.MintShareLink(context.Background(), "photos", "albums/2025/cat.jpg", 300); err != nil {
+	if _, err := p.MintShareLink(context.Background(), "photos", "albums/2025/cat.jpg", 300, "", ""); err != nil {
 		t.Fatalf("MintShareLink: %v", err)
 	}
 	disp := s3.presignCalls[0].Params.Get("response-content-disposition")

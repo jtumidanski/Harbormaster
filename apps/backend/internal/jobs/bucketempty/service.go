@@ -140,7 +140,7 @@ func (s *Service) run(ctx context.Context, sub *subscription, purgeVersions bool
 	start := time.Now()
 	_, mc, err := s.pool.Get(ctx)
 	if err != nil {
-		s.terminate(sub, Result{JobID: sub.jobID, Bucket: sub.bucket, ErrorMessage: err.Error()}, start, 0, purgeVersions)
+		s.terminate(sub, Result{JobID: sub.jobID, Bucket: sub.bucket, ErrorMessage: err.Error()}, start, 0, purgeVersions, false)
 		return
 	}
 
@@ -167,7 +167,7 @@ func (s *Service) run(ctx context.Context, sub *subscription, purgeVersions bool
 	if err != nil {
 		res.ErrorMessage = err.Error()
 	}
-	s.terminate(sub, res, start, deleted, purgeVersions)
+	s.terminate(sub, res, start, deleted, purgeVersions, versioned)
 }
 
 // broadcast pushes a Progress event to every attached subscriber using a
@@ -195,7 +195,11 @@ func (s *Service) broadcast(sub *subscription, p Progress) {
 //
 // Note: r.DurationMS is the worker-measured wall-clock; the start parameter
 // is retained as a signal for future telemetry hooks (latency histograms).
-func (s *Service) terminate(sub *subscription, r Result, _ time.Time, _ int64, purgeVersions bool) {
+// versioningEnabledAtStart records the bucket's versioning posture as
+// observed by the worker before the drain began; it surfaces in the audit
+// payload so operators can correlate retention decisions with the actual
+// purge-versions interaction (per T3.24).
+func (s *Service) terminate(sub *subscription, r Result, _ time.Time, _ int64, purgeVersions, versioningEnabledAtStart bool) {
 	s.mu.Lock()
 	delete(s.active, sub.bucket)
 	for _, ch := range sub.subs {
@@ -217,10 +221,11 @@ func (s *Service) terminate(sub *subscription, r Result, _ time.Time, _ int64, p
 
 	if s.audit != nil {
 		payload := map[string]any{
-			"job_id":         sub.jobID,
-			"deleted_count":  r.DeletedTotal,
-			"duration_ms":    r.DurationMS,
-			"purge_versions": purgeVersions,
+			"job_id":                       sub.jobID,
+			"deleted_count":                r.DeletedTotal,
+			"duration_ms":                  r.DurationMS,
+			"purge_versions":               purgeVersions,
+			"versioning_enabled_at_start":  versioningEnabledAtStart,
 		}
 		out := OutcomeSuccess
 		if r.ErrorMessage != "" {

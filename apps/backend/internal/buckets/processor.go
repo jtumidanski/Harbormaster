@@ -14,8 +14,33 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/jtumidanski/Harbormaster/internal/apierror"
+	"github.com/jtumidanski/Harbormaster/internal/audit"
 	"github.com/jtumidanski/Harbormaster/internal/policies"
 )
+
+// LifecycleCreator is the narrow contract the bucket processor needs to
+// apply a bundled lifecycle template on bucket creation (T3.21). Defining
+// it here — rather than importing internal/lifecycle directly — keeps the
+// import graph acyclic and avoids leaking the lifecycle.Rule return type
+// into the bucket domain. The wire-up site (serve.go) supplies a thin
+// adapter around *lifecycle.Processor that swallows the Rule (the bucket
+// caller only cares about success vs. failure for the audit row).
+type LifecycleCreator interface {
+	Create(ctx context.Context, bucket string, days int, prefix string) error
+}
+
+// lifecycleTemplate is a bundled (days, prefix) pair keyed by the wire
+// name. Only "expire-30d" and "expire-90d" are accepted in v1; unknown
+// names surface as a typed 422 envelope from Create.
+type lifecycleTemplate struct {
+	days   int
+	prefix string
+}
+
+var lifecycleTemplates = map[string]lifecycleTemplate{
+	"expire-30d": {days: 30, prefix: ""},
+	"expire-90d": {days: 90, prefix: ""},
+}
 
 // fanoutConcurrency caps the number of in-flight per-bucket detail fetches
 // during List. Ten is enough to overlap the typical "list buckets + per-
@@ -123,9 +148,20 @@ type CreateOpts struct {
 // usage and quota) that intentionally do not fail the parent call. The
 // default value is a zerolog.Nop so unit tests need not configure it; the
 // HTTP wire-up calls WithLogger to inject the real logger.
+//
+// Audit is the (optional) audit.Processor handle used to record bucket
+// mutations. nil disables audit emission — call WithAudit at the
+// composition root to enable it.
+//
+// Lifecycle is the (optional) LifecycleCreator used by Create to apply
+// the bundled "expire-30d" / "expire-90d" templates after MakeBucket
+// succeeds. nil disables template application (the field is then a
+// validation-only knob for the audit payload).
 type Processor struct {
-	Clients ClientGetter
-	Logger  zerolog.Logger
+	Clients   ClientGetter
+	Logger    zerolog.Logger
+	Audit     *audit.Processor
+	Lifecycle LifecycleCreator
 }
 
 // NewProcessor returns a Processor bound to clients. The logger defaults
@@ -141,6 +177,28 @@ func NewProcessor(clients ClientGetter) *Processor {
 func (p *Processor) WithLogger(l zerolog.Logger) *Processor {
 	p.Logger = l
 	return p
+}
+
+// WithAudit returns p with the supplied audit processor attached.
+func (p *Processor) WithAudit(a *audit.Processor) *Processor {
+	p.Audit = a
+	return p
+}
+
+// WithLifecycle returns p with the supplied LifecycleCreator attached.
+// Required for Create to honour CreateOpts.LifecycleTemplate.
+func (p *Processor) WithLifecycle(lc LifecycleCreator) *Processor {
+	p.Lifecycle = lc
+	return p
+}
+
+// recordAudit is a nil-safe helper. Audit writes are best-effort and must
+// never surface to the operator's foreground operation.
+func (p *Processor) recordAudit(ctx context.Context, e audit.Event) {
+	if p.Audit == nil {
+		return
+	}
+	_ = p.Audit.Record(ctx, e)
 }
 
 // List returns every bucket on the configured MinIO with the auxiliary
@@ -307,20 +365,57 @@ func (p *Processor) detail(ctx context.Context, adm adminAPI, s3 s3API, info min
 // best-effort against the newly created bucket. On a partial failure the
 // bucket is left in place — operators can re-issue the failing setting
 // against the now-existing bucket via the dedicated action endpoint.
-func (p *Processor) Create(ctx context.Context, name string, opts CreateOpts) (Bucket, error) {
+//
+// actor and sourceIP are stamped onto the audit row; the resource layer is
+// responsible for sourcing them from the authenticated session context.
+// LifecycleTemplate (T3.21) is validated up-front: an unknown template
+// short-circuits with apierror 422 unknown_lifecycle_template BEFORE
+// MakeBucket runs so a typo cannot leak an orphaned bucket.
+func (p *Processor) Create(ctx context.Context, name string, opts CreateOpts, actor, sourceIP string) (Bucket, error) {
+	auditPayload := map[string]any{
+		"name":               name,
+		"versioning_enabled": opts.VersioningEnabled,
+		"public_access":      string(opts.PublicAccess),
+		"has_quota":          opts.Quota != nil && opts.Quota.Bytes > 0,
+	}
+	failAudit := func(err error) error {
+		p.recordAudit(ctx, audit.Event{
+			Actor:          actor,
+			SourceIP:       sourceIP,
+			Action:         audit.ActionBucketCreate,
+			TargetType:     "bucket",
+			TargetID:       name,
+			Outcome:        audit.OutcomeFailure,
+			ErrorMessage:   err.Error(),
+			PayloadSummary: auditPayload,
+		})
+		return err
+	}
 	if err := ValidateBucketName(name); err != nil {
-		return Bucket{}, apierror.New(http.StatusBadRequest, "bucket_invalid_name", err.Error())
+		return Bucket{}, failAudit(apierror.New(http.StatusBadRequest, "bucket_invalid_name", err.Error()))
+	}
+	// Up-front template validation: reject unknown wire names before
+	// MakeBucket so a typo cannot leak an orphaned bucket.
+	var tmpl *lifecycleTemplate
+	if opts.LifecycleTemplate != "" {
+		t, ok := lifecycleTemplates[opts.LifecycleTemplate]
+		if !ok {
+			return Bucket{}, failAudit(apierror.New(http.StatusUnprocessableEntity,
+				"unknown_lifecycle_template",
+				fmt.Sprintf("lifecycle_template must be one of: expire-30d, expire-90d (got %q)", opts.LifecycleTemplate)))
+		}
+		tmpl = &t
 	}
 	adm, s3, err := p.clients(ctx)
 	if err != nil {
-		return Bucket{}, err
+		return Bucket{}, failAudit(err)
 	}
 	if err := s3.MakeBucket(ctx, name, miniogo.MakeBucketOptions{}); err != nil {
-		return Bucket{}, mapClientError(err, "failed to create bucket")
+		return Bucket{}, failAudit(mapClientError(err, "failed to create bucket"))
 	}
 	if opts.VersioningEnabled {
 		if err := applyVersioning(ctx, s3, name, true); err != nil {
-			return Bucket{}, apierror.Internal(err.Error())
+			return Bucket{}, failAudit(apierror.Internal(err.Error()))
 		}
 	}
 	if opts.Quota != nil && opts.Quota.Bytes > 0 {
@@ -329,25 +424,38 @@ func (p *Processor) Create(ctx context.Context, name string, opts CreateOpts) (B
 		// validation error the caller should have caught at the REST
 		// layer. Defence in depth here so it's not silently accepted.
 		if opts.Quota.Kind == QuotaKindFifo && opts.VersioningEnabled {
-			return Bucket{}, apierror.New(http.StatusUnprocessableEntity,
+			return Bucket{}, failAudit(apierror.New(http.StatusUnprocessableEntity,
 				"fifo_requires_versioning_off",
-				"FIFO quota requires versioning to be disabled")
+				"FIFO quota requires versioning to be disabled"))
 		}
 		if err := applyQuota(ctx, adm, name, opts.Quota.Kind, opts.Quota.Bytes); err != nil {
-			return Bucket{}, apierror.Internal(err.Error())
+			return Bucket{}, failAudit(apierror.Internal(err.Error()))
 		}
 	}
 	if opts.PublicAccess != "" && opts.PublicAccess != PublicAccessPrivate {
 		policyJSON, perr := policies.BucketPolicyFor(name, string(opts.PublicAccess))
 		if perr != nil {
-			return Bucket{}, apierror.New(http.StatusBadRequest,
-				"public_access_invalid", perr.Error())
+			return Bucket{}, failAudit(apierror.New(http.StatusBadRequest,
+				"public_access_invalid", perr.Error()))
 		}
 		if err := applyPolicy(ctx, s3, name, policyJSON); err != nil {
-			return Bucket{}, apierror.Internal(err.Error())
+			return Bucket{}, failAudit(apierror.Internal(err.Error()))
 		}
 	}
-	_ = opts.LifecycleTemplate // TODO(T3.21): apply lifecycle template
+	if tmpl != nil && p.Lifecycle != nil {
+		if err := p.Lifecycle.Create(ctx, name, tmpl.days, tmpl.prefix); err != nil {
+			return Bucket{}, failAudit(apierror.Internal("failed to apply lifecycle template: " + err.Error()))
+		}
+	}
+	p.recordAudit(ctx, audit.Event{
+		Actor:          actor,
+		SourceIP:       sourceIP,
+		Action:         audit.ActionBucketCreate,
+		TargetType:     "bucket",
+		TargetID:       name,
+		Outcome:        audit.OutcomeSuccess,
+		PayloadSummary: auditPayload,
+	})
 	return p.Get(ctx, name)
 }
 
@@ -356,17 +464,31 @@ func (p *Processor) Create(ctx context.Context, name string, opts CreateOpts) (B
 // MinIO's RemoveBucket refuses non-empty buckets, but we re-check via
 // ListObjects with MaxKeys=1 so the operator gets the typed
 // "bucket_not_empty" envelope instead of the raw MinIO error.
-func (p *Processor) Delete(ctx context.Context, name, confirmName string) error {
+func (p *Processor) Delete(ctx context.Context, name, confirmName, actor, sourceIP string) error {
+	auditPayload := map[string]any{"name": name}
+	failAudit := func(err error) error {
+		p.recordAudit(ctx, audit.Event{
+			Actor:          actor,
+			SourceIP:       sourceIP,
+			Action:         audit.ActionBucketDelete,
+			TargetType:     "bucket",
+			TargetID:       name,
+			Outcome:        audit.OutcomeFailure,
+			ErrorMessage:   err.Error(),
+			PayloadSummary: auditPayload,
+		})
+		return err
+	}
 	if err := ValidateBucketName(name); err != nil {
-		return apierror.New(http.StatusBadRequest, "bucket_invalid_name", err.Error())
+		return failAudit(apierror.New(http.StatusBadRequest, "bucket_invalid_name", err.Error()))
 	}
 	if name != confirmName {
-		return apierror.New(http.StatusForbidden, "confirm_name_mismatch",
-			"confirm_name must equal the bucket name")
+		return failAudit(apierror.New(http.StatusForbidden, "confirm_name_mismatch",
+			"confirm_name must equal the bucket name"))
 	}
 	_, s3, err := p.clients(ctx)
 	if err != nil {
-		return err
+		return failAudit(err)
 	}
 	// Re-check emptiness. We drain the channel after the first hit so
 	// the underlying lister goroutine does not leak (per minio-go docs).
@@ -376,35 +498,71 @@ func (p *Processor) Delete(ctx context.Context, name, confirmName string) error 
 		if obj.Err != nil {
 			// Drain remaining sends before returning so the lister exits.
 			go drain(objCh)
-			return mapClientError(obj.Err, "failed to check bucket emptiness")
+			return failAudit(mapClientError(obj.Err, "failed to check bucket emptiness"))
 		}
 		nonEmpty = true
 		go drain(objCh)
 		break
 	}
 	if nonEmpty {
-		return apierror.New(http.StatusConflict, "bucket_not_empty",
-			"bucket is not empty; delete or move all objects before retrying")
+		return failAudit(apierror.New(http.StatusConflict, "bucket_not_empty",
+			"bucket is not empty; delete or move all objects before retrying"))
 	}
 	if err := s3.RemoveBucket(ctx, name); err != nil {
-		return mapClientError(err, "failed to remove bucket")
+		return failAudit(mapClientError(err, "failed to remove bucket"))
 	}
+	p.recordAudit(ctx, audit.Event{
+		Actor:          actor,
+		SourceIP:       sourceIP,
+		Action:         audit.ActionBucketDelete,
+		TargetType:     "bucket",
+		TargetID:       name,
+		Outcome:        audit.OutcomeSuccess,
+		PayloadSummary: auditPayload,
+	})
 	return nil
 }
 
 // SetVersioning is the action endpoint for toggling versioning on an
 // existing bucket. Suspends rather than removes — see applyVersioning.
-func (p *Processor) SetVersioning(ctx context.Context, name string, enabled bool) error {
+func (p *Processor) SetVersioning(ctx context.Context, name string, enabled bool, actor, sourceIP string) error {
+	action := audit.ActionBucketVersioningOff
+	if enabled {
+		action = audit.ActionBucketVersioningOn
+	}
+	auditPayload := map[string]any{"name": name}
+	failAudit := func(err error) error {
+		p.recordAudit(ctx, audit.Event{
+			Actor:          actor,
+			SourceIP:       sourceIP,
+			Action:         action,
+			TargetType:     "bucket",
+			TargetID:       name,
+			Outcome:        audit.OutcomeFailure,
+			ErrorMessage:   err.Error(),
+			PayloadSummary: auditPayload,
+		})
+		return err
+	}
 	if err := ValidateBucketName(name); err != nil {
-		return apierror.New(http.StatusBadRequest, "bucket_invalid_name", err.Error())
+		return failAudit(apierror.New(http.StatusBadRequest, "bucket_invalid_name", err.Error()))
 	}
 	_, s3, err := p.clients(ctx)
 	if err != nil {
-		return err
+		return failAudit(err)
 	}
 	if err := applyVersioning(ctx, s3, name, enabled); err != nil {
-		return apierror.Internal(err.Error())
+		return failAudit(apierror.Internal(err.Error()))
 	}
+	p.recordAudit(ctx, audit.Event{
+		Actor:          actor,
+		SourceIP:       sourceIP,
+		Action:         action,
+		TargetType:     "bucket",
+		TargetID:       name,
+		Outcome:        audit.OutcomeSuccess,
+		PayloadSummary: auditPayload,
+	})
 	return nil
 }
 
@@ -418,36 +576,59 @@ func (p *Processor) SetVersioning(ctx context.Context, name string, enabled bool
 // lives in internal/policies (T3.2). Until that package lands this method
 // returns a typed 501 so the REST layer can wire the route without lying
 // about the feature being live.
-func (p *Processor) SetPublicAccess(ctx context.Context, name, mode, confirmName string) error {
+func (p *Processor) SetPublicAccess(ctx context.Context, name, mode, confirmName, actor, sourceIP string) error {
+	auditPayload := map[string]any{"name": name, "mode": mode}
+	failAudit := func(err error) error {
+		p.recordAudit(ctx, audit.Event{
+			Actor:          actor,
+			SourceIP:       sourceIP,
+			Action:         audit.ActionBucketPublicUpdate,
+			TargetType:     "bucket",
+			TargetID:       name,
+			Outcome:        audit.OutcomeFailure,
+			ErrorMessage:   err.Error(),
+			PayloadSummary: auditPayload,
+		})
+		return err
+	}
 	if err := ValidateBucketName(name); err != nil {
-		return apierror.New(http.StatusBadRequest, "bucket_invalid_name", err.Error())
+		return failAudit(apierror.New(http.StatusBadRequest, "bucket_invalid_name", err.Error()))
 	}
 	pa := PublicAccess(mode)
 	switch pa {
 	case PublicAccessPrivate, PublicAccessPublicRead, PublicAccessPublicReadWrite:
 	default:
-		return apierror.New(http.StatusBadRequest, "public_access_invalid",
-			fmt.Sprintf("mode must be one of: private, public-read, public-read-write (got %q)", mode))
+		return failAudit(apierror.New(http.StatusBadRequest, "public_access_invalid",
+			fmt.Sprintf("mode must be one of: private, public-read, public-read-write (got %q)", mode)))
 	}
 	// Per api-contracts.md §buckets/{name}/public-access: confirm_name is
 	// required when transitioning into public-read-write (the write-allowing
 	// mode); private and public-read transitions accept an empty/missing
 	// confirm_name. Mismatch is 403 per the global error table.
 	if pa == PublicAccessPublicReadWrite && name != confirmName {
-		return apierror.New(http.StatusForbidden, "confirm_name_mismatch",
-			"confirm_name must equal the bucket name when granting public-read-write access")
+		return failAudit(apierror.New(http.StatusForbidden, "confirm_name_mismatch",
+			"confirm_name must equal the bucket name when granting public-read-write access"))
 	}
 	_, s3, err := p.clients(ctx)
 	if err != nil {
-		return err
+		return failAudit(err)
 	}
 	policyJSON, perr := policies.BucketPolicyFor(name, string(pa))
 	if perr != nil {
-		return apierror.New(http.StatusBadRequest, "public_access_invalid", perr.Error())
+		return failAudit(apierror.New(http.StatusBadRequest, "public_access_invalid", perr.Error()))
 	}
 	if err := applyPolicy(ctx, s3, name, policyJSON); err != nil {
-		return apierror.Internal(err.Error())
+		return failAudit(apierror.Internal(err.Error()))
 	}
+	p.recordAudit(ctx, audit.Event{
+		Actor:          actor,
+		SourceIP:       sourceIP,
+		Action:         audit.ActionBucketPublicUpdate,
+		TargetType:     "bucket",
+		TargetID:       name,
+		Outcome:        audit.OutcomeSuccess,
+		PayloadSummary: auditPayload,
+	})
 	return nil
 }
 
@@ -455,38 +636,61 @@ func (p *Processor) SetPublicAccess(ctx context.Context, name, mode, confirmName
 // that a FIFO quota requires versioning to be disabled — otherwise the
 // FIFO eviction loop (T3.21) would generate an unbounded chain of delete
 // markers.
-func (p *Processor) SetQuota(ctx context.Context, name string, kind QuotaKind, bytes int64) error {
+func (p *Processor) SetQuota(ctx context.Context, name string, kind QuotaKind, bytes int64, actor, sourceIP string) error {
+	auditPayload := map[string]any{"name": name, "kind": string(kind), "bytes": bytes}
+	failAudit := func(err error) error {
+		p.recordAudit(ctx, audit.Event{
+			Actor:          actor,
+			SourceIP:       sourceIP,
+			Action:         audit.ActionBucketQuotaUpdate,
+			TargetType:     "bucket",
+			TargetID:       name,
+			Outcome:        audit.OutcomeFailure,
+			ErrorMessage:   err.Error(),
+			PayloadSummary: auditPayload,
+		})
+		return err
+	}
 	if err := ValidateBucketName(name); err != nil {
-		return apierror.New(http.StatusBadRequest, "bucket_invalid_name", err.Error())
+		return failAudit(apierror.New(http.StatusBadRequest, "bucket_invalid_name", err.Error()))
 	}
 	switch kind {
 	case QuotaKindHard, QuotaKindFifo:
 	default:
-		return apierror.New(http.StatusBadRequest, "quota_kind_invalid",
-			fmt.Sprintf("kind must be 'hard' or 'fifo' (got %q)", kind))
+		return failAudit(apierror.New(http.StatusBadRequest, "quota_kind_invalid",
+			fmt.Sprintf("kind must be 'hard' or 'fifo' (got %q)", kind)))
 	}
 	if bytes < 0 {
-		return apierror.New(http.StatusBadRequest, "quota_bytes_invalid",
-			"bytes must be >= 0 (use 0 to clear the quota)")
+		return failAudit(apierror.New(http.StatusBadRequest, "quota_bytes_invalid",
+			"bytes must be >= 0 (use 0 to clear the quota)"))
 	}
 	adm, s3, err := p.clients(ctx)
 	if err != nil {
-		return err
+		return failAudit(err)
 	}
 	if kind == QuotaKindFifo {
 		ver, err := s3.GetBucketVersioning(ctx, name)
 		if err != nil {
-			return mapClientError(err, "failed to read bucket versioning")
+			return failAudit(mapClientError(err, "failed to read bucket versioning"))
 		}
 		if versioningEnabled(ver) {
-			return apierror.New(http.StatusUnprocessableEntity,
+			return failAudit(apierror.New(http.StatusUnprocessableEntity,
 				"fifo_requires_versioning_off",
-				"FIFO quota requires versioning to be disabled")
+				"FIFO quota requires versioning to be disabled"))
 		}
 	}
 	if err := applyQuota(ctx, adm, name, kind, bytes); err != nil {
-		return apierror.Internal(err.Error())
+		return failAudit(apierror.Internal(err.Error()))
 	}
+	p.recordAudit(ctx, audit.Event{
+		Actor:          actor,
+		SourceIP:       sourceIP,
+		Action:         audit.ActionBucketQuotaUpdate,
+		TargetType:     "bucket",
+		TargetID:       name,
+		Outcome:        audit.OutcomeSuccess,
+		PayloadSummary: auditPayload,
+	})
 	return nil
 }
 

@@ -116,24 +116,30 @@ func runServe(ctx context.Context, _ io.Writer) error {
 
 	emptyService := bucketempty.New(gdb, pool, bucketAudit)
 	emptyHandler := &buckets.EmptyHandler{Service: emptyService}
-	bucketProc := buckets.NewProcessor(newBucketClientGetter(pool)).WithLogger(logger)
 
-	// --- objects (T3.11) ---------------------------------------------------
+	// --- lifecycle (T3.13 + T3.23) ----------------------------------------
+	// Lifecycle is constructed BEFORE buckets so the bucket processor can
+	// take a LifecycleCreator handle for the template-on-create path
+	// (T3.21). Audit wiring (T3.23) goes on both.
+	lifecycleProc := lifecycle.NewProcessor(newLifecycleClientGetter(pool)).
+		WithLogger(logger).
+		WithAudit(auditProc)
+
+	bucketProc := buckets.NewProcessor(newBucketClientGetter(pool)).
+		WithLogger(logger).
+		WithAudit(auditProc).
+		WithLifecycle(bucketLifecycleAdapter{lc: lifecycleProc})
+
+	// --- objects (T3.11 + T3.23) ------------------------------------------
 	// The object processor reads its byte/TTL/mode knobs from the same
 	// config struct everything else uses, then bolts onto the pool via the
-	// sibling adapter in audit_adapter.go. Audit wiring is deferred to
-	// T3.23; the processor exposes a WithAudit slot we'll fill there.
+	// sibling adapter in audit_adapter.go. T3.23 wires the audit handle so
+	// the object handlers emit per-action rows.
 	objectsProc := objects.NewProcessor(newObjectClientGetter(pool), objects.ProcessorConfig{
 		UploadMaxBytes:    cfg.UploadMaxBytes,
 		ShareLinkMaxTTL:   cfg.ShareLinkMaxTTL,
 		DownloadProxyMode: cfg.DownloadProxyMode,
-	}).WithLogger(logger)
-
-	// --- lifecycle (T3.13) -------------------------------------------------
-	// The lifecycle-rules domain owns /buckets/{name}/lifecycle-rules; it
-	// merges into MinIO's existing bucket lifecycle config via the sibling
-	// adapter in audit_adapter.go. Audit wiring is deferred to T3.23.
-	lifecycleProc := lifecycle.NewProcessor(newLifecycleClientGetter(pool)).WithLogger(logger)
+	}).WithLogger(logger).WithAudit(auditProc)
 
 	style := apierror.StyleAction
 	csrfCookieName := "harbormaster_csrf"

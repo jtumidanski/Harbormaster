@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -13,8 +14,25 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/jtumidanski/Harbormaster/internal/apierror"
+	"github.com/jtumidanski/Harbormaster/internal/auth"
 	"github.com/jtumidanski/Harbormaster/internal/jsonapi"
 )
+
+// actorFromRequest pulls the authenticated username and source IP off the
+// session context populated by auth.RequireSession. Falls back to the raw
+// remote address when no session is attached (defence in depth — these
+// routes are mounted behind RequireSession, so the empty-actor path is
+// only exercised in tests that drive the handler directly).
+func actorFromRequest(r *http.Request) (string, string) {
+	if si, ok := auth.FromContext(r.Context()); ok {
+		return si.Username, si.SourceIP
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	return "", host
+}
 
 // Routes returns a chi sub-router function that mounts the object
 // endpoints under whatever parent path the caller picks. The intended
@@ -157,7 +175,8 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 	limited := http.MaxBytesReader(w, io.NopCloser(file), cap)
 	defer limited.Close()
 
-	entry, err := h.p.Upload(r.Context(), bucket, key, limited, contentType)
+	actor, ip := actorFromRequest(r)
+	entry, err := h.p.Upload(r.Context(), bucket, key, limited, contentType, actor, ip)
 	if err != nil {
 		if isMaxBytesError(err) {
 			apierror.Write(w, apierror.StyleJSONAPI, apierror.New(
@@ -187,7 +206,8 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
 	bucket := chi.URLParam(r, "bucket")
 	key := r.URL.Query().Get("key")
-	if err := h.p.Delete(r.Context(), bucket, key); err != nil {
+	actor, ip := actorFromRequest(r)
+	if err := h.p.Delete(r.Context(), bucket, key, actor, ip); err != nil {
 		apierror.Write(w, apierror.StyleAction, err)
 		return
 	}
@@ -217,7 +237,8 @@ func (h *handler) download(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTemporaryRedirect)
 	default:
 		// "proxy" (and any unrecognised value as a safe default).
-		rc, entry, err := h.p.Download(r.Context(), bucket, key)
+		actor, ip := actorFromRequest(r)
+		rc, entry, err := h.p.Download(r.Context(), bucket, key, actor, ip)
 		if err != nil {
 			apierror.Write(w, apierror.StyleAction, err)
 			return
@@ -252,7 +273,8 @@ func (h *handler) shareLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sl, err := h.p.MintShareLink(r.Context(), bucket, body.Key, body.ExpiresSeconds)
+	actor, ip := actorFromRequest(r)
+	sl, err := h.p.MintShareLink(r.Context(), bucket, body.Key, body.ExpiresSeconds, actor, ip)
 	if err != nil {
 		apierror.Write(w, apierror.StyleJSONAPI, err)
 		return

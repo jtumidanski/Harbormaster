@@ -1,13 +1,29 @@
 package lifecycle
 
 import (
+	"net"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/jtumidanski/Harbormaster/internal/apierror"
+	"github.com/jtumidanski/Harbormaster/internal/auth"
 	"github.com/jtumidanski/Harbormaster/internal/jsonapi"
 )
+
+// actorFromRequest pulls the authenticated username and source IP off the
+// session context populated by auth.RequireSession. Falls back to the raw
+// remote address when no session is attached.
+func actorFromRequest(r *http.Request) (string, string) {
+	if si, ok := auth.FromContext(r.Context()); ok {
+		return si.Username, si.SourceIP
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	return "", host
+}
 
 // Routes returns a chi sub-router function that mounts the
 // lifecycle-rule endpoints under whatever parent path the caller
@@ -81,7 +97,8 @@ func (h *handler) create(w http.ResponseWriter, r *http.Request) {
 			"only kind=\"expiration\" is supported").WithPointer("/data/attributes/kind"))
 		return
 	}
-	rule, err := h.p.Create(r.Context(), bucket, attrs.Days, attrs.Prefix)
+	actor, ip := actorFromRequest(r)
+	rule, err := h.p.Create(r.Context(), bucket, attrs.Days, attrs.Prefix, actor, ip)
 	if err != nil {
 		apierror.Write(w, apierror.StyleJSONAPI, err)
 		return
@@ -97,7 +114,8 @@ func (h *handler) create(w http.ResponseWriter, r *http.Request) {
 func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
 	bucket := chi.URLParam(r, "name")
 	ruleID := chi.URLParam(r, "rule_id")
-	if err := h.p.Delete(r.Context(), bucket, ruleID); err != nil {
+	actor, ip := actorFromRequest(r)
+	if err := h.p.Delete(r.Context(), bucket, ruleID, actor, ip); err != nil {
 		apierror.Write(w, apierror.StyleJSONAPI, err)
 		return
 	}

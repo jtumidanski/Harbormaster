@@ -93,6 +93,15 @@ func (p *Processor) WithAudit(a *audit.Processor) *Processor {
 	return p
 }
 
+// recordAudit is a nil-safe helper. Audit writes are best-effort and
+// must never surface to the operator's foreground operation.
+func (p *Processor) recordAudit(ctx context.Context, e audit.Event) {
+	if p.Audit == nil {
+		return
+	}
+	_ = p.Audit.Record(ctx, e)
+}
+
 // List returns the classified rule set currently attached to bucket.
 // A bucket with no lifecycle config returns an empty slice and a nil
 // error — MinIO reports the absence via the typed
@@ -131,23 +140,42 @@ func (p *Processor) List(ctx context.Context, bucket string) ([]Rule, error) {
 // The processor enforces the operator-facing constraint (days > 0) up
 // front; the wire layer enforces kind=="expiration" because it's the
 // only managed kind v1 accepts.
-func (p *Processor) Create(ctx context.Context, bucket string, days int, prefix string) (Rule, error) {
+func (p *Processor) Create(ctx context.Context, bucket string, days int, prefix, actor, sourceIP string) (Rule, error) {
+	id := generateRuleID(days, prefix)
+	payload := map[string]any{
+		"bucket":  bucket,
+		"rule_id": id,
+		"days":    days,
+		"prefix":  prefix,
+	}
+	failAudit := func(err error) error {
+		p.recordAudit(ctx, audit.Event{
+			Actor:          actor,
+			SourceIP:       sourceIP,
+			Action:         audit.ActionLifecycleRuleCreate,
+			TargetType:     "bucket",
+			TargetID:       bucket,
+			Outcome:        audit.OutcomeFailure,
+			ErrorMessage:   err.Error(),
+			PayloadSummary: payload,
+		})
+		return err
+	}
 	if err := validateDays(days); err != nil {
-		return Rule{}, apierror.New(http.StatusUnprocessableEntity,
-			"invalid_lifecycle_rule", err.Error()).WithPointer("/data/attributes/days")
+		return Rule{}, failAudit(apierror.New(http.StatusUnprocessableEntity,
+			"invalid_lifecycle_rule", err.Error()).WithPointer("/data/attributes/days"))
 	}
 	s3, err := p.clients(ctx)
 	if err != nil {
-		return Rule{}, err
+		return Rule{}, failAudit(err)
 	}
 	cfg, err := s3.GetBucketLifecycle(ctx, bucket)
 	if err != nil && !isNoSuchLifecycleConfiguration(err) {
-		return Rule{}, mapClientError(err, "failed to load lifecycle configuration")
+		return Rule{}, failAudit(mapClientError(err, "failed to load lifecycle configuration"))
 	}
 	if cfg == nil {
 		cfg = mlifecycle.NewConfiguration()
 	}
-	id := generateRuleID(days, prefix)
 	newRule := mlifecycle.Rule{
 		ID:     id,
 		Status: "Enabled",
@@ -160,9 +188,17 @@ func (p *Processor) Create(ctx context.Context, bucket string, days int, prefix 
 	}
 	cfg.Rules = upsertRule(cfg.Rules, newRule)
 	if err := s3.SetBucketLifecycle(ctx, bucket, cfg); err != nil {
-		return Rule{}, mapClientError(err, "failed to save lifecycle configuration")
+		return Rule{}, failAudit(mapClientError(err, "failed to save lifecycle configuration"))
 	}
-	// TODO(T3.23): audit lifecycle.rule.create {bucket, rule_id, days, prefix}.
+	p.recordAudit(ctx, audit.Event{
+		Actor:          actor,
+		SourceIP:       sourceIP,
+		Action:         audit.ActionLifecycleRuleCreate,
+		TargetType:     "bucket",
+		TargetID:       bucket,
+		Outcome:        audit.OutcomeSuccess,
+		PayloadSummary: payload,
+	})
 	return classify(newRule), nil
 }
 
@@ -173,30 +209,55 @@ func (p *Processor) Create(ctx context.Context, bucket string, days int, prefix 
 // already true" is success. Removing the last rule clears the config
 // (SetBucketLifecycle calls removeBucketLifecycle when the config is
 // empty), so the bucket returns to the "no lifecycle" state cleanly.
-func (p *Processor) Delete(ctx context.Context, bucket, ruleID string) error {
+func (p *Processor) Delete(ctx context.Context, bucket, ruleID, actor, sourceIP string) error {
+	payload := map[string]any{"bucket": bucket, "rule_id": ruleID}
+	failAudit := func(err error) error {
+		p.recordAudit(ctx, audit.Event{
+			Actor:          actor,
+			SourceIP:       sourceIP,
+			Action:         audit.ActionLifecycleRuleDelete,
+			TargetType:     "bucket",
+			TargetID:       bucket,
+			Outcome:        audit.OutcomeFailure,
+			ErrorMessage:   err.Error(),
+			PayloadSummary: payload,
+		})
+		return err
+	}
 	s3, err := p.clients(ctx)
 	if err != nil {
-		return err
+		return failAudit(err)
 	}
 	cfg, err := s3.GetBucketLifecycle(ctx, bucket)
 	if err != nil {
 		if isNoSuchLifecycleConfiguration(err) {
+			// No-op for idempotent double-DELETE; do not emit an audit
+			// row because no state changed.
 			return nil
 		}
-		return mapClientError(err, "failed to load lifecycle configuration")
+		return failAudit(mapClientError(err, "failed to load lifecycle configuration"))
 	}
 	if cfg == nil {
 		return nil
 	}
 	filtered, removed := removeRule(cfg.Rules, ruleID)
 	if !removed {
+		// Idempotent no-op (rule already absent); do not emit audit.
 		return nil
 	}
 	cfg.Rules = filtered
 	if err := s3.SetBucketLifecycle(ctx, bucket, cfg); err != nil {
-		return mapClientError(err, "failed to save lifecycle configuration")
+		return failAudit(mapClientError(err, "failed to save lifecycle configuration"))
 	}
-	// TODO(T3.23): audit lifecycle.rule.delete {bucket, rule_id}.
+	p.recordAudit(ctx, audit.Event{
+		Actor:          actor,
+		SourceIP:       sourceIP,
+		Action:         audit.ActionLifecycleRuleDelete,
+		TargetType:     "bucket",
+		TargetID:       bucket,
+		Outcome:        audit.OutcomeSuccess,
+		PayloadSummary: payload,
+	})
 	return nil
 }
 

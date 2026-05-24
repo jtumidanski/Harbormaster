@@ -157,6 +157,15 @@ func (p *Processor) WithAudit(a *audit.Processor) *Processor {
 	return p
 }
 
+// recordAudit is a nil-safe helper. Audit writes are best-effort and must
+// never surface to the operator's foreground operation.
+func (p *Processor) recordAudit(ctx context.Context, e audit.Event) {
+	if p.Audit == nil {
+		return
+	}
+	_ = p.Audit.Record(ctx, e)
+}
+
 // List returns one page of objects under prefix inside bucket. delimiter
 // is forwarded verbatim — "/" produces the directory-style view with
 // CommonPrefixes populated; the empty string returns a flat key listing.
@@ -202,37 +211,82 @@ func (p *Processor) List(ctx context.Context, bucket, prefix, delimiter string, 
 // On success the returned Entry mirrors the UploadInfo MinIO sent back
 // (key, size, etag, last-modified) with the request-supplied
 // content-type threaded through.
-func (p *Processor) Upload(ctx context.Context, bucket, key string, body io.Reader, contentType string) (Entry, error) {
+func (p *Processor) Upload(ctx context.Context, bucket, key string, body io.Reader, contentType, actor, sourceIP string) (Entry, error) {
+	payload := map[string]any{"bucket": bucket, "key": key}
+	failAudit := func(err error) error {
+		p.recordAudit(ctx, audit.Event{
+			Actor:          actor,
+			SourceIP:       sourceIP,
+			Action:         audit.ActionObjectUpload,
+			TargetType:     "object",
+			TargetID:       bucket + "/" + key,
+			Outcome:        audit.OutcomeFailure,
+			ErrorMessage:   err.Error(),
+			PayloadSummary: payload,
+		})
+		return err
+	}
 	if err := ValidateObjectKey(key); err != nil {
-		return Entry{}, apierror.New(http.StatusBadRequest, "object_invalid_key", err.Error())
+		return Entry{}, failAudit(apierror.New(http.StatusBadRequest, "object_invalid_key", err.Error()))
 	}
 	s3, err := p.clients(ctx)
 	if err != nil {
-		return Entry{}, err
+		return Entry{}, failAudit(err)
 	}
 	info, err := putObject(ctx, s3, bucket, key, body, -1, contentType)
 	if err != nil {
-		return Entry{}, mapClientError(err, "failed to upload object")
+		return Entry{}, failAudit(mapClientError(err, "failed to upload object"))
 	}
-	// TODO(T3.23): audit object.upload {bucket, key, size}.
+	payload["size"] = info.Size
+	p.recordAudit(ctx, audit.Event{
+		Actor:          actor,
+		SourceIP:       sourceIP,
+		Action:         audit.ActionObjectUpload,
+		TargetType:     "object",
+		TargetID:       bucket + "/" + key,
+		Outcome:        audit.OutcomeSuccess,
+		PayloadSummary: payload,
+	})
 	return entryFromUploadInfo(info, contentType), nil
 }
 
 // Delete removes bucket/key. Returns nil on success; a transport error
 // is mapped through the standard 502 envelope. The REST layer surfaces
 // success as 204 No Content.
-func (p *Processor) Delete(ctx context.Context, bucket, key string) error {
+func (p *Processor) Delete(ctx context.Context, bucket, key, actor, sourceIP string) error {
+	payload := map[string]any{"bucket": bucket, "key": key}
+	failAudit := func(err error) error {
+		p.recordAudit(ctx, audit.Event{
+			Actor:          actor,
+			SourceIP:       sourceIP,
+			Action:         audit.ActionObjectDelete,
+			TargetType:     "object",
+			TargetID:       bucket + "/" + key,
+			Outcome:        audit.OutcomeFailure,
+			ErrorMessage:   err.Error(),
+			PayloadSummary: payload,
+		})
+		return err
+	}
 	if err := ValidateObjectKey(key); err != nil {
-		return apierror.New(http.StatusBadRequest, "object_invalid_key", err.Error())
+		return failAudit(apierror.New(http.StatusBadRequest, "object_invalid_key", err.Error()))
 	}
 	s3, err := p.clients(ctx)
 	if err != nil {
-		return err
+		return failAudit(err)
 	}
 	if err := removeObject(ctx, s3, bucket, key); err != nil {
-		return mapClientError(err, "failed to delete object")
+		return failAudit(mapClientError(err, "failed to delete object"))
 	}
-	// TODO(T3.23): audit object.delete {bucket, key}.
+	p.recordAudit(ctx, audit.Event{
+		Actor:          actor,
+		SourceIP:       sourceIP,
+		Action:         audit.ActionObjectDelete,
+		TargetType:     "object",
+		TargetID:       bucket + "/" + key,
+		Outcome:        audit.OutcomeSuccess,
+		PayloadSummary: payload,
+	})
 	return nil
 }
 
@@ -244,25 +298,52 @@ func (p *Processor) Delete(ctx context.Context, bucket, key string) error {
 //
 // This is the proxy-mode path. The direct-mode path uses PresignedURL
 // instead.
-func (p *Processor) Download(ctx context.Context, bucket, key string) (io.ReadCloser, Entry, error) {
+func (p *Processor) Download(ctx context.Context, bucket, key, actor, sourceIP string) (io.ReadCloser, Entry, error) {
+	payload := map[string]any{"bucket": bucket, "key": key}
+	failAudit := func(err error) error {
+		p.recordAudit(ctx, audit.Event{
+			Actor:          actor,
+			SourceIP:       sourceIP,
+			Action:         audit.ActionObjectDownloadProxy,
+			TargetType:     "object",
+			TargetID:       bucket + "/" + key,
+			Outcome:        audit.OutcomeFailure,
+			ErrorMessage:   err.Error(),
+			PayloadSummary: payload,
+		})
+		return err
+	}
 	if err := ValidateObjectKey(key); err != nil {
-		return nil, Entry{}, apierror.New(http.StatusBadRequest, "object_invalid_key", err.Error())
+		return nil, Entry{}, failAudit(apierror.New(http.StatusBadRequest, "object_invalid_key", err.Error()))
 	}
 	s3, err := p.clients(ctx)
 	if err != nil {
-		return nil, Entry{}, err
+		return nil, Entry{}, failAudit(err)
 	}
 	// Stat first so an unknown key surfaces as a typed envelope before
 	// we open the (potentially large) body stream.
 	info, err := statObject(ctx, s3, bucket, key)
 	if err != nil {
-		return nil, Entry{}, mapClientError(err, "failed to stat object")
+		return nil, Entry{}, failAudit(mapClientError(err, "failed to stat object"))
 	}
 	rc, err := getObject(ctx, s3, bucket, key)
 	if err != nil {
-		return nil, Entry{}, mapClientError(err, "failed to open object stream")
+		return nil, Entry{}, failAudit(mapClientError(err, "failed to open object stream"))
 	}
-	// TODO(T3.23): audit object.download_proxy {bucket, key, size}.
+	// Success is recorded once the stream successfully opens. Per the M3
+	// audit contract this represents "proxy mode, on successful
+	// completion" — a stat+open success is the strongest signal the
+	// processor has; a mid-stream copy failure would be visible in the
+	// resource layer's access log, not the audit log.
+	p.recordAudit(ctx, audit.Event{
+		Actor:          actor,
+		SourceIP:       sourceIP,
+		Action:         audit.ActionObjectDownloadProxy,
+		TargetType:     "object",
+		TargetID:       bucket + "/" + key,
+		Outcome:        audit.OutcomeSuccess,
+		PayloadSummary: payload,
+	})
 	return rc, entryFromObjectInfo(info), nil
 }
 
@@ -299,7 +380,7 @@ func (p *Processor) PresignedURL(ctx context.Context, bucket, key string, ttl ti
 // disposition so the browser downloads (rather than navigates to) the
 // file when the link is opened. The basename is derived from the key's
 // last path segment.
-func (p *Processor) MintShareLink(ctx context.Context, bucket, key string, expiresSeconds int) (ShareLink, error) {
+func (p *Processor) MintShareLink(ctx context.Context, bucket, key string, expiresSeconds int, actor, sourceIP string) (ShareLink, error) {
 	if err := ValidateObjectKey(key); err != nil {
 		return ShareLink{}, apierror.New(http.StatusBadRequest, "object_invalid_key", err.Error())
 	}
@@ -320,9 +401,26 @@ func (p *Processor) MintShareLink(ctx context.Context, bucket, key string, expir
 	if err != nil {
 		return ShareLink{}, mapClientError(err, "failed to mint share link")
 	}
-	// TODO(T3.23): audit object.share_link.create {bucket, key,
-	// expires_seconds: int(ttl.Seconds())} — never include u.String().
-	// The audit sanitize layer drops URL fields defensively too.
+	// Audit policy (M3): record only success — failures here are
+	// already either validation (caught above) or transport, which
+	// surface in the access log. The payload carries the clamped TTL
+	// (not the request value) so operators see what was actually minted.
+	// The minted URL is NEVER persisted: audit.Sanitize drops any key
+	// matching `url` defensively, and we don't include u.String() in
+	// the payload regardless.
+	p.recordAudit(ctx, audit.Event{
+		Actor:      actor,
+		SourceIP:   sourceIP,
+		Action:     audit.ActionObjectShareLinkCreate,
+		TargetType: "object",
+		TargetID:   bucket + "/" + key,
+		Outcome:    audit.OutcomeSuccess,
+		PayloadSummary: map[string]any{
+			"bucket":          bucket,
+			"key":             key,
+			"expires_seconds": int(ttl.Seconds()),
+		},
+	})
 	return ShareLink{URL: u.String(), ExpiresAt: time.Now().Add(ttl).UTC()}, nil
 }
 

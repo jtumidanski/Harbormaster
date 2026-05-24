@@ -95,7 +95,7 @@ func TestProcessorCreate_MergesIntoExisting(t *testing.T) {
 	}
 	p, s := newTestProcessor(t, &stubS3{getCfg: existing})
 
-	rule, err := p.Create(context.Background(), "b", 14, "uploads/")
+	rule, err := p.Create(context.Background(), "b", 14, "uploads/", "", "")
 	if err != nil {
 		t.Fatalf("Create(): unexpected err %v", err)
 	}
@@ -138,7 +138,7 @@ func TestProcessorCreate_ReplacesByID(t *testing.T) {
 		},
 	}
 	p, s := newTestProcessor(t, &stubS3{getCfg: existing})
-	if _, err := p.Create(context.Background(), "b", 7, ""); err != nil {
+	if _, err := p.Create(context.Background(), "b", 7, "", "", ""); err != nil {
 		t.Fatalf("Create(): unexpected err %v", err)
 	}
 	if len(s.setCalls) != 1 {
@@ -157,7 +157,7 @@ func TestProcessorCreate_ReplacesByID(t *testing.T) {
 func TestProcessorCreate_NoExistingConfig(t *testing.T) {
 	t.Parallel()
 	p, s := newTestProcessor(t, &stubS3{getErr: errNoSuchLifecycle})
-	if _, err := p.Create(context.Background(), "b", 5, ""); err != nil {
+	if _, err := p.Create(context.Background(), "b", 5, "", "", ""); err != nil {
 		t.Fatalf("Create(): unexpected err %v", err)
 	}
 	if len(s.setCalls) != 1 {
@@ -175,7 +175,7 @@ func TestProcessorCreate_NoExistingConfig(t *testing.T) {
 func TestProcessorCreate_InvalidDays(t *testing.T) {
 	t.Parallel()
 	p, s := newTestProcessor(t, nil)
-	_, err := p.Create(context.Background(), "b", 0, "")
+	_, err := p.Create(context.Background(), "b", 0, "", "", "")
 	if err == nil {
 		t.Fatal("Create(days=0): want error; got nil")
 	}
@@ -202,7 +202,7 @@ func TestProcessorDelete_RemovesByID(t *testing.T) {
 		{ID: "drop-me", Status: "Enabled"},
 	}
 	p, s := newTestProcessor(t, &stubS3{getCfg: cfg})
-	if err := p.Delete(context.Background(), "b", "drop-me"); err != nil {
+	if err := p.Delete(context.Background(), "b", "drop-me", "", ""); err != nil {
 		t.Fatalf("Delete(): unexpected err %v", err)
 	}
 	if len(s.setCalls) != 1 {
@@ -225,7 +225,7 @@ func TestProcessorDelete_MissingRuleIsNoop(t *testing.T) {
 		{ID: "keep-me", Status: "Enabled"},
 	}
 	p, s := newTestProcessor(t, &stubS3{getCfg: cfg})
-	if err := p.Delete(context.Background(), "b", "ghost"); err != nil {
+	if err := p.Delete(context.Background(), "b", "ghost", "", ""); err != nil {
 		t.Fatalf("Delete(): unexpected err %v", err)
 	}
 	if len(s.setCalls) != 0 {
@@ -240,7 +240,7 @@ func TestProcessorDelete_MissingRuleIsNoop(t *testing.T) {
 func TestProcessorDelete_NoLifecycleConfig(t *testing.T) {
 	t.Parallel()
 	p, s := newTestProcessor(t, &stubS3{getErr: errNoSuchLifecycle})
-	if err := p.Delete(context.Background(), "b", "anything"); err != nil {
+	if err := p.Delete(context.Background(), "b", "anything", "", ""); err != nil {
 		t.Fatalf("Delete(): unexpected err %v", err)
 	}
 	if len(s.setCalls) != 0 {

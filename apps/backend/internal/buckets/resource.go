@@ -3,13 +3,31 @@ package buckets
 import (
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/jtumidanski/Harbormaster/internal/apierror"
+	"github.com/jtumidanski/Harbormaster/internal/auth"
 	"github.com/jtumidanski/Harbormaster/internal/jsonapi"
 )
+
+// actorFromRequest pulls the authenticated username and source IP off the
+// session context populated by auth.RequireSession. Falls back to the raw
+// remote address when no session is attached (defence in depth — these
+// routes are mounted behind RequireSession, so the empty-actor path is
+// only exercised in tests that drive the handler directly).
+func actorFromRequest(r *http.Request) (string, string) {
+	if si, ok := auth.FromContext(r.Context()); ok {
+		return si.Username, si.SourceIP
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	return "", host
+}
 
 // Routes returns a chi sub-router function that mounts the bucket
 // endpoints under whatever parent path the caller picks.
@@ -88,7 +106,8 @@ func (h *handler) create(w http.ResponseWriter, r *http.Request) {
 			"invalid_bucket_name", err.Error()).WithPointer("/data/attributes/name"))
 		return
 	}
-	bucket, err := h.p.Create(r.Context(), attrs.Name, attrs.ToOpts())
+	actor, ip := actorFromRequest(r)
+	bucket, err := h.p.Create(r.Context(), attrs.Name, attrs.ToOpts(), actor, ip)
 	if err != nil {
 		apierror.Write(w, apierror.StyleJSONAPI, mapInvalidNameCode(err))
 		return
@@ -121,7 +140,8 @@ func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
 			"bad_request", "Invalid JSON body"))
 		return
 	}
-	if err := h.p.Delete(r.Context(), name, body.ConfirmName); err != nil {
+	actor, ip := actorFromRequest(r)
+	if err := h.p.Delete(r.Context(), name, body.ConfirmName, actor, ip); err != nil {
 		apierror.Write(w, apierror.StyleAction, mapInvalidNameCode(err))
 		return
 	}
@@ -138,7 +158,8 @@ func (h *handler) setVersioning(w http.ResponseWriter, r *http.Request) {
 			"bad_request", "Invalid JSON body"))
 		return
 	}
-	if err := h.p.SetVersioning(r.Context(), name, body.Enabled); err != nil {
+	actor, ip := actorFromRequest(r)
+	if err := h.p.SetVersioning(r.Context(), name, body.Enabled, actor, ip); err != nil {
 		apierror.Write(w, apierror.StyleAction, mapInvalidNameCode(err))
 		return
 	}
@@ -156,7 +177,8 @@ func (h *handler) setPublicAccess(w http.ResponseWriter, r *http.Request) {
 			"bad_request", "Invalid JSON body"))
 		return
 	}
-	if err := h.p.SetPublicAccess(r.Context(), name, body.Mode, body.ConfirmName); err != nil {
+	actor, ip := actorFromRequest(r)
+	if err := h.p.SetPublicAccess(r.Context(), name, body.Mode, body.ConfirmName, actor, ip); err != nil {
 		apierror.Write(w, apierror.StyleAction, mapInvalidNameCode(err))
 		return
 	}
@@ -179,15 +201,16 @@ func (h *handler) setQuota(w http.ResponseWriter, r *http.Request) {
 	// implementation is "clear the quota", which applyQuota does by passing
 	// HardQuota with size=0. The processor doesn't know about "none" so we
 	// translate here.
+	actor, ip := actorFromRequest(r)
 	if body.Kind == "none" {
-		if err := h.p.SetQuota(r.Context(), name, QuotaKindHard, 0); err != nil {
+		if err := h.p.SetQuota(r.Context(), name, QuotaKindHard, 0, actor, ip); err != nil {
 			apierror.Write(w, apierror.StyleAction, mapInvalidNameCode(err))
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if err := h.p.SetQuota(r.Context(), name, QuotaKind(body.Kind), body.Bytes); err != nil {
+	if err := h.p.SetQuota(r.Context(), name, QuotaKind(body.Kind), body.Bytes, actor, ip); err != nil {
 		apierror.Write(w, apierror.StyleAction, mapInvalidNameCode(err))
 		return
 	}

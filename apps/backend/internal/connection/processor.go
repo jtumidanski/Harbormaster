@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/jtumidanski/Harbormaster/internal/apierror"
+	"github.com/jtumidanski/Harbormaster/internal/audit"
 	"github.com/jtumidanski/Harbormaster/internal/crypto"
 	minioPool "github.com/jtumidanski/Harbormaster/internal/minio"
 )
@@ -31,6 +32,7 @@ type Processor struct {
 	Cipher *crypto.Cipher
 	Pool   *minioPool.Pool
 	Probe  Prober
+	Audit  *audit.Processor // optional; nil disables audit emission
 }
 
 // NewProcessor returns a Processor with the default network probe wired up.
@@ -42,6 +44,15 @@ func NewProcessor(db *gorm.DB, c *crypto.Cipher, p *minioPool.Pool) *Processor {
 		Pool:   p,
 		Probe:  Probe,
 	}
+}
+
+// recordAudit is a nil-safe helper. Audit writes are best-effort and must
+// never surface to the operator's foreground operation.
+func (p *Processor) recordAudit(ctx context.Context, e audit.Event) {
+	if p.Audit == nil {
+		return
+	}
+	_ = p.Audit.Record(ctx, e)
 }
 
 // Validate runs the probe and returns the typed apierror as a plain error.
@@ -80,18 +91,41 @@ func (p *Processor) PersistInTx(ctx context.Context, tx *gorm.DB, in SubmitInput
 // live MinIO client pool. Pool.Rebuild happens *after* commit so a probe
 // success followed by a write failure does not leave the live pool pointing
 // at credentials that were never persisted.
-func (p *Processor) Update(ctx context.Context, in SubmitInput) error {
-	if err := p.Validate(ctx, in); err != nil {
+//
+// actor and sourceIP are stamped onto the audit row; the resource layer is
+// responsible for sourcing them from the authenticated session context.
+func (p *Processor) Update(ctx context.Context, in SubmitInput, actor, sourceIP string) error {
+	skipVerify := false
+	if in.TLSSkipVerify != nil {
+		skipVerify = *in.TLSSkipVerify
+	}
+	// The `url`-substring filter in audit.Sanitize would drop a key like
+	// "endpoint_url", so the payload uses bare "endpoint" instead. The
+	// value (a URL string) is preserved verbatim — Sanitize filters keys.
+	auditPayload := map[string]any{
+		"endpoint":          in.EndpointURL,
+		"tls_skip_verify":   skipVerify,
+		"custom_ca_pem_set": in.CustomCAPEM != "",
+	}
+	failAudit := func(err error) error {
+		p.recordAudit(ctx, audit.Event{
+			Actor:          actor,
+			SourceIP:       sourceIP,
+			Action:         audit.ActionConnectionUpdate,
+			TargetType:     "connection",
+			Outcome:        audit.OutcomeFailure,
+			ErrorMessage:   err.Error(),
+			PayloadSummary: auditPayload,
+		})
 		return err
+	}
+	if err := p.Validate(ctx, in); err != nil {
+		return failAudit(err)
 	}
 	if err := p.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return p.PersistInTx(ctx, tx, in)
 	}); err != nil {
-		return err
-	}
-	skipVerify := false
-	if in.TLSSkipVerify != nil {
-		skipVerify = *in.TLSSkipVerify
+		return failAudit(err)
 	}
 	if err := p.Pool.Rebuild(minioPool.Credentials{
 		EndpointURL:     in.EndpointURL,
@@ -104,8 +138,16 @@ func (p *Processor) Update(ctx context.Context, in SubmitInput) error {
 		// on-disk record valid but the in-process pool stale; report as
 		// an internal error so the operator retries. The next process
 		// boot will rebuild from the persisted row.
-		return apierror.Internal("failed to rebuild minio client pool: " + err.Error())
+		return failAudit(apierror.Internal("failed to rebuild minio client pool: " + err.Error()))
 	}
+	p.recordAudit(ctx, audit.Event{
+		Actor:          actor,
+		SourceIP:       sourceIP,
+		Action:         audit.ActionConnectionUpdate,
+		TargetType:     "connection",
+		Outcome:        audit.OutcomeSuccess,
+		PayloadSummary: auditPayload,
+	})
 	return nil
 }
 
@@ -133,7 +175,35 @@ func (p *Processor) Get(ctx context.Context) (Connection, error) {
 //
 // We intentionally return both so the handler can pick: api-contracts.md
 // shows a successful 200 carrying mixed-step results.
-func (p *Processor) Test(ctx context.Context, in SubmitInput) (TestResult, *apierror.Error) {
+//
+// Audit policy: success is silent (operators run the probe repeatedly during
+// setup; a row per click would drown out the signal). Only failures are
+// recorded, with the per-step outcomes summarised in the payload.
+func (p *Processor) Test(ctx context.Context, in SubmitInput, actor, sourceIP string) (TestResult, *apierror.Error) {
+	result, ae := p.runTest(ctx, in)
+	if ae != nil {
+		p.recordAudit(ctx, audit.Event{
+			Actor:        actor,
+			SourceIP:     sourceIP,
+			Action:       audit.ActionConnectionTest,
+			TargetType:   "connection",
+			Outcome:      audit.OutcomeFailure,
+			ErrorMessage: ae.Message,
+			PayloadSummary: map[string]any{
+				"endpoint":     in.EndpointURL,
+				"tcp_connect":  stepStatus(result.TCPConnect),
+				"list_buckets": stepStatus(result.ListBuckets),
+				"admin_ping":   stepStatus(result.AdminPing),
+				"reason":       ae.Code,
+			},
+		})
+	}
+	return result, ae
+}
+
+// runTest is the non-audited core of Test. Extracted so the audit hook in
+// Test can wrap a single return path.
+func (p *Processor) runTest(ctx context.Context, in SubmitInput) (TestResult, *apierror.Error) {
 	if err := validateSubmit(in); err != nil {
 		// Surface body validation as a probe failure on the TCP step.
 		var ae *apierror.Error
@@ -144,6 +214,27 @@ func (p *Processor) Test(ctx context.Context, in SubmitInput) (TestResult, *apie
 			apierror.New(http.StatusUnprocessableEntity, "minio_unreachable", err.Error())
 	}
 	return p.Probe(ctx, in)
+}
+
+// stepStatus reduces a TestResult step (either "ok", "", or
+// map[string]string{"failed": "..."}) to a short, audit-safe label. The
+// underlying error text is intentionally NOT included in the payload — that
+// belongs in the audit Event.ErrorMessage column, not the JSON summary.
+func stepStatus(v any) string {
+	switch s := v.(type) {
+	case string:
+		if s == "" {
+			return "skipped"
+		}
+		return s
+	case map[string]string:
+		if _, failed := s["failed"]; failed {
+			return "failed"
+		}
+		return "ok"
+	default:
+		return "skipped"
+	}
 }
 
 // validateSubmit enforces the minimum field set required by the probe.

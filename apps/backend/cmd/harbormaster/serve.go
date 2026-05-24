@@ -80,13 +80,13 @@ func runServe(ctx context.Context, _ io.Writer) error {
 	}
 	auditProc := audit.NewProcessor(gdb, cfg.AuditRetention)
 	go audit.StartRetentionSweeper(ctx, auditProc, 24*time.Hour)
-	_ = auditProc // TODO(T2.16): wire audit into handler middleware
 
 	// --- M2 wiring: auth, connection pool, setup --------------------------
-	authProc := auth.NewProcessor(gdb)
+	authProc := auth.NewProcessor(gdb).WithAudit(auditProc)
 	limiter := auth.NewLoginRateLimiter(5*time.Minute, 5)
 	pool := hmminio.NewEmpty()
 	connProc := connection.NewProcessor(gdb, cipher, pool)
+	connProc.Audit = auditProc
 	setupProc := &setup.Processor{
 		DB:       gdb,
 		Cipher:   cipher,

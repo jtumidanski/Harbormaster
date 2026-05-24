@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/jtumidanski/Harbormaster/internal/apierror"
+	"github.com/jtumidanski/Harbormaster/internal/audit"
 )
 
 // DefaultSessionTTL is the lifetime of a freshly issued session.
@@ -36,6 +37,7 @@ type Processor struct {
 	entropy    *ulid.MonotonicEntropy
 	csrfTokens map[string]string // sessionID -> csrf token (in-memory; rebuilt at restart)
 	csrfMu     sync.RWMutex
+	audit      *audit.Processor // optional; nil means no audit events emitted
 }
 
 // NewProcessor returns a Processor backed by db.
@@ -51,6 +53,24 @@ func NewProcessor(db *gorm.DB) *Processor {
 	p.entropy = ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0) //nolint:gosec
 	p.newID = p.newULID
 	return p
+}
+
+// WithAudit returns p with the audit processor attached. Nil-safe call sites
+// guarantee existing tests that omit audit wiring continue to compile and
+// pass. Returns the same *Processor for fluent composition.
+func (p *Processor) WithAudit(a *audit.Processor) *Processor {
+	p.audit = a
+	return p
+}
+
+// recordAudit is a nil-safe helper that swallows audit write errors. Audit
+// is a best-effort observability concern and must never fail the user's
+// foreground operation.
+func (p *Processor) recordAudit(ctx context.Context, e audit.Event) {
+	if p.audit == nil {
+		return
+	}
+	_ = p.audit.Record(ctx, e)
 }
 
 // DB exposes the underlying *gorm.DB (used by tests and middleware).
@@ -93,19 +113,34 @@ func (p *Processor) clearCSRF(sessionID string) {
 func (p *Processor) Login(ctx context.Context, username, password, ip, ua string) (string, string, error) {
 	db := p.db.WithContext(ctx)
 
+	failLogin := func(reason string) (string, string, error) {
+		p.recordAudit(ctx, audit.Event{
+			Actor:    username,
+			SourceIP: ip,
+			Action:   audit.ActionSessionLoginFailed,
+			Outcome:  audit.OutcomeFailure,
+			// payload carries only the attempted username — never the password.
+			PayloadSummary: map[string]any{
+				"username": username,
+				"reason":   reason,
+			},
+		})
+		return "", "", invalidCredentialsError()
+	}
+
 	user, err := getAdminUserByUsername(username)(db)
 	if err != nil {
 		// Still spend cycles to make timing closer to the success path; we
 		// don't bother running argon2 on a placeholder because that's the
 		// dominant cost and the rate limiter (applied at the HTTP layer)
 		// blunts the timing oracle far better than a constant-time stub.
-		return "", "", invalidCredentialsError()
+		return failLogin("unknown_user")
 	}
 	if user.DisabledAt() != nil {
-		return "", "", invalidCredentialsError()
+		return failLogin("disabled")
 	}
 	if err := VerifyPassword(user.PasswordHash(), password); err != nil {
-		return "", "", invalidCredentialsError()
+		return failLogin("bad_credentials")
 	}
 
 	now := p.now()
@@ -131,6 +166,15 @@ func (p *Processor) Login(ctx context.Context, username, password, ip, ua string
 		return "", "", apierror.Internal("failed to issue csrf token")
 	}
 	p.bindCSRF(sess.ID(), token)
+	p.recordAudit(ctx, audit.Event{
+		Actor:    user.Username(),
+		SourceIP: ip,
+		Action:   audit.ActionSessionLogin,
+		Outcome:  audit.OutcomeSuccess,
+		PayloadSummary: map[string]any{
+			"username": user.Username(),
+		},
+	})
 	return sess.ID(), token, nil
 }
 
@@ -140,10 +184,32 @@ func (p *Processor) Logout(ctx context.Context, sessionID string) error {
 	if sessionID == "" {
 		return nil
 	}
-	if err := deleteSession(p.db.WithContext(ctx), sessionID); err != nil {
+	db := p.db.WithContext(ctx)
+	// Resolve username + source IP before deleting so the audit row records
+	// the operator who performed the logout. Failure to resolve is non-fatal
+	// — we still delete the row and skip the audit emission.
+	var username, sourceIP string
+	if sess, err := getSessionByID(sessionID)(db); err == nil {
+		sourceIP = sess.SourceIP()
+		if user, uerr := getAdminUserByID(sess.AdminUserID())(db); uerr == nil {
+			username = user.Username()
+		}
+	}
+	if err := deleteSession(db, sessionID); err != nil {
 		return err
 	}
 	p.clearCSRF(sessionID)
+	if username != "" {
+		p.recordAudit(ctx, audit.Event{
+			Actor:    username,
+			SourceIP: sourceIP,
+			Action:   audit.ActionSessionLogout,
+			Outcome:  audit.OutcomeSuccess,
+			PayloadSummary: map[string]any{
+				"username": username,
+			},
+		})
+	}
 	return nil
 }
 
@@ -185,6 +251,16 @@ func (p *Processor) ChangePassword(ctx context.Context, sessionID, current, next
 		return err
 	}
 	if err := VerifyPassword(user.PasswordHash(), current); err != nil {
+		p.recordAudit(ctx, audit.Event{
+			Actor:    user.Username(),
+			SourceIP: sess.SourceIP(),
+			Action:   audit.ActionAdminPasswordChange,
+			Outcome:  audit.OutcomeFailure,
+			PayloadSummary: map[string]any{
+				"username": user.Username(),
+				"reason":   "wrong_current",
+			},
+		})
 		return invalidCredentialsError()
 	}
 	hash, err := HashPassword(next)
@@ -194,8 +270,15 @@ func (p *Processor) ChangePassword(ctx context.Context, sessionID, current, next
 	if err := updateAdminUserPassword(db, user.ID(), hash); err != nil {
 		return apierror.Internal("failed to update password")
 	}
-	// Keep the current session valid; cookie/CSRF rotation is T2.3 territory.
-	_ = sess
+	p.recordAudit(ctx, audit.Event{
+		Actor:    user.Username(),
+		SourceIP: sess.SourceIP(),
+		Action:   audit.ActionAdminPasswordChange,
+		Outcome:  audit.OutcomeSuccess,
+		PayloadSummary: map[string]any{
+			"username": user.Username(),
+		},
+	})
 	return nil
 }
 

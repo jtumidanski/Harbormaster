@@ -21,7 +21,9 @@ import (
 	"github.com/jtumidanski/Harbormaster/internal/crypto"
 	"github.com/jtumidanski/Harbormaster/internal/db"
 	"github.com/jtumidanski/Harbormaster/internal/jobs/bucketempty"
+	"github.com/jtumidanski/Harbormaster/internal/lifecycle"
 	hmminio "github.com/jtumidanski/Harbormaster/internal/minio"
+	"github.com/jtumidanski/Harbormaster/internal/objects"
 	"github.com/jtumidanski/Harbormaster/internal/observability/log"
 	"github.com/jtumidanski/Harbormaster/internal/server"
 	"github.com/jtumidanski/Harbormaster/internal/setup"
@@ -116,6 +118,23 @@ func runServe(ctx context.Context, _ io.Writer) error {
 	emptyHandler := &buckets.EmptyHandler{Service: emptyService}
 	bucketProc := buckets.NewProcessor(newBucketClientGetter(pool)).WithLogger(logger)
 
+	// --- objects (T3.11) ---------------------------------------------------
+	// The object processor reads its byte/TTL/mode knobs from the same
+	// config struct everything else uses, then bolts onto the pool via the
+	// sibling adapter in audit_adapter.go. Audit wiring is deferred to
+	// T3.23; the processor exposes a WithAudit slot we'll fill there.
+	objectsProc := objects.NewProcessor(newObjectClientGetter(pool), objects.ProcessorConfig{
+		UploadMaxBytes:    cfg.UploadMaxBytes,
+		ShareLinkMaxTTL:   cfg.ShareLinkMaxTTL,
+		DownloadProxyMode: cfg.DownloadProxyMode,
+	}).WithLogger(logger)
+
+	// --- lifecycle (T3.13) -------------------------------------------------
+	// The lifecycle-rules domain owns /buckets/{name}/lifecycle-rules; it
+	// merges into MinIO's existing bucket lifecycle config via the sibling
+	// adapter in audit_adapter.go. Audit wiring is deferred to T3.23.
+	lifecycleProc := lifecycle.NewProcessor(newLifecycleClientGetter(pool)).WithLogger(logger)
+
 	style := apierror.StyleAction
 	csrfCookieName := "harbormaster_csrf"
 
@@ -146,6 +165,14 @@ func runServe(ctx context.Context, _ io.Writer) error {
 			// endpoint is mounted under StreamingAPIRoutes below so the
 			// long-lived SSE stream is not killed by the 30s timeout.
 			buckets.Routes(bucketProc, nil)(g)
+			// T3.11: object listing/upload/delete/download + share-link
+			// minting. Mounted under the same /api/v1 protected surface;
+			// the routes self-prefix with /buckets/{bucket}/objects.
+			objects.Routes(objectsProc)(g)
+			// T3.13: lifecycle rules. Mounts /buckets/{name}/lifecycle-rules
+			// (collection list+create, single delete) under the protected
+			// API surface.
+			lifecycle.Routes(lifecycleProc)(g)
 		})
 	}
 

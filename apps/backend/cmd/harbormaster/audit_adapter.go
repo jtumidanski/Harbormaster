@@ -2,13 +2,17 @@ package main
 
 import (
 	"context"
+	"io"
 
 	madmin "github.com/minio/madmin-go/v3"
+	miniogo "github.com/minio/minio-go/v7"
 
 	"github.com/jtumidanski/Harbormaster/internal/audit"
 	"github.com/jtumidanski/Harbormaster/internal/buckets"
 	"github.com/jtumidanski/Harbormaster/internal/jobs/bucketempty"
+	"github.com/jtumidanski/Harbormaster/internal/lifecycle"
 	hmminio "github.com/jtumidanski/Harbormaster/internal/minio"
+	"github.com/jtumidanski/Harbormaster/internal/objects"
 )
 
 // bucketEmptyAuditAdapter translates the bucketempty.AuditRecorder shape
@@ -88,3 +92,75 @@ func newBucketClientGetter(pool *hmminio.Pool) buckets.ClientGetter {
 // bucketempty contract; a future signature drift fails the build here
 // instead of at runtime.
 var _ bucketempty.AuditRecorder = bucketEmptyAuditAdapter{}
+
+// objectS3Adapter wraps a *miniogo.Client so it satisfies the
+// objects.S3Client interface. ListObjectsV2 lives on miniogo.Core (which
+// embeds *Client), so we synthesise a Core value on demand and route the
+// call through it; every other method delegates to the embedded Client.
+//
+// A fresh Core literal per call is cheap — it's just a struct holding a
+// pointer — and avoids needing the Pool to retain a separate Core handle.
+type objectS3Adapter struct {
+	*miniogo.Client
+}
+
+// ListObjectsV2 routes through miniogo.Core because the high-level
+// Client.ListObjects API returns a channel and hides the continuation
+// token the paginated object-list UI needs.
+func (a objectS3Adapter) ListObjectsV2(bucket, prefix, startAfter, continuationToken, delimiter string, maxKeys int) (miniogo.ListBucketV2Result, error) {
+	core := miniogo.Core{Client: a.Client}
+	return core.ListObjectsV2(bucket, prefix, startAfter, continuationToken, delimiter, maxKeys)
+}
+
+// GetObject narrows miniogo.Client.GetObject's *miniogo.Object return
+// to the io.ReadCloser the objects.S3Client interface expects.
+// *miniogo.Object already satisfies io.ReadCloser; we just type-erase
+// it here so the package surface doesn't need to reach into miniogo.
+func (a objectS3Adapter) GetObject(ctx context.Context, bucket, object string, opts miniogo.GetObjectOptions) (io.ReadCloser, error) {
+	return a.Client.GetObject(ctx, bucket, object, opts)
+}
+
+// newObjectClientGetter returns an objects.ClientGetter bound to the live
+// MinIO pool. Each call resolves the current client, wraps it in
+// objectS3Adapter so ListObjectsV2 routes through miniogo.Core, and hands
+// the wrapper to objects.NewClientGetter which adapts the exported
+// S3Client interface onto the unexported s3API the processor consumes.
+func newObjectClientGetter(pool *hmminio.Pool) objects.ClientGetter {
+	return objects.NewClientGetter(func(ctx context.Context) (objects.S3Client, error) {
+		_, mc, err := pool.Get(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return objectS3Adapter{Client: mc}, nil
+	})
+}
+
+// lifecycleS3Adapter wraps a *miniogo.Client so it satisfies the
+// lifecycle.S3Client interface. The live client already exposes the
+// Get/Set/PutBucketLifecycle methods the lifecycle processor needs, so
+// this is a thin pass-through that pins the integration point at the
+// HTTP wiring layer (the lifecycle package never imports the pool type).
+type lifecycleS3Adapter struct {
+	*miniogo.Client
+}
+
+// newLifecycleClientGetter returns a lifecycle.ClientGetter bound to the
+// live MinIO pool. Each call resolves the current client and hands it to
+// lifecycle.NewClientGetter which adapts the exported S3Client interface
+// onto the unexported s3API used inside the package.
+func newLifecycleClientGetter(pool *hmminio.Pool) lifecycle.ClientGetter {
+	return lifecycle.NewClientGetter(func(ctx context.Context) (lifecycle.S3Client, error) {
+		_, mc, err := pool.Get(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return lifecycleS3Adapter{Client: mc}, nil
+	})
+}
+
+// Compile-time anchors keeping the adapter types in sync with their
+// destination interfaces; a future signature drift fails the build here.
+var (
+	_ objects.S3Client   = objectS3Adapter{}
+	_ lifecycle.S3Client = lifecycleS3Adapter{}
+)

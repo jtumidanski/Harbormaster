@@ -100,8 +100,19 @@ type Filter struct {
 	TargetType string
 	TargetID   string
 	Actor      string
+	Outcome    string
+	From       time.Time
+	To         time.Time
 	Since      time.Time
 	Until      time.Time
 	PageSize   int
 	PageOffset int
+}
+
+// Page is a 1-indexed pagination request. Number<1 or Size<1 is normalised
+// by the query helper (default Number=1, Size=50, capped at 200) so callers
+// can pass through unvalidated query parameters.
+type Page struct {
+	Number int
+	Size   int
 }

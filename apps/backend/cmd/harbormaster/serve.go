@@ -19,6 +19,7 @@ import (
 	"github.com/jtumidanski/Harbormaster/internal/config"
 	"github.com/jtumidanski/Harbormaster/internal/connection"
 	"github.com/jtumidanski/Harbormaster/internal/crypto"
+	"github.com/jtumidanski/Harbormaster/internal/dashboard"
 	"github.com/jtumidanski/Harbormaster/internal/db"
 	"github.com/jtumidanski/Harbormaster/internal/jobs/bucketempty"
 	"github.com/jtumidanski/Harbormaster/internal/lifecycle"
@@ -164,6 +165,17 @@ func runServe(ctx context.Context, _ io.Writer) error {
 		WithLogger(logger).
 		WithAudit(auditProc)
 
+	// --- M5 wiring: dashboard aggregator -----------------------------------
+	// The dashboard fan-out hits madmin.ServerInfo via a PoolGetter adapter
+	// (see audit_adapter.go) alongside the live buckets + audit processors.
+	// No state is shared across requests; constructing a single Processor
+	// at boot is purely to give Routes() a stable handle.
+	dashboardProc := dashboard.NewProcessor(
+		newDashboardPoolGetter(pool),
+		bucketProc,
+		auditProc,
+	)
+
 	style := apierror.StyleAction
 	csrfCookieName := "harbormaster_csrf"
 
@@ -207,6 +219,10 @@ func runServe(ctx context.Context, _ io.Writer) error {
 			// templates surface in one go; both processors share the
 			// materializer wired above.
 			users.Routes(usersProc, saProc)(g)
+			// M5: dashboard aggregate (action-style /dashboard) and
+			// audit-event query collection (JSON:API /audit-events).
+			dashboard.Routes(dashboardProc)(g)
+			audit.Routes(auditProc)(g)
 		})
 	}
 

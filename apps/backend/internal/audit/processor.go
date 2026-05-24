@@ -48,6 +48,28 @@ func (p *Processor) RetentionSweep(cutoff time.Time) (int64, error) {
 	return deleteOlderThan(p.db, cutoff)
 }
 
+// Recent returns the newest limit events ordered occurred_at DESC. A
+// non-positive limit yields a nil slice without a query.
+func (p *Processor) Recent(ctx context.Context, limit int) ([]Event, error) {
+	return recent(p.db.WithContext(ctx), limit)
+}
+
+// FailuresSince returns the count of failure-outcome events since cutoff
+// plus the most-recent limit entries. The count is the unfiltered total
+// inside the window so callers can render "N failures since X" alongside
+// a truncated entries[] slice.
+func (p *Processor) FailuresSince(ctx context.Context, cutoff time.Time, limit int) (int64, []Event, error) {
+	return failuresSince(p.db.WithContext(ctx), cutoff, limit)
+}
+
+// List returns events matching f, paginated per page, in occurred_at DESC
+// order. The second return value is the unfiltered-by-page total so the
+// caller can populate page meta (total_pages / total_records). Page
+// number<1 / size<1 are normalised to (1, 50); sizes above 200 are capped.
+func (p *Processor) List(ctx context.Context, f Filter, page Page) ([]Event, int64, error) {
+	return listFiltered(p.db.WithContext(ctx), f, page)
+}
+
 // DB returns the underlying *gorm.DB (used by provider helpers in tests).
 func (p *Processor) DB() *gorm.DB { return p.db }
 

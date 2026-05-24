@@ -3,28 +3,31 @@ package audit
 import "time"
 
 // AuditEventAttrs is the JSON:API attributes shape for an audit event.
-// source_ip is deliberately omitted from PayloadSummary — it is stored in
-// the database for operator forensics but never re-emitted via the API.
-// Full marshaling and HTTP handler are wired in M5.
+//
+// Per docs/tasks/task-001-harbormaster-mvp-v1/api-contracts.md
+// §GET /api/v1/audit-events, source_ip IS exposed on the M5 list
+// endpoint so operators can correlate failures with the originating
+// client (the same field is omitted from PayloadSummary by Sanitize so
+// payload bodies cannot duplicate the value through a renamed key).
 type AuditEventAttrs struct {
 	OccurredAt     time.Time      `json:"occurred_at"`
 	Actor          string         `json:"actor"`
+	SourceIP       string         `json:"source_ip,omitempty"`
 	Action         string         `json:"action"`
 	TargetType     string         `json:"target_type"`
 	TargetID       string         `json:"target_id,omitempty"`
 	Outcome        string         `json:"outcome"`
 	ErrorMessage   string         `json:"error_message,omitempty"`
 	PayloadSummary map[string]any `json:"payload_summary,omitempty"`
-	// source_ip is intentionally absent — it MUST NOT appear in API responses.
 }
 
 // ToAttrs converts an Event to its JSON:API attributes representation.
-// PayloadSummary in the response is the sanitised form stored in the DB;
-// source_ip is never included.
+// PayloadSummary in the response is the sanitised form stored in the DB.
 func ToAttrs(e Event) AuditEventAttrs {
 	return AuditEventAttrs{
 		OccurredAt:     e.OccurredAt,
 		Actor:          e.Actor,
+		SourceIP:       e.SourceIP,
 		Action:         e.Action,
 		TargetType:     e.TargetType,
 		TargetID:       e.TargetID,

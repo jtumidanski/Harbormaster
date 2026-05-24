@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AppError } from "@/lib/api/errors";
 import { bucketsKeys } from "@/lib/api/keys";
+import { LifecycleRulesTab } from "@/features/lifecycle/LifecycleRulesTab";
+import { ObjectBrowserPage } from "@/features/objects/ObjectBrowserPage";
 import { getBucket, setBucketVersioning } from "./api";
 import type { Bucket, PublicAccess } from "./types";
 import { DeleteBucketDialog } from "./DeleteBucketDialog";
@@ -247,19 +249,11 @@ export function BucketDetailPage() {
         </TabsContent>
 
         <TabsContent value="objects">
-          <Card>
-            <CardContent className="p-6 text-sm text-muted-foreground">
-              Object browser ships in T3.16.
-            </CardContent>
-          </Card>
+          <ObjectBrowserPage bucket={bucket.name} />
         </TabsContent>
 
         <TabsContent value="lifecycle">
-          <Card>
-            <CardContent className="p-6 text-sm text-muted-foreground">
-              Lifecycle rules editor ships in T3.20.
-            </CardContent>
-          </Card>
+          <LifecycleRulesTab bucket={bucket.name} />
         </TabsContent>
       </Tabs>
 

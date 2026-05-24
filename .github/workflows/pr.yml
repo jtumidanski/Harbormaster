@@ -1,0 +1,39 @@
+name: pr
+on:
+  pull_request:
+    branches: [main, "task-*"]
+
+permissions:
+  contents: read
+
+jobs:
+  frontend-lint:
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: apps/frontend } }
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
+        with: { node-version: "20", cache: "npm", cache-dependency-path: apps/frontend/package-lock.json }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format
+
+  frontend-test:
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: apps/frontend } }
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
+        with: { node-version: "20", cache: "npm", cache-dependency-path: apps/frontend/package-lock.json }
+      - run: npm ci
+      - run: npm test
+
+  frontend-build:
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: apps/frontend } }
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
+        with: { node-version: "20", cache: "npm", cache-dependency-path: apps/frontend/package-lock.json }
+      - run: npm ci
+      - run: npm run build

@@ -25,8 +25,10 @@ import (
 	hmminio "github.com/jtumidanski/Harbormaster/internal/minio"
 	"github.com/jtumidanski/Harbormaster/internal/objects"
 	"github.com/jtumidanski/Harbormaster/internal/observability/log"
+	"github.com/jtumidanski/Harbormaster/internal/policies"
 	"github.com/jtumidanski/Harbormaster/internal/server"
 	"github.com/jtumidanski/Harbormaster/internal/setup"
+	"github.com/jtumidanski/Harbormaster/internal/users"
 )
 
 func newServeCmd(out io.Writer) *cobra.Command {
@@ -141,6 +143,27 @@ func runServe(ctx context.Context, _ io.Writer) error {
 		DownloadProxyMode: cfg.DownloadProxyMode,
 	}).WithLogger(logger).WithAudit(auditProc)
 
+	// --- M4 wiring: policy materializer + users + service accounts -------
+	// The materializer is a thin wrapper that calls AddCannedPolicy on the
+	// live admin client. Both the users and service-accounts processors
+	// share the materializer so a backup-target policy materialised by one
+	// path is visible to the other.
+	policyMat := &policies.Materializer{
+		Admin: func(ctx context.Context) (policies.PolicyAdmin, error) {
+			madm, _, err := pool.Get(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return madm, nil
+		},
+	}
+	usersProc := users.NewProcessor(newUsersClientGetter(pool), policyMat).
+		WithLogger(logger).
+		WithAudit(auditProc)
+	saProc := users.NewServiceAccountProcessor(newSAClientGetter(pool), policyMat).
+		WithLogger(logger).
+		WithAudit(auditProc)
+
 	style := apierror.StyleAction
 	csrfCookieName := "harbormaster_csrf"
 
@@ -179,6 +202,11 @@ func runServe(ctx context.Context, _ io.Writer) error {
 			// (collection list+create, single delete) under the protected
 			// API surface.
 			lifecycle.Routes(lifecycleProc)(g)
+			// M4: users, service-accounts, policy-templates. The Routes
+			// function mounts the /users + /service-accounts + /policy-
+			// templates surface in one go; both processors share the
+			// materializer wired above.
+			users.Routes(usersProc, saProc)(g)
 		})
 	}
 

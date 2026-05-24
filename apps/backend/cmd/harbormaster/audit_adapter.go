@@ -13,6 +13,7 @@ import (
 	"github.com/jtumidanski/Harbormaster/internal/lifecycle"
 	hmminio "github.com/jtumidanski/Harbormaster/internal/minio"
 	"github.com/jtumidanski/Harbormaster/internal/objects"
+	"github.com/jtumidanski/Harbormaster/internal/users"
 )
 
 // bucketEmptyAuditAdapter translates the bucketempty.AuditRecorder shape
@@ -177,6 +178,32 @@ func (a bucketLifecycleAdapter) Create(ctx context.Context, bucket string, days 
 	}
 	_, err := a.lc.Create(ctx, bucket, days, prefix, "", "")
 	return err
+}
+
+// newUsersClientGetter returns a users.ClientGetter bound to the live
+// MinIO pool. The live *madmin.AdminClient satisfies users.AdminClient by
+// structural typing, so no per-method adapter is needed.
+func newUsersClientGetter(pool *hmminio.Pool) users.ClientGetter {
+	return users.NewClientGetter(func(ctx context.Context) (users.AdminClient, error) {
+		madm, _, err := pool.Get(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return madm, nil
+	})
+}
+
+// newSAClientGetter returns a users.SAClientGetter bound to the live
+// MinIO pool. As above, the live *madmin.AdminClient satisfies
+// users.SAAdminClient directly.
+func newSAClientGetter(pool *hmminio.Pool) users.SAClientGetter {
+	return users.NewSAClientGetter(func(ctx context.Context) (users.SAAdminClient, error) {
+		madm, _, err := pool.Get(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return madm, nil
+	})
 }
 
 // Compile-time anchors keeping the adapter types in sync with their

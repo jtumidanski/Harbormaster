@@ -7,8 +7,12 @@ type Ctx = { theme: Theme; setTheme: (t: Theme) => void; resolved: Resolved };
 const ThemeCtx = createContext<Ctx | null>(null);
 
 function readStoredTheme(): Theme {
-  const stored = localStorage.getItem("theme");
-  if (stored === "light" || stored === "dark" || stored === "system") return stored;
+  try {
+    const stored = window.localStorage.getItem("theme");
+    if (stored === "light" || stored === "dark" || stored === "system") return stored;
+  } catch {
+    // localStorage may be unavailable (private mode, SSR, jsdom variants).
+  }
   return "system";
 }
 
@@ -31,7 +35,11 @@ export function ThemeProvider({ children }: PropsWithChildren) {
   }, [theme]);
 
   useEffect(() => {
-    localStorage.setItem("theme", theme);
+    try {
+      window.localStorage.setItem("theme", theme);
+    } catch {
+      // ignore
+    }
   }, [theme]);
 
   return <ThemeCtx.Provider value={{ theme, setTheme, resolved }}>{children}</ThemeCtx.Provider>;

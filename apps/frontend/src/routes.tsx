@@ -11,6 +11,8 @@ import { ConnectionSettingsPage } from "@/features/connection/ConnectionSettings
 import { UserListPage } from "@/features/users/UserListPage";
 import { UserDetailPage } from "@/features/users/UserDetailPage";
 import { PolicyTemplatesPage } from "@/features/policies/PolicyTemplatesPage";
+import { DashboardPage } from "@/features/dashboard/DashboardPage";
+import { ActivityFeedPage } from "@/features/activity/ActivityFeedPage";
 
 export function AppRoutes() {
   const { me, isLoading: meLoading } = useAuth();
@@ -35,12 +37,14 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route path="/" element={<Navigate to="/buckets" replace />} />
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/buckets" element={<BucketListPage />} />
         <Route path="/buckets/:name" element={<BucketDetailPage />} />
         <Route path="/users" element={<UserListPage />} />
         <Route path="/users/:accessKey" element={<UserDetailPage />} />
         <Route path="/policies" element={<PolicyTemplatesPage />} />
+        <Route path="/activity" element={<ActivityFeedPage />} />
         <Route path="/settings/account" element={<ChangePasswordPage />} />
         <Route path="/settings/connection" element={<ConnectionSettingsPage />} />
         <Route path="*" element={<div className="p-8">Not found</div>} />

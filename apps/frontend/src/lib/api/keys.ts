@@ -37,3 +37,22 @@ export const serviceAccountsKeys = {
 export const policyTemplatesKeys = {
   list: () => ["policy-templates"] as const,
 };
+
+export const dashboardKeys = {
+  view: (window: string) => ["dashboard", "view", window] as const,
+  failures: (window: string) => ["dashboard", "failures", window] as const,
+};
+
+export type AuditFilterKey = {
+  action?: string;
+  target_type?: string;
+  target_id?: string;
+  outcome?: string;
+  from?: string;
+  to?: string;
+};
+
+export const activityKeys = {
+  list: (filters: AuditFilterKey, page: { number: number; size: number }) =>
+    ["activity", "list", filters, page] as const,
+};

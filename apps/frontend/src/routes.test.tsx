@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import type { PropsWithChildren } from "react";
 import { AuthProvider } from "@/context/AuthContext";
+import { ThemeProvider } from "@/context/ThemeProvider";
 import { AppRoutes } from "./routes";
 
 type StubResponse = { match: (url: string) => boolean; response: () => Response };
@@ -39,9 +40,11 @@ function Wrapper({ initialEntries, children }: PropsWithChildren<{ initialEntrie
   });
   return (
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={initialEntries}>
-        <AuthProvider>{children}</AuthProvider>
-      </MemoryRouter>
+      <ThemeProvider>
+        <MemoryRouter initialEntries={initialEntries}>
+          <AuthProvider>{children}</AuthProvider>
+        </MemoryRouter>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }
@@ -105,7 +108,7 @@ describe("AppRoutes", () => {
     });
   });
 
-  it("redirects / to /buckets when authenticated and initialized", async () => {
+  it("redirects / to /dashboard when authenticated and initialized", async () => {
     installFetch([
       {
         match: (u) => u.includes("/api/v1/setup/status"),
@@ -116,11 +119,15 @@ describe("AppRoutes", () => {
         response: () => json({ username: "alice", session_expires_at: "2030-01-01T00:00:00Z" }),
       },
       {
-        match: (u) => u.includes("/api/v1/buckets"),
+        match: (u) => u.includes("/api/v1/dashboard"),
         response: () =>
           json({
-            data: [],
-            meta: { page: { number: 1, size: 25, total_pages: 1, total_records: 0 } },
+            server: { version: "0.0.0", deployment_mode: "single", uptime_seconds: 60 },
+            totals: { buckets: 0, estimated_bytes: 0, objects: 0 },
+            nodes: [],
+            warnings: [],
+            recent_activity: [],
+            recent_failures: { window: "7d", count: 0, entries: [] },
           }),
       },
     ]);
@@ -130,10 +137,7 @@ describe("AppRoutes", () => {
       </Wrapper>,
     );
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: /buckets/i })).toBeInTheDocument();
-    });
-    await waitFor(() => {
-      expect(screen.getByText(/no buckets yet/i)).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: /dashboard/i, level: 1 })).toBeInTheDocument();
     });
   });
 });

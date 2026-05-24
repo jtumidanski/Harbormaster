@@ -1,0 +1,19 @@
+services:
+  harbormaster:
+    image: harbormaster:dev
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      HARBORMASTER_LISTEN_ADDR: ":8080"
+      HARBORMASTER_DATA_DIR: "/var/lib/harbormaster"
+    volumes:
+      - harbormaster-data:/var/lib/harbormaster
+      # Uncomment to enable mc-alias import during first-run setup (read-only).
+      # See README "Importing from mc config" for the trade-off.
+      # - ${HOME}/.mc/config.json:/root/.mc/config.json:ro
+
+volumes:
+  harbormaster-data: {}

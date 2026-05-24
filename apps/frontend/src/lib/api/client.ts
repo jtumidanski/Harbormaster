@@ -1,14 +1,10 @@
 import type { AppError } from "./errors";
 import { parseErrorResponse } from "./errors";
+import { readCsrfCookie } from "./csrf";
 
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 const UNSAFE = new Set<Method>(["POST", "PUT", "PATCH", "DELETE"]);
-
-function readCsrfCookie(): string {
-  const m = document.cookie.match(/(?:^|;\s*)harbormaster_csrf=([^;]+)/);
-  return m ? decodeURIComponent(m[1]) : "";
-}
 
 async function request<T>(
   method: Method,

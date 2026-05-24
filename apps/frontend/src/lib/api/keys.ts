@@ -8,3 +8,14 @@ export const authKeys = {
 export const connectionKeys = {
   detail: () => ["connection", "detail"] as const,
 };
+
+export const bucketsKeys = {
+  all: () => ["buckets"] as const,
+  list: (params: { page: number; size: number; sort: string }) =>
+    ["buckets", "list", params] as const,
+  detail: (name: string) => ["buckets", "detail", name] as const,
+};
+
+export const objectsKeys = {
+  list: (bucket: string, prefix: string) => ["objects", bucket, prefix] as const,
+};

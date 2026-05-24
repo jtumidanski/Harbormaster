@@ -5,7 +5,8 @@ import { AppShell } from "@/components/AppShell";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { ChangePasswordPage } from "@/features/auth/ChangePasswordPage";
 import { SetupWizard } from "@/features/setup/SetupWizard";
-import { BucketsPlaceholder } from "@/features/buckets/BucketsPlaceholder";
+import { BucketListPage } from "@/features/buckets/BucketListPage";
+import { BucketDetailPage } from "@/features/buckets/BucketDetailPage";
 import { ConnectionSettingsPage } from "@/features/connection/ConnectionSettingsPage";
 
 export function AppRoutes() {
@@ -32,7 +33,8 @@ export function AppRoutes() {
     <Routes>
       <Route element={<AppShell />}>
         <Route path="/" element={<Navigate to="/buckets" replace />} />
-        <Route path="/buckets" element={<BucketsPlaceholder />} />
+        <Route path="/buckets" element={<BucketListPage />} />
+        <Route path="/buckets/:name" element={<BucketDetailPage />} />
         <Route path="/settings/account" element={<ChangePasswordPage />} />
         <Route path="/settings/connection" element={<ConnectionSettingsPage />} />
         <Route path="*" element={<div className="p-8">Not found</div>} />

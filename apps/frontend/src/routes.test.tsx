@@ -115,6 +115,14 @@ describe("AppRoutes", () => {
         match: (u) => u.includes("/api/v1/auth/me"),
         response: () => json({ username: "alice", session_expires_at: "2030-01-01T00:00:00Z" }),
       },
+      {
+        match: (u) => u.includes("/api/v1/buckets"),
+        response: () =>
+          json({
+            data: [],
+            meta: { page: { number: 1, size: 25, total_pages: 1, total_records: 0 } },
+          }),
+      },
     ]);
     render(
       <Wrapper initialEntries={["/"]}>
@@ -124,6 +132,8 @@ describe("AppRoutes", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: /buckets/i })).toBeInTheDocument();
     });
-    expect(screen.getByText(/bucket list lands in m3/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/no buckets yet/i)).toBeInTheDocument();
+    });
   });
 });

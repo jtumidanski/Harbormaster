@@ -12,7 +12,29 @@ When asked to understand or plan something, DO NOT start implementing code chang
 
 ## Build & Verification
 
-Once a build system is in place, expect this section to enumerate the commands required before claiming a branch is "done". As a placeholder, the general expectation for any Go service is `go test -race ./...`, `go vet ./...`, and `go build ./...` clean; for the React UI, `npm run build` and `npm test` clean. Add Docker-build verification once a container build is wired up.
+A branch is "done" only when all of these are clean:
+
+**Backend** (cwd = `apps/backend`):
+- `go test -race -count=1 ./...`
+- `go vet ./...`
+- `golangci-lint run`
+- `CGO_ENABLED=0 go build ./...`
+
+**Backend integration tests** (Docker required, on-demand):
+- `HARBORMASTER_INTEGRATION=1 go test -tags=integration -count=1 ./...`
+
+**Frontend** (cwd = `apps/frontend`):
+- `npm ci`
+- `npm run lint`
+- `npm run format`
+- `npm test`
+- `npm run build`
+
+**Container** (cwd = worktree root):
+- `docker buildx build --platform linux/amd64,linux/arm64 -f deploy/docker/Dockerfile .`
+
+**E2E** (on-demand, not per-PR; requires Docker Compose stack):
+- `cd apps/frontend && npm run test:e2e`
 
 ## Code Patterns
 

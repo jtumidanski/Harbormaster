@@ -14,6 +14,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/jtumidanski/Harbormaster/internal/apierror"
+	"github.com/jtumidanski/Harbormaster/internal/policies"
 )
 
 // fanoutConcurrency caps the number of in-flight per-bucket detail fetches
@@ -295,12 +296,14 @@ func (p *Processor) Create(ctx context.Context, name string, opts CreateOpts) (B
 		}
 	}
 	if opts.PublicAccess != "" && opts.PublicAccess != PublicAccessPrivate {
-		// TODO(T3.2): wire internal/policies.BucketPolicyFor here once
-		// the canned templates land. Until then non-private public-access
-		// requests are rejected so we never persist a half-baked policy.
-		return Bucket{}, apierror.New(http.StatusNotImplemented,
-			"not_implemented",
-			"public-access modes are not yet wired (T3.2)")
+		policyJSON, perr := policies.BucketPolicyFor(name, string(opts.PublicAccess))
+		if perr != nil {
+			return Bucket{}, apierror.New(http.StatusBadRequest,
+				"public_access_invalid", perr.Error())
+		}
+		if err := applyPolicy(ctx, s3, name, policyJSON); err != nil {
+			return Bucket{}, apierror.Internal(err.Error())
+		}
 	}
 	_ = opts.LifecycleTemplate // TODO(T3.21): apply lifecycle template
 	return p.Get(ctx, name)
@@ -316,7 +319,7 @@ func (p *Processor) Delete(ctx context.Context, name, confirmName string) error 
 		return apierror.New(http.StatusBadRequest, "bucket_invalid_name", err.Error())
 	}
 	if name != confirmName {
-		return apierror.New(http.StatusBadRequest, "confirm_name_mismatch",
+		return apierror.New(http.StatusForbidden, "confirm_name_mismatch",
 			"confirm_name must equal the bucket name")
 	}
 	_, s3, err := p.clients(ctx)
@@ -384,15 +387,26 @@ func (p *Processor) SetPublicAccess(ctx context.Context, name, mode, confirmName
 		return apierror.New(http.StatusBadRequest, "public_access_invalid",
 			fmt.Sprintf("mode must be one of: private, public-read, public-read-write (got %q)", mode))
 	}
-	if pa != PublicAccessPrivate && name != confirmName {
-		return apierror.New(http.StatusBadRequest, "confirm_name_mismatch",
-			"confirm_name must equal the bucket name when granting public access")
+	// Per api-contracts.md §buckets/{name}/public-access: confirm_name is
+	// required when transitioning into public-read-write (the write-allowing
+	// mode); private and public-read transitions accept an empty/missing
+	// confirm_name. Mismatch is 403 per the global error table.
+	if pa == PublicAccessPublicReadWrite && name != confirmName {
+		return apierror.New(http.StatusForbidden, "confirm_name_mismatch",
+			"confirm_name must equal the bucket name when granting public-read-write access")
 	}
-	_ = ctx
-	// TODO(T3.2): wire policies.BucketPolicyFor(pa) and call
-	// applyPolicy(ctx, s3, name, policyJSON).
-	return apierror.New(http.StatusNotImplemented, "not_implemented",
-		"public-access modes are not yet wired (T3.2)")
+	_, s3, err := p.clients(ctx)
+	if err != nil {
+		return err
+	}
+	policyJSON, perr := policies.BucketPolicyFor(name, string(pa))
+	if perr != nil {
+		return apierror.New(http.StatusBadRequest, "public_access_invalid", perr.Error())
+	}
+	if err := applyPolicy(ctx, s3, name, policyJSON); err != nil {
+		return apierror.Internal(err.Error())
+	}
+	return nil
 }
 
 // SetQuota writes the bucket quota. Enforces the cross-domain invariant

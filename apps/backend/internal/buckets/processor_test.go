@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -147,38 +148,82 @@ func TestCreateAppliesOptionalSettings(t *testing.T) {
 	}
 }
 
-// TestCreatePublicAccessIsNotYetImplemented documents the T3.1 boundary:
-// public-access modes other than "private" return 501 until T3.2 lands.
-func TestCreatePublicAccessIsNotYetImplemented(t *testing.T) {
+// TestCreateAppliesPublicAccessPolicy verifies the T3.2/T3.3 activation:
+// a non-private public_access on Create now materialises the canned policy
+// JSON via SetBucketPolicy rather than returning 501.
+func TestCreateAppliesPublicAccessPolicy(t *testing.T) {
 	p, _, s3 := newTestProcessor(t, nil, nil)
+	s3.buckets = []miniogo.BucketInfo{
+		{Name: "photos", CreationDate: time.Unix(1700000000, 0).UTC()},
+	}
 
 	_, err := p.Create(context.Background(), "photos", CreateOpts{
 		PublicAccess: PublicAccessPublicRead,
 	})
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	var ae *apierror.Error
-	if !errors.As(err, &ae) || ae.HTTPStatus != http.StatusNotImplemented {
-		t.Fatalf("expected 501 not_implemented, got %v", err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(s3.makeCalls) != 1 {
-		t.Errorf("MakeBucket should still have run before the policy step: %+v", s3.makeCalls)
+		t.Errorf("MakeBucket should have run: %+v", s3.makeCalls)
+	}
+	if len(s3.setPolicyCalls) != 1 || s3.setPolicyCalls[0].Bucket != "photos" {
+		t.Fatalf("expected one SetBucketPolicy call for photos, got %+v", s3.setPolicyCalls)
+	}
+	if !strings.Contains(s3.setPolicyCalls[0].Policy, "s3:GetObject") {
+		t.Errorf("policy does not contain s3:GetObject: %s", s3.setPolicyCalls[0].Policy)
 	}
 }
 
-// TestSetPublicAccessIsNotYetImplemented documents the T3.1 boundary for
-// the action endpoint.
-func TestSetPublicAccessIsNotYetImplemented(t *testing.T) {
-	p, _, _ := newTestProcessor(t, nil, nil)
+// TestSetPublicAccessWritesCannedPolicy verifies the action endpoint
+// activation: a public-read mode now invokes SetBucketPolicy with the
+// canned JSON from internal/policies rather than returning 501.
+func TestSetPublicAccessWritesCannedPolicy(t *testing.T) {
+	p, _, s3 := newTestProcessor(t, nil, nil)
 
-	err := p.SetPublicAccess(context.Background(), "photos", "public-read", "photos")
+	err := p.SetPublicAccess(context.Background(), "photos", "public-read", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(s3.setPolicyCalls) != 1 {
+		t.Fatalf("expected one SetBucketPolicy call, got %d", len(s3.setPolicyCalls))
+	}
+	if s3.setPolicyCalls[0].Bucket != "photos" {
+		t.Errorf("wrong bucket: %q", s3.setPolicyCalls[0].Bucket)
+	}
+	if !strings.Contains(s3.setPolicyCalls[0].Policy, "s3:GetObject") {
+		t.Errorf("policy missing s3:GetObject: %s", s3.setPolicyCalls[0].Policy)
+	}
+}
+
+// TestSetPublicAccessPrivateRemovesPolicy verifies the "private" mode
+// removes the bucket policy (SetBucketPolicy with empty string).
+func TestSetPublicAccessPrivateRemovesPolicy(t *testing.T) {
+	p, _, s3 := newTestProcessor(t, nil, nil)
+
+	if err := p.SetPublicAccess(context.Background(), "photos", "private", ""); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(s3.setPolicyCalls) != 1 || s3.setPolicyCalls[0].Policy != "" {
+		t.Fatalf("expected empty policy clear, got %+v", s3.setPolicyCalls)
+	}
+}
+
+// TestSetPublicAccessReadWriteRequiresConfirm verifies that the
+// destructive public-read-write transition still requires confirm_name to
+// match, and returns 403 confirm_name_mismatch (per api-contracts.md).
+func TestSetPublicAccessReadWriteRequiresConfirm(t *testing.T) {
+	p, _, s3 := newTestProcessor(t, nil, nil)
+
+	err := p.SetPublicAccess(context.Background(), "photos", "public-read-write", "wrong")
 	if err == nil {
 		t.Fatal("expected error")
 	}
 	var ae *apierror.Error
-	if !errors.As(err, &ae) || ae.HTTPStatus != http.StatusNotImplemented {
-		t.Fatalf("expected 501, got %v", err)
+	if !errors.As(err, &ae) || ae.Code != "confirm_name_mismatch" || ae.HTTPStatus != http.StatusForbidden {
+		t.Fatalf("expected 403 confirm_name_mismatch, got %v", err)
+	}
+	if len(s3.setPolicyCalls) != 0 {
+		t.Errorf("SetBucketPolicy must not run when confirm_name mismatched: %+v", s3.setPolicyCalls)
 	}
 }
 

@@ -20,7 +20,12 @@ import (
 // JSON:API in path style but per api-contracts.md its 409 / 403 error
 // bodies use the action envelope (the SPA reads `error.details` to drive
 // the Empty-bucket affordance), so writeAction is used for those too.
-func Routes(p *Processor) func(chi.Router) {
+//
+// When empty is non-nil, POST /buckets/{name}/empty is bound to the live
+// SSE handler (T3.5). Otherwise the route falls back to the stub-501
+// envelope so the surface remains predictable in test setups that do not
+// wire the bucketempty service.
+func Routes(p *Processor, empty *EmptyHandler) func(chi.Router) {
 	h := &handler{p: p, enc: jsonapi.NewEncoder(), dec: jsonapi.NewDecoder()}
 	return func(r chi.Router) {
 		r.Get("/buckets", h.list)
@@ -30,7 +35,11 @@ func Routes(p *Processor) func(chi.Router) {
 		r.Put("/buckets/{name}/versioning", h.setVersioning)
 		r.Put("/buckets/{name}/public-access", h.setPublicAccess)
 		r.Put("/buckets/{name}/quota", h.setQuota)
-		r.Post("/buckets/{name}/empty", h.empty)
+		if empty != nil {
+			r.Post("/buckets/{name}/empty", empty.ServeHTTP)
+		} else {
+			r.Post("/buckets/{name}/empty", h.empty)
+		}
 	}
 }
 

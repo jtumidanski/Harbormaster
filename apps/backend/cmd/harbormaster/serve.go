@@ -15,10 +15,12 @@ import (
 	"github.com/jtumidanski/Harbormaster/internal/apierror"
 	"github.com/jtumidanski/Harbormaster/internal/audit"
 	"github.com/jtumidanski/Harbormaster/internal/auth"
+	"github.com/jtumidanski/Harbormaster/internal/buckets"
 	"github.com/jtumidanski/Harbormaster/internal/config"
 	"github.com/jtumidanski/Harbormaster/internal/connection"
 	"github.com/jtumidanski/Harbormaster/internal/crypto"
 	"github.com/jtumidanski/Harbormaster/internal/db"
+	"github.com/jtumidanski/Harbormaster/internal/jobs/bucketempty"
 	hmminio "github.com/jtumidanski/Harbormaster/internal/minio"
 	"github.com/jtumidanski/Harbormaster/internal/observability/log"
 	"github.com/jtumidanski/Harbormaster/internal/server"
@@ -95,6 +97,25 @@ func runServe(ctx context.Context, _ io.Writer) error {
 		McPath:   cfg.McConfigPath,
 	}
 
+	// --- M3 wiring: bucket domain + empty-bucket job service --------------
+	// The bucketempty service shares the audit log with the rest of the
+	// app via a tiny shape adapter (see audit_adapter.go).
+	bucketAudit := bucketEmptyAuditAdapter{p: auditProc}
+
+	// Crash recovery: flip any state='running' rows left over from a prior
+	// process to state='error' so the partial unique index does not block
+	// new jobs. A failure here is logged but non-fatal — orphaned rows
+	// simply re-surface on the next boot.
+	if orphaned, err := bucketempty.OrphanRunningAtStartup(gdb, bucketAudit); err != nil {
+		logger.Warn().Err(err).Msg("bucketempty: orphan-cleanup at startup failed; continuing")
+	} else if len(orphaned) > 0 {
+		logger.Info().Int("count", len(orphaned)).Msg("bucketempty: marked stale running jobs as orphaned")
+	}
+
+	emptyService := bucketempty.New(gdb, pool, bucketAudit)
+	emptyHandler := &buckets.EmptyHandler{Service: emptyService}
+	bucketProc := buckets.NewProcessor(newBucketClientGetter(pool)).WithLogger(logger)
+
 	style := apierror.StyleAction
 	csrfCookieName := "harbormaster_csrf"
 
@@ -121,6 +142,20 @@ func runServe(ctx context.Context, _ io.Writer) error {
 			g.Use(auth.RequireCSRF(csrfCookieName, style))
 			authDeps.ProtectedRoutes()(g)
 			connection.Routes(connProc)(g)
+			// The bucket Routes() omit the empty handler here — that
+			// endpoint is mounted under StreamingAPIRoutes below so the
+			// long-lived SSE stream is not killed by the 30s timeout.
+			buckets.Routes(bucketProc, nil)(g)
+		})
+	}
+
+	// Streaming routes share the session+CSRF guards but bypass the 30s
+	// per-request timeout. POST is a write so CSRF still applies.
+	streamingRoutes := func(r chi.Router) {
+		r.Group(func(g chi.Router) {
+			g.Use(auth.RequireSession(cfg.SessionCookieName, authProc, style))
+			g.Use(auth.RequireCSRF(csrfCookieName, style))
+			g.Post("/buckets/{name}/empty", emptyHandler.ServeHTTP)
 		})
 	}
 
@@ -130,9 +165,10 @@ func runServe(ctx context.Context, _ io.Writer) error {
 
 	// TODO(T2.17): add E2E test once setup.Probe is stubbable.
 	s := server.New(cfg, server.Deps{
-		Logger:    logger,
-		APIRoutes: []func(chi.Router){publicRoutes, protectedRoutes},
-		Ready:     ready,
+		Logger:             logger,
+		APIRoutes:          []func(chi.Router){publicRoutes, protectedRoutes},
+		StreamingAPIRoutes: []func(chi.Router){streamingRoutes},
+		Ready:              ready,
 	})
 	logger.Info().Str("addr", cfg.ListenAddr).Msg("harbormaster started")
 	return s.Run(ctx)

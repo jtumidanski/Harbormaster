@@ -60,6 +60,48 @@ type s3API interface {
 // returns hand-rolled stubs satisfying adminAPI / s3API.
 type ClientGetter func(ctx context.Context) (adminAPI, s3API, error)
 
+// AdminClient is the public face of adminAPI. It exists so callers outside
+// the package (the HTTP wiring in cmd/harbormaster) can supply a live
+// admin-client adapter to NewClientGetter without leaking the unexported
+// adminAPI shape into the surrounding code.
+type AdminClient interface {
+	BucketUsageInfo(ctx context.Context, bucket string) (madmin.BucketUsageInfo, error)
+	GetBucketQuota(ctx context.Context, bucket string) (madmin.BucketQuota, error)
+	SetBucketQuota(ctx context.Context, bucket string, quota *madmin.BucketQuota) error
+}
+
+// S3Client is the public face of s3API. It mirrors the methods the
+// processor invokes against an active minio-go client. The live
+// *miniogo.Client already satisfies this shape.
+type S3Client interface {
+	ListBuckets(ctx context.Context) ([]miniogo.BucketInfo, error)
+	BucketExists(ctx context.Context, bucket string) (bool, error)
+	MakeBucket(ctx context.Context, bucket string, opts miniogo.MakeBucketOptions) error
+	RemoveBucket(ctx context.Context, bucket string) error
+	GetBucketPolicy(ctx context.Context, bucket string) (string, error)
+	SetBucketPolicy(ctx context.Context, bucket, policy string) error
+	GetBucketVersioning(ctx context.Context, bucket string) (miniogo.BucketVersioningConfiguration, error)
+	SetBucketVersioning(ctx context.Context, bucket string, config miniogo.BucketVersioningConfiguration) error
+	GetBucketLifecycle(ctx context.Context, bucket string) (*lifecycle.Configuration, error)
+	ListObjects(ctx context.Context, bucket string, opts miniogo.ListObjectsOptions) <-chan miniogo.ObjectInfo
+}
+
+// NewClientGetter adapts a resolver that yields the public AdminClient /
+// S3Client pair into a ClientGetter compatible with the unexported
+// adminAPI / s3API interfaces used inside the package. This is the
+// supported integration point for the HTTP layer; callers should not
+// fabricate a ClientGetter literal because the underlying interface types
+// are intentionally unexported.
+func NewClientGetter(resolve func(ctx context.Context) (AdminClient, S3Client, error)) ClientGetter {
+	return func(ctx context.Context) (adminAPI, s3API, error) {
+		adm, s3, err := resolve(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		return adm, s3, nil
+	}
+}
+
 // CreateOpts captures the optional knobs a single POST /buckets request
 // can flip during bucket creation. All zero values are valid — the
 // processor only invokes the corresponding helper when the field is set.

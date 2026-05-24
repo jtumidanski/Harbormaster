@@ -22,7 +22,7 @@ func newTestRouter(t *testing.T) (http.Handler, *stubAdmin, *stubS3) {
 	t.Helper()
 	p, adm, s3 := newTestProcessor(t, nil, nil)
 	r := chi.NewRouter()
-	r.Route("/api/v1", Routes(p))
+	r.Route("/api/v1", Routes(p, nil))
 	return r, adm, s3
 }
 

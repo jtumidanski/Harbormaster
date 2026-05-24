@@ -158,6 +158,36 @@ func TestAuditEvent_ConnectionTestFailureRecorded(t *testing.T) {
 	requireNoSecrets(t, payload)
 }
 
+// TestAuditEvent_ConnectionUpdateScrubsURLCredentials guards against an
+// operator pasting a credential-bearing endpoint URL (user-info, query
+// tokens, paths) and seeing those values surface in the audit log. Only
+// scheme + host[:port] are allowed through.
+func TestAuditEvent_ConnectionUpdateScrubsURLCredentials(t *testing.T) {
+	p, a, _ := newAuditedProcessor(t)
+	ctx := context.Background()
+
+	in := connection.SubmitInput{
+		EndpointURL: "https://leaker:topsecretvalue@minio.lan:9000/foo?token=abc",
+		AccessKey:   "AKIA",
+		SecretKey:   "sk",
+	}
+	require.NoError(t, p.Update(ctx, in, "operator", "10.0.0.9"))
+
+	_, payload := loadLatestPayload(t, a, audit.ActionConnectionUpdate)
+	require.NotEmpty(t, payload)
+	require.Contains(t, payload, "https://minio.lan:9000",
+		"sanitised endpoint should preserve scheme + host[:port]")
+	require.NotContains(t, payload, "leaker",
+		"sanitised endpoint must drop user-info")
+	require.NotContains(t, payload, "topsecretvalue",
+		"sanitised endpoint must drop the password component of user-info")
+	require.NotContains(t, payload, "token",
+		"sanitised endpoint must drop the query string")
+	require.NotContains(t, payload, "/foo",
+		"sanitised endpoint must drop the path")
+	requireNoSecrets(t, payload)
+}
+
 // TestProcessor_NilAuditIsSafe verifies pre-existing tests that build the
 // processor without setting .Audit still work after the wiring change.
 func TestProcessor_NilAuditIsSafe(t *testing.T) {

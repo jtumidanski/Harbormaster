@@ -186,20 +186,27 @@ func (p *Processor) Logout(ctx context.Context, sessionID string) error {
 	}
 	db := p.db.WithContext(ctx)
 	// Resolve username + source IP before deleting so the audit row records
-	// the operator who performed the logout. Failure to resolve is non-fatal
-	// — we still delete the row and skip the audit emission.
-	var username, sourceIP string
+	// the operator who performed the logout. A lookup failure must not
+	// suppress the audit row — the delete still happens and operators need
+	// the trail. We fall back to actor="unknown" and stamp the payload with
+	// a "reason" so the unusual case is greppable.
+	var (
+		username    string
+		sourceIP    string
+		lookupOK    bool
+	)
 	if sess, err := getSessionByID(sessionID)(db); err == nil {
 		sourceIP = sess.SourceIP()
 		if user, uerr := getAdminUserByID(sess.AdminUserID())(db); uerr == nil {
 			username = user.Username()
+			lookupOK = true
 		}
 	}
 	if err := deleteSession(db, sessionID); err != nil {
 		return err
 	}
 	p.clearCSRF(sessionID)
-	if username != "" {
+	if lookupOK {
 		p.recordAudit(ctx, audit.Event{
 			Actor:    username,
 			SourceIP: sourceIP,
@@ -207,6 +214,16 @@ func (p *Processor) Logout(ctx context.Context, sessionID string) error {
 			Outcome:  audit.OutcomeSuccess,
 			PayloadSummary: map[string]any{
 				"username": username,
+			},
+		})
+	} else {
+		p.recordAudit(ctx, audit.Event{
+			Actor:    "unknown",
+			SourceIP: sourceIP,
+			Action:   audit.ActionSessionLogout,
+			Outcome:  audit.OutcomeSuccess,
+			PayloadSummary: map[string]any{
+				"reason": "actor_lookup_failed",
 			},
 		})
 	}

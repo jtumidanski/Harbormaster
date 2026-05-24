@@ -171,6 +171,38 @@ func TestAuditEvent_ChangePasswordFailureWrongCurrent(t *testing.T) {
 	requireNoSecrets(t, payload)
 }
 
+// TestAuditEvent_LogoutEmittedWhenActorLookupFails covers the defensive
+// branch where the session row exists but the underlying admin user is
+// missing (e.g. the row was hand-deleted out-of-band). The logout still
+// succeeds and must still be auditable — operators need the trail even
+// when actor resolution failed. The actor falls back to "unknown" and the
+// payload carries a "reason" tag so the unusual case is greppable.
+func TestAuditEvent_LogoutEmittedWhenActorLookupFails(t *testing.T) {
+	p, a := newAuditedProcessor(t)
+	seedAdmin(t, p.DB(), "operator", "pw")
+
+	sessID, _, err := p.Login(context.Background(), "operator", "pw", "10.0.0.7", "ua")
+	require.NoError(t, err)
+
+	// Force the actor lookup to fail by deleting every admin user row
+	// while leaving the session row in place.
+	require.NoError(t,
+		p.DB().Exec("DELETE FROM admin_users").Error,
+	)
+
+	require.NoError(t, p.Logout(context.Background(), sessID))
+
+	ev, payload := loadLatestAudit(t, a, audit.ActionSessionLogout)
+	require.NotEmpty(t, payload,
+		"logout must still emit an audit row even when actor lookup fails")
+	require.Equal(t, audit.OutcomeSuccess, ev.Outcome,
+		"the delete succeeded, so the row's outcome should be success")
+	require.Equal(t, "unknown", ev.Actor)
+	require.Contains(t, payload, "actor_lookup_failed",
+		"expected the payload to carry a reason marker for the unusual case")
+	requireNoSecrets(t, payload)
+}
+
 // TestProcessor_NilAuditIsSafe verifies the nil-audit path (used by tests
 // that construct an auth.Processor without WithAudit) does not panic and
 // does not interfere with normal operation.

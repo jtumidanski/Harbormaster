@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -14,6 +15,21 @@ import (
 	"github.com/jtumidanski/Harbormaster/internal/crypto"
 	minioPool "github.com/jtumidanski/Harbormaster/internal/minio"
 )
+
+// sanitizeEndpointForAudit returns a credential-free rendering of raw that
+// only preserves scheme + host (with port). User-info, path, query, and
+// fragment are dropped because operators sometimes paste pre-signed URLs or
+// `https://user:pass@host` shorthand into the wizard, and the audit log is
+// not the place to retain those. On parse failure we return the literal
+// "invalid_url" rather than echo the raw input.
+func sanitizeEndpointForAudit(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u == nil || u.Host == "" {
+		return "invalid_url"
+	}
+	scrubbed := &url.URL{Scheme: u.Scheme, Host: u.Host}
+	return scrubbed.String()
+}
 
 // Prober is the contract used by Processor to validate a candidate
 // SubmitInput. Production wires it to the package-level Probe; tests can
@@ -101,9 +117,11 @@ func (p *Processor) Update(ctx context.Context, in SubmitInput, actor, sourceIP 
 	}
 	// The `url`-substring filter in audit.Sanitize would drop a key like
 	// "endpoint_url", so the payload uses bare "endpoint" instead. The
-	// value (a URL string) is preserved verbatim — Sanitize filters keys.
+	// value is scrubbed through sanitizeEndpointForAudit so any user-info
+	// (e.g. https://user:pass@host) or query-string token an operator
+	// pasted into the wizard never reaches the audit log.
 	auditPayload := map[string]any{
-		"endpoint":          in.EndpointURL,
+		"endpoint":          sanitizeEndpointForAudit(in.EndpointURL),
 		"tls_skip_verify":   skipVerify,
 		"custom_ca_pem_set": in.CustomCAPEM != "",
 	}
@@ -190,7 +208,7 @@ func (p *Processor) Test(ctx context.Context, in SubmitInput, actor, sourceIP st
 			Outcome:      audit.OutcomeFailure,
 			ErrorMessage: ae.Message,
 			PayloadSummary: map[string]any{
-				"endpoint":     in.EndpointURL,
+				"endpoint":     sanitizeEndpointForAudit(in.EndpointURL),
 				"tcp_connect":  stepStatus(result.TCPConnect),
 				"list_buckets": stepStatus(result.ListBuckets),
 				"admin_ping":   stepStatus(result.AdminPing),

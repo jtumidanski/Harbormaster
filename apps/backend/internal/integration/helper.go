@@ -47,6 +47,8 @@ import (
 	"github.com/jtumidanski/Harbormaster/internal/lifecycle"
 	hmminio "github.com/jtumidanski/Harbormaster/internal/minio"
 	"github.com/jtumidanski/Harbormaster/internal/objects"
+	"github.com/jtumidanski/Harbormaster/internal/policies"
+	"github.com/jtumidanski/Harbormaster/internal/users"
 )
 
 // envEnable is the env-var gate. Tests skip themselves when this is unset.
@@ -70,12 +72,15 @@ type TestEnv struct {
 	MC  *miniogo.Client
 	Adm *madmin.AdminClient
 
-	Buckets   *buckets.Processor
-	Objects   *objects.Processor
-	Lifecycle *lifecycle.Processor
-	Empty     *bucketempty.Service
-	Audit     *audit.Processor
-	DB        *gorm.DB
+	Buckets         *buckets.Processor
+	Objects         *objects.Processor
+	Lifecycle       *lifecycle.Processor
+	Empty           *bucketempty.Service
+	Audit           *audit.Processor
+	Users           *users.Processor
+	ServiceAccounts *users.ServiceAccountProcessor
+	PolicyMat       *policies.Materializer
+	DB              *gorm.DB
 }
 
 // setup boots a fresh MinIO testcontainer, opens a temp SQLite DB for
@@ -183,17 +188,59 @@ func setup(t *testing.T) (*TestEnv, context.Context) {
 		DownloadProxyMode: "proxy",
 	}).WithAudit(auditProc)
 
+	// Users + service accounts: a single shared policy materializer is
+	// reused so a backup-target policy materialised via the users path is
+	// visible to the service-accounts path (mirrors cmd/harbormaster/serve.go).
+	policyMat := &policies.Materializer{
+		Admin: func(ctx context.Context) (policies.PolicyAdmin, error) {
+			madm, _, err := pool.Get(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return madm, nil
+		},
+	}
+	usersProc := users.NewProcessor(newUsersClientGetter(pool), policyMat).WithAudit(auditProc)
+	saProc := users.NewServiceAccountProcessor(newSAClientGetter(pool), policyMat).WithAudit(auditProc)
+
 	return &TestEnv{
-		Pool:      pool,
-		MC:        mc,
-		Adm:       adm,
-		Buckets:   bucketProc,
-		Objects:   objectsProc,
-		Lifecycle: lifecycleProc,
-		Empty:     emptyService,
-		Audit:     auditProc,
-		DB:        gdb,
+		Pool:            pool,
+		MC:              mc,
+		Adm:             adm,
+		Buckets:         bucketProc,
+		Objects:         objectsProc,
+		Lifecycle:       lifecycleProc,
+		Empty:           emptyService,
+		Audit:           auditProc,
+		Users:           usersProc,
+		ServiceAccounts: saProc,
+		PolicyMat:       policyMat,
+		DB:              gdb,
 	}, ctx
+}
+
+// newUsersClientGetter mirrors cmd/harbormaster.newUsersClientGetter:
+// the live *madmin.AdminClient satisfies users.AdminClient by structural
+// typing, so no per-method adapter is needed.
+func newUsersClientGetter(pool *hmminio.Pool) users.ClientGetter {
+	return users.NewClientGetter(func(ctx context.Context) (users.AdminClient, error) {
+		madm, _, err := pool.Get(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return madm, nil
+	})
+}
+
+// newSAClientGetter mirrors cmd/harbormaster.newSAClientGetter.
+func newSAClientGetter(pool *hmminio.Pool) users.SAClientGetter {
+	return users.NewSAClientGetter(func(ctx context.Context) (users.SAAdminClient, error) {
+		madm, _, err := pool.Get(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return madm, nil
+	})
 }
 
 // integrationBucketEmptyAudit mirrors cmd/harbormaster.bucketEmptyAuditAdapter

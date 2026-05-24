@@ -101,7 +101,7 @@ describe("AppRoutes", () => {
       </Wrapper>,
     );
     await waitFor(() => {
-      expect(screen.getByText(/login \(lands in t2\.12\)/i)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /sign in/i })).toBeInTheDocument();
     });
   });
 

@@ -182,6 +182,30 @@ func TestSetPublicAccessIsNotYetImplemented(t *testing.T) {
 	}
 }
 
+// TestGetReturnsNotFoundWhenBucketAbsent verifies the Get path translates
+// a missing-bucket presence probe into the typed 404 envelope rather than
+// leaking a generic minio_error 502. The stub's BucketExists is wired to
+// return (false, nil); the call must surface apierror.NotFound("bucket").
+func TestGetReturnsNotFoundWhenBucketAbsent(t *testing.T) {
+	p, _, s3 := newTestProcessor(t, nil, nil)
+	s3.existsOverride = map[string]bool{"photos": false}
+
+	_, err := p.Get(context.Background(), "photos")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var ae *apierror.Error
+	if !errors.As(err, &ae) {
+		t.Fatalf("expected *apierror.Error, got %T: %v", err, err)
+	}
+	if ae.Code != "not_found" {
+		t.Errorf("wrong code: got %q want not_found", ae.Code)
+	}
+	if ae.HTTPStatus != http.StatusNotFound {
+		t.Errorf("wrong status: got %d want %d", ae.HTTPStatus, http.StatusNotFound)
+	}
+}
+
 // TestSetVersioningHappyPath asserts the action endpoint flips the
 // versioning status without touching other state.
 func TestSetVersioningHappyPath(t *testing.T) {

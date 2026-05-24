@@ -18,11 +18,11 @@ func (r BucketResource) ResourceID() string { return r.Name }
 
 // CreateRequest is the body accepted by POST /api/v1/buckets.
 type CreateRequest struct {
-	Name              string             `json:"name"`
-	VersioningEnabled bool               `json:"versioning_enabled"`
-	PublicAccess      string             `json:"public_access,omitempty"`
-	Quota             *CreateQuota       `json:"quota,omitempty"`
-	LifecycleTemplate string             `json:"lifecycle_template,omitempty"`
+	Name              string       `json:"name"`
+	VersioningEnabled bool         `json:"versioning_enabled"`
+	PublicAccess      string       `json:"public_access,omitempty"`
+	Quota             *CreateQuota `json:"quota,omitempty"`
+	LifecycleTemplate string       `json:"lifecycle_template,omitempty"`
 }
 
 // CreateQuota is the nested quota block carried by CreateRequest. Pulled

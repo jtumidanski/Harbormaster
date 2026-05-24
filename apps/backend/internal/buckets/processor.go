@@ -10,6 +10,7 @@ import (
 	madmin "github.com/minio/madmin-go/v3"
 	miniogo "github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/lifecycle"
+	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/jtumidanski/Harbormaster/internal/apierror"
@@ -37,6 +38,11 @@ type adminAPI interface {
 // s3API is the subset of *miniogo.Client the bucket processor uses.
 type s3API interface {
 	ListBuckets(ctx context.Context) ([]miniogo.BucketInfo, error)
+	// BucketExists is a HEAD-bucket call. The Get path uses it as a cheap
+	// presence probe so a missing bucket can be mapped to a typed 404
+	// without scanning the full ListBuckets response (which would also
+	// have to translate any transport error into a typed envelope).
+	BucketExists(ctx context.Context, bucket string) (bool, error)
 	MakeBucket(ctx context.Context, bucket string, opts miniogo.MakeBucketOptions) error
 	RemoveBucket(ctx context.Context, bucket string) error
 	GetBucketPolicy(ctx context.Context, bucket string) (string, error)
@@ -69,13 +75,29 @@ type CreateOpts struct {
 // Processor is the bucket-domain orchestrator. It depends only on the
 // ClientGetter — there is no GORM DB here because the domain has no local
 // persistence.
+//
+// Logger is used to surface best-effort sub-fetch failures (per-bucket
+// usage and quota) that intentionally do not fail the parent call. The
+// default value is a zerolog.Nop so unit tests need not configure it; the
+// HTTP wire-up calls WithLogger to inject the real logger.
 type Processor struct {
 	Clients ClientGetter
+	Logger  zerolog.Logger
 }
 
-// NewProcessor returns a Processor bound to clients.
+// NewProcessor returns a Processor bound to clients. The logger defaults
+// to zerolog.Nop; use WithLogger to attach the real logger.
 func NewProcessor(clients ClientGetter) *Processor {
-	return &Processor{Clients: clients}
+	return &Processor{Clients: clients, Logger: zerolog.Nop()}
+}
+
+// WithLogger returns p with the supplied logger attached. Best-effort
+// sub-fetch failures (usage/quota) log at warn level via this logger so an
+// operator can see partial-result events that a 200 response otherwise
+// hides.
+func (p *Processor) WithLogger(l zerolog.Logger) *Processor {
+	p.Logger = l
+	return p
 }
 
 // List returns every bucket on the configured MinIO with the auxiliary
@@ -121,6 +143,17 @@ func (p *Processor) List(ctx context.Context) ([]Bucket, error) {
 
 // Get returns the single-bucket view, running the same auxiliary fetches
 // as List for one bucket.
+//
+// Presence is probed via BucketExists (a cheap HEAD) so a missing bucket
+// surfaces as a typed 404 rather than the generic 502 a ListBuckets-scan
+// fallback would produce when the bucket simply does not exist. A
+// transport error from BucketExists is still mapped through mapClientError
+// as a 502.
+//
+// CreationDate is intentionally not fetched here: MinIO has no per-bucket
+// info endpoint, and pulling the full ListBuckets response just to scan
+// for one entry's CreationDate would defeat the point of the cheap probe.
+// The List endpoint remains the source for CreationDate.
 func (p *Processor) Get(ctx context.Context, name string) (Bucket, error) {
 	if err := ValidateBucketName(name); err != nil {
 		return Bucket{}, apierror.New(http.StatusBadRequest, "bucket_invalid_name", err.Error())
@@ -129,24 +162,14 @@ func (p *Processor) Get(ctx context.Context, name string) (Bucket, error) {
 	if err != nil {
 		return Bucket{}, err
 	}
-	// We need a CreationDate; MinIO has no per-bucket info endpoint, so
-	// the cheapest route is a ListBuckets + scan. The cost is one extra
-	// round-trip; acceptable for the single-bucket path.
-	infos, err := s3.ListBuckets(ctx)
+	exists, err := s3.BucketExists(ctx, name)
 	if err != nil {
 		return Bucket{}, mapClientError(err, "failed to look up bucket")
 	}
-	var hit *miniogo.BucketInfo
-	for i := range infos {
-		if infos[i].Name == name {
-			hit = &infos[i]
-			break
-		}
-	}
-	if hit == nil {
+	if !exists {
 		return Bucket{}, apierror.NotFound("bucket")
 	}
-	return p.detail(ctx, adm, s3, *hit)
+	return p.detail(ctx, adm, s3, miniogo.BucketInfo{Name: name})
 }
 
 // detail performs the per-bucket fan-out: usage, versioning, lifecycle,
@@ -211,8 +234,23 @@ func (p *Processor) detail(ctx context.Context, adm adminAPI, s3 s3API, info min
 		return Bucket{}, err
 	}
 
-	_ = usageErr
-	_ = quotaErr
+	// Best-effort sub-fetches: a usage scan can lag behind a newly
+	// created bucket, and the GetBucketQuota call returns an error when
+	// no quota has been configured. Both are normal; surface them in the
+	// log so an operator can investigate a bucket that perpetually shows
+	// zero bytes, but never fail the parent request.
+	if usageErr != nil {
+		p.Logger.Warn().
+			Err(usageErr).
+			Str("bucket", info.Name).
+			Msg("buckets: BucketUsageInfo failed; usage fields will be zero")
+	}
+	if quotaErr != nil {
+		p.Logger.Warn().
+			Err(quotaErr).
+			Str("bucket", info.Name).
+			Msg("buckets: GetBucketQuota failed; quota field will be empty")
+	}
 	b = applyUsage(b, usage)
 	b.VersioningEnabled = versioningEnabled(ver)
 	b.HasLifecycleRules = lc != nil && len(lc.Rules) > 0

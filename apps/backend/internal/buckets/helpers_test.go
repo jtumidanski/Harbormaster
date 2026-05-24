@@ -64,14 +64,16 @@ func (s *stubAdmin) SetBucketQuota(_ context.Context, bucket string, q *madmin.B
 type stubS3 struct {
 	mu sync.Mutex
 
-	buckets       []miniogo.BucketInfo
-	listErr       error
-	versioning    map[string]miniogo.BucketVersioningConfiguration
-	versioningErr error
-	policy        map[string]string
-	policyErr     error
-	lifecycle     map[string]*lifecycle.Configuration
-	lifecycleErr  error
+	buckets        []miniogo.BucketInfo
+	listErr        error
+	existsOverride map[string]bool // optional: explicit per-bucket presence
+	existsErr      error
+	versioning     map[string]miniogo.BucketVersioningConfiguration
+	versioningErr  error
+	policy         map[string]string
+	policyErr      error
+	lifecycle      map[string]*lifecycle.Configuration
+	lifecycleErr   error
 
 	// ListObjects controls
 	listObjectsReturn map[string][]miniogo.ObjectInfo
@@ -101,6 +103,29 @@ func (s *stubS3) ListBuckets(_ context.Context) ([]miniogo.BucketInfo, error) {
 		return nil, s.listErr
 	}
 	return s.buckets, nil
+}
+
+// BucketExists answers the HEAD-bucket probe. By default it derives the
+// answer from the buckets slice so existing tests that only configure
+// `buckets` (e.g. TestCreateAppliesOptionalSettings) keep working; tests
+// that need to assert the "missing bucket" path can populate
+// existsOverride to force a false answer without also clearing buckets.
+func (s *stubS3) BucketExists(_ context.Context, bucket string) (bool, error) {
+	if s.existsErr != nil {
+		return false, s.existsErr
+	}
+	if s.existsOverride != nil {
+		v, ok := s.existsOverride[bucket]
+		if ok {
+			return v, nil
+		}
+	}
+	for _, b := range s.buckets {
+		if b.Name == bucket {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *stubS3) MakeBucket(_ context.Context, bucket string, _ miniogo.MakeBucketOptions) error {

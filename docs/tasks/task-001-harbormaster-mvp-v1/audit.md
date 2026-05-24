@@ -439,3 +439,58 @@ Run from the worktree root unless noted; per-cwd noted in CLAUDE.md.
 ### Verdict
 
 **PASS WITH DEVIATIONS.** All 14 M4 tasks (T4.1–T4.14) are implemented with file-level evidence. The verification matrix this audit re-ran is clean: backend `go vet` + `CGO_ENABLED=0 go build` + `go test -race -count=1` green across all 21 packages; **integration suite PASS** (`ok internal/integration 6.451s` — the first green integration run since M3's suite was introduced); frontend `npm test -- --run` 55/55 tests pass across 14 files; `npm run lint` emits 3 `react-hooks/exhaustive-deps` warnings (no errors). The seven documented deviations are all net-additive or stylistic (three-super-commit collapse, processor signature retrofit for audit identity, inline-policy fallback in SA integration test, three deferred ESLint memo warnings, `accessKey` camelCase prop, R17 dual-layer enforcement). The R17 no-presigned-URL audit invariant is now machine-enforced. Tag `m4-complete` correctly marks HEAD (`f57eb45`). M4 is ready to proceed to M5.
+
+## M5 — Plan adherence audit (T5.1–T5.10)
+
+**Reviewer:** plan-adherence-reviewer
+**Date:** 2026-05-24
+**Branch:** task-001-harbormaster-mvp-v1 @ m5-complete (aef4087)
+**Base for diff:** f57eb45 (m4-complete)
+
+### Verification commands
+
+Run from `apps/backend/`:
+
+- [PASS] `go test -race -count=1 ./...` — all 21 testable packages green, including the new `internal/dashboard` (2.723s) and refreshed `internal/audit` (2.860s); pre-existing macOS LC_DYSYMTAB linker warnings are noise from `cmd/harbormaster.test`, `internal/setup.test`, `internal/users.test` (unchanged from M4).
+- [PASS] `go vet ./...` — only the upstream `shoenig/go-m1cpu@v0.1.6/cpu.go:75,77` `-Wgnu-folding-constant` warnings; no project-owned vet findings.
+- [PASS] `CGO_ENABLED=0 go build ./...` — zero output (clean pure-Go build).
+
+Run from `apps/frontend/`:
+
+- [PASS] `npm test -- --run` — 16 test files / 61 tests pass (1.83s); new files `DashboardPage.test.tsx` and `ActivityFeedPage.test.tsx` included.
+- [PASS] `npm run lint` — 3 pre-existing `react-hooks/exhaustive-deps` warnings (carried from M4 `EditPoliciesDialog.tsx`), zero errors.
+- [PASS] `npm run build` — emits `dist/assets/index-*.js` 588 kB / 175 kB gzipped (chunk-size advisory unchanged from M4).
+
+M5 commit chain `m4-complete..m5-complete` contains 3 commits collapsing T5.1+T5.2+T5.3 (`199f29f`) and T5.4+T5.5+T5.6 (`aef4087`) plus the M4 audit doc (`ddcf766`). T5.7/T5.8 produce no commits (DEFERRED). T5.9 (verification) and T5.10 (tag) produce no commits by design; `m5-complete` is at HEAD.
+
+### Per-task adherence (T5.1 … T5.10)
+
+- **T5.1 — PASS.** `internal/dashboard/processor.go:25-67` defines `Window`/`Parse`/`Duration` matching the plan; `ErrInvalidWindow` (`processor.go:42`) returns the typed `invalid_failures_window` sentinel. `View`/`ServerInfo`/`Totals`/`NodeStatus`/`DriveCount`/`FailuresWidget` (`processor.go:84-131`) match api-contracts.md shape. `Processor.Build` (`processor.go:190-274`) fans out four `errgroup.Go` calls (server info, buckets list, recent activity, failures widget) under `errgroup.WithContext` so the first error cancels the survivors. `BucketsLister`/`AuditQuerier`/`PoolGetter` interfaces (`processor.go:139-157`) keep dependencies narrow + mockable. `NewProcessor`/`withClock` (`processor.go:174-183`) inject deterministic time. Helpers `ensureNodeSlice`/`ensureStringSlice`/`ensureActivitySlice`/`ensureFailureSlice` (`processor.go:280-306`) guarantee `[]` rather than `null` on empty arrays. Tests `processor_test.go` (229 lines) cover totals aggregation across 12 buckets, all three windows mapping to expected cutoffs via injected clock, invalid-window rejection, and fan-out error propagation. `golang.org/x/sync/errgroup` import resolves (already present in `go.mod`). Commit `199f29f`.
+
+- **T5.2 — PASS.** `internal/audit/provider.go:17-118` implements `recent(db, limit)`, `failuresSince(db, cutoff, limit)`, `listFiltered(db, f, page)` with the plan's GORM patterns (`Order("occurred_at DESC")`, RFC3339 cutoff format, count-then-find for pagination, `OutcomeFailure` typed constant, `maxPageSize=200` cap at `provider.go:14`). `Processor.Recent` (`processor.go:53`), `Processor.FailuresSince` (`processor.go:61`), and the existing `List(ctx, Filter, Page)` surface the wrappers. REST: `resource.go:50-53` mounts `GET /audit-events` via chi `Routes(p *Processor)`; `rest.go:8` notes the deliberate M5 `source_ip` exposure deviation from M4's redaction policy (intentional). Tests `query_test.go` (228 lines) cover the new query surface; the `internal/audit` package finishes `2.860s` race-clean. Commit `199f29f`.
+
+- **T5.3 — PASS.** `cmd/harbormaster/serve.go:22` imports `internal/dashboard`. The protected `chi.Router` group at `serve.go:222-225` mounts `dashboard.Routes(dashboardProc)(g)` and `audit.Routes(auditProc)(g)` under the same auth/session/CSRF chain as other M4 routes. `audit_adapter.go` (87 lines, new) wires `madmin.ServerInfo` → `dashboard.PoolGetter`. Action-style `/dashboard?failures_window=...` (per `internal/dashboard/resource.go:20`) and JSON:API `/audit-events` (per `internal/audit/resource.go:53`) both mount as planned. Commit `199f29f`.
+
+- **T5.4 — PASS.** `features/dashboard/DashboardPage.tsx` (194 lines), `RecentFailuresWidget.tsx` (93 lines), `RecentActivityList.tsx` (69 lines), `api.ts` + `types.ts` all present. `RecentFailuresWidget.tsx` reads/writes `localStorage` key `harbormaster:dashboard:failuresWindow` (matching plan §T5.4 Step 2 `WINDOW_KEY`); the "See all" link (`RecentFailuresWidget.tsx:42,88`) carries `outcome=failure&from=...` query params into `/activity`. `routes.tsx:40-41` redirects `/` → `/dashboard` and mounts `<DashboardPage />`. AppShell sidebar updated (`AppShell.tsx`). Tests `DashboardPage.test.tsx` (202 lines, 6+ assertions) cover render, localStorage persistence, window refetch. Commit `aef4087`.
+
+- **T5.5 — PASS.** `features/activity/ActivityFeedPage.tsx` (192 lines), `FiltersSidebar.tsx` (191 lines), `api.ts`, `types.ts` present. `routes.tsx:47` mounts `/activity`. Filter sidebar supports action/target_type multi-select, outcome dropdown, and date range per plan. Tests `ActivityFeedPage.test.tsx` (173 lines) cover URL-encoded filter persistence and pagination. Commit `aef4087`.
+
+- **T5.6 — PASS.** `AppShell.tsx:2,14-16,38` defines a `ThemeToggle` component using `lucide-react` `Sun`/`Moon`/`Monitor` icons bound to `useTheme()` from `context/ThemeProvider.tsx` (which persists to `localStorage`). Toggle is rendered in the app header (`AppShell.tsx:38`). Commit `aef4087`.
+
+- **T5.7 — DEFERRED.** No `apps/backend/internal/integration/dashboard_slo_integration_test.go` exists. Caller decision: requires a Docker testcontainer + 100-bucket fixture and is acceptable to add pre-release. The SLO target (dashboard p95 < 2 s) is not regression-gated until then.
+
+- **T5.8 — DEFERRED.** No `apps/backend/internal/integration/objects_slo_integration_test.go` exists. Same caller decision (10k-object prefix fixture, p95 < 3 s).
+
+- **T5.9 — PASS.** Full local matrix re-run during this audit: backend race tests / vet / CGO=0 build clean (21 packages); frontend lint (0 errors) / test (61/61) / build (588 kB chunk advisory unchanged) clean. See "Verification commands" above.
+
+- **T5.10 — PASS.** `m5-complete` tag is at HEAD (`aef4087`); `git log --oneline m4-complete..m5-complete` returns the three M5 commits.
+
+### Recorded intentional deviations
+
+- **Commits collapsed.** Plan prescribes one commit per task. M5 ships two super-commits (`199f29f` for T5.1+T5.2+T5.3 backend, `aef4087` for T5.4+T5.5+T5.6 frontend) plus the M4 audit doc commit. Carry-over pattern from M4; not a defect.
+- **`source_ip` exposed in M5 audit list (`rest.go:8`).** Intentional reversal of M4's redaction for the audit query endpoint so operators can investigate access patterns. Documented in code.
+- **T5.7 / T5.8 deferred by caller** (Docker testcontainer + large-fixture cost). SLOs themselves are still part of the contract.
+
+### Verdict
+
+**PASS WITH DEFERRALS.** 8/10 M5 tasks implemented with file-level evidence; T5.7 and T5.8 (SLO integration tests) are explicitly deferred by caller decision and tracked for pre-release. Verification matrix is fully green (backend 21/21 packages race-clean, frontend 61/61 tests pass, lint 0 errors, builds clean). Tag `m5-complete` correctly marks HEAD (`aef4087`). M5 is ready to proceed to M6.

@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/spf13/cobra"
+	"gorm.io/gorm"
 
 	"github.com/jtumidanski/Harbormaster/internal/apierror"
 	"github.com/jtumidanski/Harbormaster/internal/audit"
@@ -122,11 +124,82 @@ func runServe(ctx context.Context, _ io.Writer) error {
 		})
 	}
 
+	// Readiness probe — ticks every 10s. The /readyz endpoint reports
+	// success iff the last probe completed within the freshness window.
+	ready := startReadinessProbe(ctx, gdb, pool)
+
 	// TODO(T2.17): add E2E test once setup.Probe is stubbable.
 	s := server.New(cfg, server.Deps{
 		Logger:    logger,
 		APIRoutes: []func(chi.Router){publicRoutes, protectedRoutes},
+		Ready:     ready,
 	})
 	logger.Info().Str("addr", cfg.ListenAddr).Msg("harbormaster started")
 	return s.Run(ctx)
+}
+
+// readinessFreshness is the maximum age of the last successful probe before
+// /readyz starts returning 503. With a 10s tick interval, 30s tolerates two
+// consecutive misses before signalling unhealthy.
+const readinessFreshness = 30 * time.Second
+
+// startReadinessProbe launches a background goroutine that periodically
+// records the last time the system was demonstrably healthy:
+//   - Setup not yet completed: the system is "ready" as soon as the HTTP
+//     server is serving — /setup/* and /healthz must remain reachable, so
+//     we treat each tick as a successful probe.
+//   - Setup completed: the pool is bound, so we issue a real madmin.ServerInfo
+//     RPC. On success, record the timestamp.
+//
+// Returns a snapshot function suitable for server.Deps.Ready.
+func startReadinessProbe(ctx context.Context, gdb *gorm.DB, pool *hmminio.Pool) func(context.Context) (bool, string) {
+	var lastOK atomic.Pointer[time.Time]
+
+	tick := func() {
+		var v string
+		gdb.WithContext(ctx).Raw(`SELECT value FROM app_settings WHERE key = ?`, "setup_completed").Scan(&v)
+		if v != "true" {
+			// Pre-setup: HTTP server liveness is the only signal we have.
+			now := time.Now().UTC()
+			lastOK.Store(&now)
+			return
+		}
+		madm, _, err := pool.Get(ctx)
+		if err != nil {
+			return
+		}
+		if _, err := madm.ServerInfo(ctx); err != nil {
+			return
+		}
+		now := time.Now().UTC()
+		lastOK.Store(&now)
+	}
+
+	// Prime once synchronously so /readyz returns 200 immediately after
+	// boot when no MinIO is bound yet.
+	tick()
+
+	go func() {
+		t := time.NewTicker(10 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				tick()
+			}
+		}
+	}()
+
+	return func(_ context.Context) (bool, string) {
+		p := lastOK.Load()
+		if p == nil {
+			return false, "minio probe never succeeded"
+		}
+		if time.Since(*p) > readinessFreshness {
+			return false, "minio probe stale"
+		}
+		return true, ""
+	}
 }

@@ -22,6 +22,10 @@ type Deps struct {
 	Logger zerolog.Logger
 	// Subrouter handlers added in M2+ — each domain provides a func(chi.Router).
 	APIRoutes []func(r chi.Router)
+	// Ready is consulted by /readyz. When nil, readyz always returns 200
+	// (M1 behaviour). When non-nil, ok=false yields 503 with reason in the
+	// apierror envelope.
+	Ready func(ctx context.Context) (ok bool, reason string)
 }
 
 // New builds a Server but does not start it.

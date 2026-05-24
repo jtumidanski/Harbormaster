@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"sync/atomic"
 )
@@ -18,11 +19,28 @@ func healthz(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
-func readyz(_ *Server) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		// In M1 we always return 200 once the server is running. M2 wires in
-		// migrations + cached MinIO admin probe and gates here.
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
+func readyz(s *Server) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// When no Ready probe is wired (M1 / tests), behave as before.
+		if s.deps.Ready == nil {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+			return
+		}
+		ok, reason := s.deps.Ready(r.Context())
+		if ok {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		body := map[string]any{
+			"error": map[string]any{
+				"code":    "not_ready",
+				"message": reason,
+			},
+		}
+		_ = json.NewEncoder(w).Encode(body)
 	}
 }

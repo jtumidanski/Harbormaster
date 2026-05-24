@@ -1,0 +1,52 @@
+run:
+  timeout: 5m
+  tests: true
+  go: "1.24"
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - revive
+    - gocyclo
+    - unparam
+    - unused
+    - bodyclose
+    - noctx
+    - forbidigo
+    - gosec
+    - ineffassign
+    - misspell
+    - nakedret
+    - prealloc
+    - whitespace
+
+linters-settings:
+  gocyclo:
+    min-complexity: 18
+  forbidigo:
+    forbid:
+      - p: "^fmt\\.Print(ln|f)?$"
+        msg: "use the logger, not fmt.Print*"
+      - p: "^panic$"
+        msg: "do not panic in production code; return an error"
+  revive:
+    rules:
+      - name: exported
+        severity: warning
+  gosec:
+    excludes:
+      - G115  # acceptable int conversions are reviewed manually
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - forbidigo
+        - gosec
+        - gocyclo
+    - path: cmd/harbormaster/main\.go
+      linters:
+        - forbidigo  # main may print fatal errors via fmt.Fprintln(os.Stderr, …)

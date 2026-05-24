@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/jtumidanski/Harbormaster/internal/audit"
 	"github.com/jtumidanski/Harbormaster/internal/config"
 	"github.com/jtumidanski/Harbormaster/internal/crypto"
 	"github.com/jtumidanski/Harbormaster/internal/db"
@@ -70,6 +71,9 @@ func runServe(ctx context.Context, _ io.Writer) error {
 	case stored != fp:
 		return fmt.Errorf("encryption key fingerprint mismatch (stored=%s, current=%s); refusing to start", stored, fp)
 	}
+	auditProc := audit.NewProcessor(gdb, cfg.AuditRetention)
+	go audit.StartRetentionSweeper(ctx, auditProc, 24*time.Hour)
+	_ = auditProc // referenced by M2 handlers via context
 	s := server.New(cfg, server.Deps{Logger: logger})
 	logger.Info().Str("addr", cfg.ListenAddr).Msg("harbormaster started")
 	return s.Run(ctx)

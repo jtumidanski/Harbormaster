@@ -8,6 +8,9 @@ import { SetupWizard } from "@/features/setup/SetupWizard";
 import { BucketListPage } from "@/features/buckets/BucketListPage";
 import { BucketDetailPage } from "@/features/buckets/BucketDetailPage";
 import { ConnectionSettingsPage } from "@/features/connection/ConnectionSettingsPage";
+import { UserListPage } from "@/features/users/UserListPage";
+import { UserDetailPage } from "@/features/users/UserDetailPage";
+import { PolicyTemplatesPage } from "@/features/policies/PolicyTemplatesPage";
 
 export function AppRoutes() {
   const { me, isLoading: meLoading } = useAuth();
@@ -35,6 +38,9 @@ export function AppRoutes() {
         <Route path="/" element={<Navigate to="/buckets" replace />} />
         <Route path="/buckets" element={<BucketListPage />} />
         <Route path="/buckets/:name" element={<BucketDetailPage />} />
+        <Route path="/users" element={<UserListPage />} />
+        <Route path="/users/:accessKey" element={<UserDetailPage />} />
+        <Route path="/policies" element={<PolicyTemplatesPage />} />
         <Route path="/settings/account" element={<ChangePasswordPage />} />
         <Route path="/settings/connection" element={<ConnectionSettingsPage />} />
         <Route path="*" element={<div className="p-8">Not found</div>} />

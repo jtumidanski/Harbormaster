@@ -23,3 +23,17 @@ export const objectsKeys = {
 export const lifecycleKeys = {
   list: (bucket: string) => ["lifecycle", bucket] as const,
 };
+
+export const usersKeys = {
+  all: () => ["users"] as const,
+  list: () => ["users", "list"] as const,
+  detail: (key: string) => ["users", "detail", key] as const,
+};
+
+export const serviceAccountsKeys = {
+  forUser: (key: string) => ["service-accounts", key] as const,
+};
+
+export const policyTemplatesKeys = {
+  list: () => ["policy-templates"] as const,
+};

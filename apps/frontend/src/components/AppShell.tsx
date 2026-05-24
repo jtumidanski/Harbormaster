@@ -24,6 +24,11 @@ export function AppShell() {
               </Link>
             </li>
             <li>
+              <Link to="/policies" className="block rounded px-2 py-1 hover:bg-accent">
+                Policies
+              </Link>
+            </li>
+            <li>
               <Link to="/activity" className="block rounded px-2 py-1 hover:bg-accent">
                 Activity
               </Link>

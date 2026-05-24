@@ -1,0 +1,17 @@
+title = "Harbormaster gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allow obvious placeholders in docs/tests"
+regexes = [
+  '''(?i)(your[_-]?(access|secret)[_-]?key|AKIA(?:EXAMPLE|TEST))''',
+  '''(?i)correct horse battery staple''',
+]
+paths = [
+  '''docs/.*''',
+  '''.*\.md$''',
+  '''apps/frontend/src/test/.*''',
+  '''apps/backend/.*_test\.go$''',
+]

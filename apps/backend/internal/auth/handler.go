@@ -28,13 +28,37 @@ type HandlerDeps struct {
 // under whatever parent path the caller chooses. Callers are responsible for
 // mounting RequireSession / RequireCSRF in front of the routes that need
 // them (login/csrf are public; me/logout/password require a session).
+//
+// In production, prefer PublicRoutes() and ProtectedRoutes() so the
+// composition root can apply RequireSession + RequireCSRF only to the
+// protected subset. Routes() is retained for tests that mount a single
+// registrar and filter middleware per-path.
 func Routes(d HandlerDeps) func(chi.Router) {
 	return func(r chi.Router) {
+		d.PublicRoutes()(r)
+		d.ProtectedRoutes()(r)
+	}
+}
+
+// PublicRoutes mounts the endpoints that must be reachable without a
+// session: POST /auth/login and GET /csrf. The composition root should NOT
+// put RequireSession in front of these — login bootstraps the cookie, and
+// /csrf is needed by the SPA before any credentials are entered.
+func (d HandlerDeps) PublicRoutes() func(chi.Router) {
+	return func(r chi.Router) {
 		r.Post("/auth/login", d.login)
+		r.Get("/csrf", d.issueCSRF)
+	}
+}
+
+// ProtectedRoutes mounts the endpoints that require a live session:
+// POST /auth/logout, GET /auth/me, POST /auth/password. The composition
+// root is responsible for wrapping these in RequireSession + RequireCSRF.
+func (d HandlerDeps) ProtectedRoutes() func(chi.Router) {
+	return func(r chi.Router) {
 		r.Post("/auth/logout", d.logout)
 		r.Get("/auth/me", d.me)
 		r.Post("/auth/password", d.changePassword)
-		r.Get("/csrf", d.issueCSRF)
 	}
 }
 

@@ -33,12 +33,26 @@ async function request<T>(
     const t = readCsrfCookie();
     if (t) headers["X-CSRF-Token"] = t;
   }
+  // Strip fields we manage explicitly so caller's `init` spread can't clobber
+  // method/credentials/body/headers. Caller-provided headers were already
+  // merged into `headers` above via the `init?.headers` spread.
+  const {
+    headers: _ignoredHeaders,
+    method: _ignoredMethod,
+    credentials: _ignoredCreds,
+    body: _ignoredBody,
+    ...restInit
+  } = init ?? {};
+  void _ignoredHeaders;
+  void _ignoredMethod;
+  void _ignoredCreds;
+  void _ignoredBody;
   const res = await fetch(path, {
+    ...restInit,
     method,
     credentials: "include",
     ...(bodyInit !== undefined ? { body: bodyInit } : {}),
     headers,
-    ...init,
   });
   if (!res.ok) {
     throw await parseErrorResponse(res);

@@ -17,11 +17,35 @@ import { objectsKeys } from "@/lib/api/keys";
 // V1 hardcodes the upload cap at 100 MiB to match the backend default of
 // HARBORMASTER_UPLOAD_MAX_BYTES. T3.27 will surface this dynamically
 // from /api/v1/config so the dialog matches whatever the operator has
-// configured.
+// configured. The client-side check (pickFile) still uses this constant
+// as a first line of defence; if it disagrees with the operator's
+// configured cap, the server's 413 response carries `details.limit_bytes`
+// which we surface in the rejection message instead (T3.28).
 const UPLOAD_CAP_BYTES = 100 * 1024 * 1024;
 const UPLOAD_CAP_LABEL = "100 MiB";
 
 const OVER_CAP_MESSAGE = `This file exceeds the configured cap (${UPLOAD_CAP_LABEL}). Use \`mc cp\` or another direct S3 client.`;
+
+// formatMiB renders a byte count as a human-readable MiB string. We
+// drop the decimal for values ≥100 MiB (whole-number precision is
+// enough at that scale) and trim the trailing ".0" so "100.0" surfaces
+// as "100" — matching how operators tend to write the cap.
+function formatMiB(bytes: number): string {
+  const mib = bytes / 1024 / 1024;
+  return mib >= 100 ? `${Math.round(mib)}` : mib.toFixed(1).replace(/\.0$/, "");
+}
+
+// overCapMessageFromServer builds the rejection message for a 413
+// upload_too_large response. When the server includes the structured
+// `details.limit_bytes` field we surface the operator-configured cap
+// dynamically; otherwise we fall back to the hardcoded 100 MiB string
+// so the message is never blank.
+function overCapMessageFromServer(limitBytes: unknown): string {
+  if (typeof limitBytes === "number" && Number.isFinite(limitBytes) && limitBytes > 0) {
+    return `Upload exceeds the configured cap (${formatMiB(limitBytes)} MiB). Use \`mc cp\` or another direct S3 client.`;
+  }
+  return OVER_CAP_MESSAGE;
+}
 
 export type UploadDialogProps = {
   open: boolean;
@@ -112,7 +136,22 @@ export function UploadDialog({ open, onOpenChange, bucket, prefix }: UploadDialo
         return;
       }
       if (xhr.status === 413) {
-        setState({ kind: "error", message: OVER_CAP_MESSAGE });
+        // Prefer the server-reported limit (operator-configured cap) over
+        // the hardcoded 100 MiB constant. The backend ships the value as
+        // `details.limit_bytes` on the action-shape envelope; if the
+        // payload is missing or malformed we fall back to the static
+        // message so the operator never sees a blank error.
+        let limitBytes: unknown;
+        try {
+          const parsed = JSON.parse(xhr.responseText) as {
+            error?: { details?: { limit_bytes?: unknown } };
+            errors?: { meta?: { limit_bytes?: unknown } }[];
+          };
+          limitBytes = parsed.error?.details?.limit_bytes ?? parsed.errors?.[0]?.meta?.limit_bytes;
+        } catch {
+          /* fall through to hardcoded message */
+        }
+        setState({ kind: "error", message: overCapMessageFromServer(limitBytes) });
         return;
       }
       // Try to surface the server's JSON:API message when present;

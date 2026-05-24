@@ -101,6 +101,42 @@ describe("UploadDialog", () => {
     expect(xhr.headers["X-CSRF-Token"]).toBe("test-token");
   });
 
+  it("413 response with details.limit_bytes surfaces the dynamic cap (T3.28)", async () => {
+    const user = userEvent.setup();
+    const qc = makeQueryClient();
+    render(
+      <Wrapper qc={qc}>
+        <UploadDialog open onOpenChange={() => undefined} bucket="photos" prefix="" />
+      </Wrapper>,
+    );
+
+    const input = screen.getByLabelText(/choose a file/i);
+    // Small payload — below the 100 MiB client-side gate so the POST
+    // actually fires. The server then "responds" with a 413 carrying
+    // a 200 MiB limit (operator configured a larger cap than the
+    // client-side default expects).
+    const file = new File(["small payload"], "ok.txt", { type: "text/plain" });
+    await user.upload(input, file);
+    await waitFor(() => expect(screen.getByText(/ok\.txt/)).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: /^upload$/i }));
+    await waitFor(() => expect(XhrStub.instances.length).toBe(1));
+
+    const xhr = XhrStub.instances[0];
+    xhr.complete(
+      413,
+      JSON.stringify({
+        error: {
+          code: "upload_too_large",
+          details: { limit_bytes: 209715200 }, // 200 MiB
+        },
+      }),
+    );
+
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    expect(screen.getByRole("alert").textContent ?? "").toMatch(/200 MiB/);
+  });
+
   it("selecting a file over the cap rejects client-side without POST", async () => {
     const user = userEvent.setup();
     const qc = makeQueryClient();

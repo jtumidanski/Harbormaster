@@ -54,11 +54,27 @@ import (
 // envEnable is the env-var gate. Tests skip themselves when this is unset.
 const envEnable = "HARBORMASTER_INTEGRATION"
 
-// minioImage is the pinned MinIO release. Pinning prevents a surprise
-// CI failure when MinIO ships a backwards-incompatible admin-API tweak;
-// bump deliberately and re-run the suite. The tag is one of the
-// quay.io/minio/minio "RELEASE.<timestamp>" rolling tags.
-const minioImage = "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
+// envMinIOImage lets the nightly matrix (or a local operator) override
+// the pinned MinIO image without editing source. Falls back to the
+// default constant below when unset.
+const envMinIOImage = "HARBORMASTER_MINIO_IMAGE"
+
+// defaultMinIOImage is the pinned MinIO release. Pinning prevents a
+// surprise CI failure when MinIO ships a backwards-incompatible
+// admin-API tweak; bump deliberately and re-run the suite. The tag is
+// one of the quay.io/minio/minio "RELEASE.<timestamp>" rolling tags.
+const defaultMinIOImage = "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
+
+// minioImageFor returns the image the testcontainer should run. The
+// HARBORMASTER_MINIO_IMAGE env var wins so the nightly workflow's matrix
+// can exercise both the floor release and `latest` against the same
+// suite; otherwise the default constant is used.
+func minioImageFor() string {
+	if v := os.Getenv(envMinIOImage); v != "" {
+		return v
+	}
+	return defaultMinIOImage
+}
 
 // TestEnv bundles the live MinIO clients and the wired-up domain
 // processors a test needs. Each *_integration_test.go file calls setup()
@@ -103,7 +119,7 @@ func setup(t *testing.T) (*TestEnv, context.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	t.Cleanup(cancel)
 
-	container, err := tcminio.Run(ctx, minioImage)
+	container, err := tcminio.Run(ctx, minioImageFor())
 	if err != nil {
 		t.Skipf("MinIO testcontainer unavailable (Docker not reachable?): %v", err)
 	}

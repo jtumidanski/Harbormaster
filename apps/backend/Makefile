@@ -1,5 +1,7 @@
 .PHONY: lint test test-integration build vet tidy run
 
+VERSION ?= $(shell git describe --tags --always --dirty)
+
 lint:
 	golangci-lint run
 
@@ -13,7 +15,7 @@ vet:
 	go vet ./...
 
 build:
-	CGO_ENABLED=0 go build -o bin/harbormaster ./cmd/harbormaster
+	CGO_ENABLED=0 go build -ldflags="-X main.version=$(VERSION)" -o bin/harbormaster ./cmd/harbormaster
 
 tidy:
 	go mod tidy

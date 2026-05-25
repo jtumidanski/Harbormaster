@@ -1,0 +1,33 @@
+name: nightly
+on:
+  schedule:
+    - cron: "0 3 * * *" # 03:00 UTC daily
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    strategy:
+      fail-fast: false
+      matrix:
+        # MinIO floor (per docs/operator/security.md "supported floor") and
+        # the rolling `latest` tag. The plan listed `RELEASE.2025-01-01T00-00-00Z`
+        # as the floor, but that tag does not exist upstream; the substitute is
+        # the same one pinned in internal/integration/helper.go.
+        minio:
+          - "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
+          - "quay.io/minio/minio:latest"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
+        with: { go-version: "1.25" }
+      - name: Run integration suite
+        env:
+          HARBORMASTER_INTEGRATION: "1"
+          HARBORMASTER_MINIO_IMAGE: ${{ matrix.minio }}
+        run: |
+          cd apps/backend
+          go test -race -count=1 -tags=integration ./...

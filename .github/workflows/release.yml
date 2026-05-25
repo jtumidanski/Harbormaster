@@ -1,0 +1,27 @@
+name: release
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  attach-notes:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with: { fetch-depth: 0 }
+      - name: Generate notes from CHANGELOG.md
+        id: notes
+        run: |
+          tag="${GITHUB_REF##*/}"
+          awk "/^## ${tag}$/{flag=1; next} /^## /{flag=0} flag" CHANGELOG.md > /tmp/notes.md
+          [ -s /tmp/notes.md ] || echo "No CHANGELOG entry for ${tag}; see commit history." > /tmp/notes.md
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 # v2.0.8
+        with:
+          body_path: /tmp/notes.md
+          append_body: true
+          files: |
+            CHANGELOG.md

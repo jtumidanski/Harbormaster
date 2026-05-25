@@ -494,3 +494,89 @@ M5 commit chain `m4-complete..m5-complete` contains 3 commits collapsing T5.1+T5
 ### Verdict
 
 **PASS WITH DEFERRALS.** 8/10 M5 tasks implemented with file-level evidence; T5.7 and T5.8 (SLO integration tests) are explicitly deferred by caller decision and tracked for pre-release. Verification matrix is fully green (backend 21/21 packages race-clean, frontend 61/61 tests pass, lint 0 errors, builds clean). Tag `m5-complete` correctly marks HEAD (`aef4087`). M5 is ready to proceed to M6.
+
+---
+
+## M6 — Plan adherence audit (T6.1–T6.14)
+
+**Range:** `m5-complete` (`aef4087`) → `m6-complete` (`5f2a020`)
+**Commits:** 3 super-commits (`62e5061`, `d662185`, `5f2a020`) covering 14 plan tasks.
+**Diffstat:** 29 files / +1891 / −22.
+
+### Verification commands re-run during audit
+
+| Command | Result |
+|---|---|
+| `git log --oneline m5-complete..m6-complete` | 3 commits, matches caller summary. |
+| `cd apps/backend && go test -race -count=1 ./...` | PASS — 21/21 packages ok; 376 test cases. Clang ld warnings on macOS only, no failures. |
+| `cd apps/backend && go vet ./...` | PASS (CGO header warnings from `go-m1cpu` transitive only). |
+| `cd apps/backend && CGO_ENABLED=0 go build ./...` | PASS. |
+| `cd apps/frontend && npm test -- --run` | PASS — 16 files, 61/61 tests. |
+| `cd apps/frontend && npm run lint` | PASS — 0 errors, 3 pre-existing warnings (carried from M3). |
+| `cd apps/frontend && npm run format` | PASS — prettier clean. |
+| `cd apps/frontend && npm run build` | PASS — 588 kB bundle (advisory unchanged). |
+| `docker buildx build --platform linux/amd64 -f deploy/docker/Dockerfile -t hm:m6-audit --load --build-arg VERSION=audit .` | PASS. |
+| `docker run --rm hm:m6-audit version` | PASS — prints `audit`, proving VERSION → ldflag pipeline. |
+| `kubectl apply --dry-run=client -f deploy/kubernetes/*.yaml` | Parser-PASS (kubectl loaded and structurally accepted all 5 manifests; server-side validation skipped — no live cluster). |
+
+### Per-task disposition
+
+- **T6.1 — PASS.** `deploy/docker/Dockerfile:25` ldflag `-X main.version=${VERSION}`; HEALTHCHECK at `:47-48` invokes `harbormaster version`; OCI labels at `:32-39`; golang base bumped to `1.25-alpine` (`:12`) consistent with the M3 go.mod bump (noted as forced).
+- **T6.2 — PASS.** `deploy/docker/docker-compose.yml` ships harbormaster + healthcheck (`:19-23`) and bundled MinIO behind `profiles: ["with-minio"]` (`:30`). `mc` bind-mount commented opt-in (`:16-18`).
+- **T6.3 — PASS.** `deploy/docker/nginx.conf.example` (54 lines) carves out SSE on `/api/v1/buckets/.+/empty` with `proxy_buffering off`; `deploy/docker/caddy.example.Caddyfile` (27 lines); `docs/operator/reverse-proxy.md` (147 lines) covers SSE + uploads + base-path + TLS trade-offs.
+- **T6.4 — PASS.** All five manifests under `deploy/kubernetes/` plus a 157-line operator README. `deployment.yaml` is single-replica/`Recreate` per R6 (`:22`), distroless-nonroot security context, `readOnlyRootFilesystem`, drop-ALL caps. kubectl parses each manifest cleanly.
+- **T6.5 — PASS.** `.github/workflows/main.yml`: SHA-pinned buildx + qemu, multi-arch `linux/amd64,linux/arm64`, OCI-tarball Trivy scan (CRIT/HIGH fail), GHCR push, cosign keyless OIDC sign at `:66-71`. Minor deviation from plan: single `cosign sign` call by digest rather than per-tag loop — functionally equivalent (signs the digest, all tags resolve to it).
+- **T6.6 — PASS.** `.github/workflows/release.yml` reads CHANGELOG between `## tag` markers; `CHANGELOG.md` seeded with v1.0.0 section.
+- **T6.7 — PASS.** `.github/workflows/nightly.yml` schedules 03:00 UTC + manual dispatch, matrix `{floor, latest}`, `go-version: "1.25"` (kept consistent with go.mod). `apps/backend/internal/integration/helper.go:60-69` honours `HARBORMASTER_MINIO_IMAGE`. Documented deviation: matrix floor swapped to `RELEASE.2025-09-07T16-13-09Z` (the plan's `2025-01-01` tag does not exist upstream) — comment in `nightly.yml:15-18` explains.
+- **T6.8 — PASS.** README expanded from boilerplate to 268 lines with all 11 sections (TOC, quick start, production, config, security, mc import, recovery, GHCR-publish reminder, licence, goals/non-goals, links).
+- **T6.9 — PASS.** `docs/architecture/overview.md` (197), `docs/operator/configuration.md` (85), `docs/operator/security.md` (172), `docs/operator/recovery.md` (147). `reverse-proxy.md` already shipped under T6.3.
+- **T6.10 — PASS.** `apps/backend/Makefile:3,18` derives `VERSION` from `git describe --tags --always --dirty` and threads it via `-ldflags="-X main.version=$(VERSION)"`.
+- **T6.11 — PASS.** `apps/frontend/playwright.config.ts` (12 lines), `apps/frontend/e2e/smoke.spec.ts` (29 lines), `@playwright/test@1.46.0` pinned in `package.json:41`. Minor deviation: assertion checks the buckets nav link (`getByRole("link", { name: /buckets/i })`) rather than the buckets page H1; functionally equivalent for a post-login landing assertion and slightly more robust to redirect changes. Caller decision: not run today (requires live stack — folded into T6.13).
+- **T6.12 — IN PROGRESS.** This audit is the plan-adherence portion of T6.12. Caller noted backend + frontend guideline reviews remain optional.
+- **T6.13 — DEFERRED (operator).** Manual smoke against `docker compose --profile with-minio up` requires a running stack and human walkthrough of PRD §10. Acknowledged in caller summary.
+- **T6.14 — DEFERRED (operator).** `git push -u origin task-001-harbormaster-mvp-v1` + `gh pr create` are operator actions; user explicitly has not asked yet.
+
+### Recorded intentional deviations
+
+- **Three super-commits** instead of one-per-task (carry-over pattern from M3–M5, not a defect).
+- **`cosign sign` by digest** rather than per-tag loop in `main.yml` — equivalent because Sigstore signs the image manifest digest.
+- **Nightly MinIO floor swap** to `RELEASE.2025-09-07T16-13-09Z` (plan's date is fictitious upstream).
+- **Smoke assertion** targets buckets nav link rather than H1.
+- **`actions/setup-go` on Go 1.25** rather than the plan's 1.24, mirroring `go.mod` bumped during T3.22.
+
+### Verdict
+
+**PASS WITH DEFERRALS.** 12/14 M6 tasks implemented with file-level evidence; T6.13 (manual stack walkthrough) and T6.14 (push + PR) are operator actions and held per caller instructions. T6.12 plan-adherence (this audit) is complete; backend/frontend guideline reviews remain optional. Full local verification matrix is green including Docker buildx + `version` ldflag round-trip. Tag `m6-complete` correctly marks HEAD (`5f2a020`).
+
+---
+
+## Final summary
+
+**Branch totals (since baseline `da6ca2f`):**
+
+- **Commits:** 81 (including 4 spec/design/plan + 7 audit + 70 implementation/infra).
+- **Diffstat:** 359 files, +58 110 / −3.
+- **Tests:** Backend — 376 unit/contract test cases across 21 packages, race-clean. Frontend — 61 tests across 16 files. Plus 1 Playwright e2e smoke (on-demand).
+- **Milestone tags present:** `m0-complete` through `m6-complete` (all 7).
+
+**Milestone status roll-up:**
+
+| Milestone | Verdict |
+|---|---|
+| M0 (scaffold/CI/Docker shell) | PASS |
+| M1 (foundations: config/crypto/db/audit/minio pool) | PASS |
+| M2 (auth, setup wizard, connection) | PASS WITH DEFERRALS |
+| M3 (buckets + objects + empty-bucket SSE + integration tests) | PASS WITH DEFERRALS |
+| M4 (IAM users + service accounts + policy templates) | PASS WITH DEFERRALS |
+| M5 (dashboard + activity feed + theme toggle) | PASS WITH DEFERRALS |
+| M6 (Docker/k8s/CI/release/cosign/Playwright/docs) | PASS WITH DEFERRALS |
+
+**Outstanding operator actions before v1.0 release:**
+
+1. T6.13 — manual walkthrough of PRD §10 acceptance criteria against `docker compose --profile with-minio up`.
+2. T6.14 — push `task-001-harbormaster-mvp-v1` and open the PR.
+3. T5.7 / T5.8 — dashboard p95 < 2 s and objects p95 < 3 s SLO integration tests (deferred to pre-release window).
+4. Optional: run backend + frontend guideline reviewer agents for full T6.12 coverage.
+5. Post-merge: flip GHCR package visibility to public (README §"GHCR first-publish reminder") and tag `v1.0.0` to trigger `release.yml`.
+
+**Estimated readiness:** Code- and CI-complete; the branch is mergeable on the strength of the verification matrix. Release readiness is gated by items 1–3 above. Expect roughly half a day of operator time to walk PRD §10, push, open the PR, run the first GHCR publish, and cut v1.0.0.

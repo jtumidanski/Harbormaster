@@ -90,6 +90,13 @@ func (p *Processor) Submit(ctx context.Context, req Request, sourceIP string) er
 	}); err != nil {
 		return err
 	}
+	// Bind the live MinIO pool in-process now that the connection is
+	// persisted. Skipping this is what produced the onboarding 503: the pool
+	// stayed empty, the readiness probe's pool.Get failed, and the pod was
+	// pulled from the Service before the operator could reach the login page.
+	if err := p.ConnProc.BindPool(req.MinIO); err != nil {
+		return err
+	}
 	_ = sourceIP // audit hook added once audit.Processor is wired here
 	return nil
 }

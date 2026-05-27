@@ -2,15 +2,14 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"os"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/spf13/cobra"
-	"gorm.io/gorm"
 
 	"github.com/jtumidanski/Harbormaster/internal/apierror"
 	"github.com/jtumidanski/Harbormaster/internal/audit"
@@ -94,6 +93,14 @@ func runServe(ctx context.Context, _ io.Writer) error {
 	pool := hmminio.NewEmpty()
 	connProc := connection.NewProcessor(gdb, cipher, pool)
 	connProc.Audit = auditProc
+	// The in-memory pool starts empty on every boot. Rebuild it from the
+	// persisted connection (if setup has run) so a restart serves MinIO-backed
+	// requests without waiting for a PUT /connection. A failure here is logged,
+	// not fatal: readiness no longer depends on MinIO, so a bad/undecryptable
+	// connection must not brick the server — the operator can re-configure it.
+	if err := connProc.HydratePool(ctx); err != nil {
+		logger.Warn().Err(err).Msg("connection: failed to hydrate minio pool at boot; MinIO features unavailable until reconfigured")
+	}
 	setupProc := &setup.Processor{
 		DB:       gdb,
 		Cipher:   cipher,
@@ -236,9 +243,11 @@ func runServe(ctx context.Context, _ io.Writer) error {
 		})
 	}
 
-	// Readiness probe — ticks every 10s. The /readyz endpoint reports
-	// success iff the last probe completed within the freshness window.
-	ready := startReadinessProbe(ctx, gdb, pool)
+	// Readiness reflects only this instance's ability to serve HTTP and reach
+	// its own database — deliberately NOT MinIO. A MinIO outage must never
+	// pull the pod from the Service and lock operators out of the login page;
+	// MinIO health is surfaced on the dashboard instead.
+	ready := dbReadiness(sdb)
 
 	// TODO(T2.17): add E2E test once setup.Probe is stubbable.
 	s := server.New(cfg, server.Deps{
@@ -251,67 +260,15 @@ func runServe(ctx context.Context, _ io.Writer) error {
 	return s.Run(ctx)
 }
 
-// readinessFreshness is the maximum age of the last successful probe before
-// /readyz starts returning 503. With a 10s tick interval, 30s tolerates two
-// consecutive misses before signalling unhealthy.
-const readinessFreshness = 30 * time.Second
-
-// startReadinessProbe launches a background goroutine that periodically
-// records the last time the system was demonstrably healthy:
-//   - Setup not yet completed: the system is "ready" as soon as the HTTP
-//     server is serving — /setup/* and /healthz must remain reachable, so
-//     we treat each tick as a successful probe.
-//   - Setup completed: the pool is bound, so we issue a real madmin.ServerInfo
-//     RPC. On success, record the timestamp.
-//
-// Returns a snapshot function suitable for server.Deps.Ready.
-func startReadinessProbe(ctx context.Context, gdb *gorm.DB, pool *hmminio.Pool) func(context.Context) (bool, string) {
-	var lastOK atomic.Pointer[time.Time]
-
-	tick := func() {
-		var v string
-		gdb.WithContext(ctx).Raw(`SELECT value FROM app_settings WHERE key = ?`, "setup_completed").Scan(&v)
-		if v != "true" {
-			// Pre-setup: HTTP server liveness is the only signal we have.
-			now := time.Now().UTC()
-			lastOK.Store(&now)
-			return
-		}
-		madm, _, err := pool.Get(ctx)
-		if err != nil {
-			return
-		}
-		if _, err := madm.ServerInfo(ctx); err != nil {
-			return
-		}
-		now := time.Now().UTC()
-		lastOK.Store(&now)
-	}
-
-	// Prime once synchronously so /readyz returns 200 immediately after
-	// boot when no MinIO is bound yet.
-	tick()
-
-	go func() {
-		t := time.NewTicker(10 * time.Second)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				tick()
-			}
-		}
-	}()
-
-	return func(_ context.Context) (bool, string) {
-		p := lastOK.Load()
-		if p == nil {
-			return false, "minio probe never succeeded"
-		}
-		if time.Since(*p) > readinessFreshness {
-			return false, "minio probe stale"
+// dbReadiness returns a server.Deps.Ready snapshot that reports success iff
+// the local database answers a ping. It intentionally takes no MinIO pool:
+// readiness gates Service membership, and coupling it to MinIO reachability
+// would let a downstream outage withdraw the pod and 503 every route —
+// including the login page used to fix a bad connection.
+func dbReadiness(sdb *sql.DB) func(context.Context) (bool, string) {
+	return func(ctx context.Context) (bool, string) {
+		if err := sdb.PingContext(ctx); err != nil {
+			return false, "database unreachable"
 		}
 		return true, ""
 	}

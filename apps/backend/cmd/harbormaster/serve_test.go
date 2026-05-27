@@ -8,7 +8,33 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/jtumidanski/Harbormaster/internal/config"
+	"github.com/jtumidanski/Harbormaster/internal/db"
 )
+
+// TestDBReadiness verifies that readiness reflects only database reachability
+// and takes no MinIO pool. This is the design half of the onboarding 503 fix:
+// a MinIO outage must never pull the pod from the Service and lock operators
+// out of the login page.
+func TestDBReadiness(t *testing.T) {
+	dir := t.TempDir()
+	_, sdb, err := db.Open(config.Config{
+		DataDir:      dir,
+		DatabasePath: filepath.Join(dir, "ready.db"),
+	})
+	require.NoError(t, err)
+
+	ready := dbReadiness(sdb)
+
+	ok, _ := ready(context.Background())
+	require.True(t, ok, "readiness is true when the database is reachable")
+
+	require.NoError(t, sdb.Close())
+	ok, reason := ready(context.Background())
+	require.False(t, ok, "readiness is false when the database is unreachable")
+	require.NotEmpty(t, reason, "an unready response must carry a reason")
+}
 
 func TestServeFailsOnKeyFingerprintMismatch(t *testing.T) {
 	dir := t.TempDir()

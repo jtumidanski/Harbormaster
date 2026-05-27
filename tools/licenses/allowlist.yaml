@@ -1,6 +1,14 @@
 # License allow-list overrides.
 # Each entry MUST include: module path, license discovered, justification, reviewer, date.
-ignore: []
+ignore:
+  - module: modernc.org/mathutil
+    license: BSD-3-Clause
+    reason: >-
+      Transitive dep of modernc.org/sqlite (pure-Go driver). Ships a BSD-3-Clause
+      LICENSE at its module root, but go-licenses v1.6.0's bundled classifier
+      cannot match its license text. Verified BSD-3-Clause manually.
+    reviewer: jtumidanski
+    date: 2026-05-27
 # Example:
 # ignore:
 #   - module: github.com/example/foo

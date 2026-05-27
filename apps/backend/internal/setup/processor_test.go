@@ -39,6 +39,26 @@ func TestStatus_FalseThenTrueAfterSubmit(t *testing.T) {
 	require.True(t, p.Status(ctx))
 }
 
+// TestSubmit_BindsPool verifies that a successful first-run setup binds the
+// live MinIO client pool in-process. Regression test for the onboarding 503:
+// Submit previously persisted the connection row but never rebuilt the pool,
+// so after setup the readiness probe's pool.Get failed, the pod was pulled
+// from the Service, and the ingress returned 503 for every route — including
+// the login page.
+func TestSubmit_BindsPool(t *testing.T) {
+	p, _, pool := newProcessorWithPool(t, "/nonexistent")
+	ctx := context.Background()
+
+	if _, _, err := pool.Get(ctx); err == nil {
+		t.Fatal("pool must be unbound before setup")
+	}
+
+	require.NoError(t, p.Submit(ctx, validRequest(), "127.0.0.1"))
+
+	_, _, err := pool.Get(ctx)
+	require.NoError(t, err, "pool must be bound after setup completes")
+}
+
 // TestSubmit_PersistsAdminAndConnection verifies the happy path writes both
 // the admin_users row (with a non-plaintext password hash) and the
 // minio_connections row, and flips the setup_completed flag.

@@ -63,6 +63,14 @@ func stubProbeOK(_ context.Context, _ connection.SubmitInput) (connection.TestRe
 // and an mc-config path under a temp dir (which the caller may overwrite).
 func newProcessor(t *testing.T, mcPath string) (*setup.Processor, *gorm.DB) {
 	t.Helper()
+	p, gdb, _ := newProcessorWithPool(t, mcPath)
+	return p, gdb
+}
+
+// newProcessorWithPool is newProcessor but also returns the shared MinIO
+// pool so tests can assert it is bound after Submit.
+func newProcessorWithPool(t *testing.T, mcPath string) (*setup.Processor, *gorm.DB, *hmminio.Pool) {
+	t.Helper()
 	gdb := newTestDB(t)
 	cipher := newTestCipher(t)
 	pool := hmminio.NewEmpty()
@@ -76,5 +84,5 @@ func newProcessor(t *testing.T, mcPath string) (*setup.Processor, *gorm.DB) {
 		ConnProc: connProc,
 		McPath:   mcPath,
 	}
-	return p, gdb
+	return p, gdb, pool
 }

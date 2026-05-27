@@ -145,13 +145,7 @@ func (p *Processor) Update(ctx context.Context, in SubmitInput, actor, sourceIP 
 	}); err != nil {
 		return failAudit(err)
 	}
-	if err := p.Pool.Rebuild(minioPool.Credentials{
-		EndpointURL:     in.EndpointURL,
-		AccessKey:       in.AccessKey,
-		SecretKey:       in.SecretKey,
-		TLSSkipVerify:   skipVerify,
-		CustomCAPEMText: in.CustomCAPEM,
-	}); err != nil {
+	if err := p.BindPool(in); err != nil {
 		// The row is already written. A Rebuild failure leaves the
 		// on-disk record valid but the in-process pool stale; report as
 		// an internal error so the operator retries. The next process
@@ -167,6 +161,57 @@ func (p *Processor) Update(ctx context.Context, in SubmitInput, actor, sourceIP 
 		PayloadSummary: auditPayload,
 	})
 	return nil
+}
+
+// poolCredsFromSubmit maps a SubmitInput's plaintext fields onto the
+// minio.Pool credential struct.
+func poolCredsFromSubmit(in SubmitInput) minioPool.Credentials {
+	skipVerify := false
+	if in.TLSSkipVerify != nil {
+		skipVerify = *in.TLSSkipVerify
+	}
+	return minioPool.Credentials{
+		EndpointURL:     in.EndpointURL,
+		AccessKey:       in.AccessKey,
+		SecretKey:       in.SecretKey,
+		TLSSkipVerify:   skipVerify,
+		CustomCAPEMText: in.CustomCAPEM,
+	}
+}
+
+// BindPool rebuilds the live MinIO client pool from in's plaintext
+// credentials. It is exposed so the first-run setup bootstrap can bind the
+// pool in-process immediately after persisting the connection — mirroring the
+// post-commit Rebuild that Update performs. Without this, the freshly-created
+// pool stays empty until a restart and readiness never recovers.
+func (p *Processor) BindPool(in SubmitInput) error {
+	return p.Pool.Rebuild(poolCredsFromSubmit(in))
+}
+
+// HydratePool binds the live pool from the persisted connection row, if one
+// exists. It is a no-op (returns nil) when setup has not yet stored a
+// connection. Called once at process boot so a restart re-binds the pool
+// without requiring a PUT /connection — the in-memory pool always starts
+// empty.
+func (p *Processor) HydratePool(ctx context.Context) error {
+	e, err := getSingleton()(p.DB.WithContext(ctx))
+	if err != nil {
+		if errors.Is(err, ErrNoConnection) {
+			return nil
+		}
+		return err
+	}
+	_, creds, err := Make(e, p.Cipher)
+	if err != nil {
+		return err
+	}
+	return p.Pool.Rebuild(minioPool.Credentials{
+		EndpointURL:     e.EndpointURL,
+		AccessKey:       creds.AccessKey,
+		SecretKey:       creds.SecretKey,
+		TLSSkipVerify:   e.TLSSkipVerify,
+		CustomCAPEMText: creds.CustomCAPEMText,
+	})
 }
 
 // Get reads the singleton row and returns the masked-view Connection.

@@ -1,0 +1,111 @@
+# Harbormaster v1 — minimal Kubernetes Deployment.
+#
+# Knobs operators routinely change (top of file for visibility):
+#   - image tag                — default: ghcr.io/jtumidanski/harbormaster:v1
+#                                Pin to a digest in production.
+#   - HARBORMASTER_LOG_LEVEL   — debug | info | warn | error (default info)
+#   - HARBORMASTER_LOG_FORMAT  — json (recommended for clusters) | text
+#   - HARBORMASTER_BASE_PATH   — set if mounted under a sub-path on the
+#                                Ingress; default "/"
+#   - resources                — bump memory if you run frequent empty-bucket
+#                                jobs against million-object buckets
+#   - PVC                      — defined in pvc.yaml; default size 1Gi
+#   - Ingress hostname + TLS   — see ingress.example.yaml
+#   - MinIO endpoint           — configured via the first-run wizard, not
+#                                here. Stored in the encrypted SQLite DB on
+#                                the PVC.
+#
+# Important — single replica + Recreate strategy:
+#   The login rate limiter, the empty-bucket worker, and the audit-retention
+#   sweeper all hold in-process state. Running more than one replica would
+#   double-execute background work and split the rate limiter, so v1 is
+#   intentionally single-replica with strategy Recreate. See risks.md R6
+#   for the full rationale and the upgrade path.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: harbormaster
+  labels:
+    app.kubernetes.io/name: harbormaster
+    app.kubernetes.io/component: web
+    app.kubernetes.io/part-of: harbormaster
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: harbormaster
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: harbormaster
+        app.kubernetes.io/component: web
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      containers:
+        - name: harbormaster
+          image: ghcr.io/jtumidanski/harbormaster:v1
+          imagePullPolicy: IfNotPresent
+          args: ["serve"]
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: HARBORMASTER_LISTEN_ADDR
+              value: ":8080"
+            - name: HARBORMASTER_DATA_DIR
+              value: "/var/lib/harbormaster"
+            - name: HARBORMASTER_LOG_FORMAT
+              value: "json"
+            - name: HARBORMASTER_LOG_LEVEL
+              value: "info"
+            # Uncomment to seed the session secret from a Secret rather than
+            # letting Harbormaster generate one on first boot. See
+            # secret.example.yaml.
+            # - name: HARBORMASTER_SESSION_SECRET
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: harbormaster-secrets
+            #       key: HARBORMASTER_SESSION_SECRET
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/harbormaster
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: harbormaster-data
+        # readOnlyRootFilesystem: true means /tmp must come from an
+        # emptyDir; the binary uses it for transient multipart spool.
+        - name: tmp
+          emptyDir: {}

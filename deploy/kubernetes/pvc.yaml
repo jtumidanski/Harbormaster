@@ -1,0 +1,31 @@
+# Harbormaster — PersistentVolumeClaim for /var/lib/harbormaster.
+#
+# This claim holds the SQLite database (operator accounts, audit log,
+# share-links, lifecycle jobs) and the locally-generated encryption key.
+# Loss of this volume = loss of all Harbormaster state. Back it up.
+#
+# Knobs operators routinely change (top of file for visibility):
+#   - storage size       — default 1Gi is enough for a year of audit events
+#                          on a typical homelab. Bump to 5Gi+ if you keep
+#                          long retention or run very busy clusters.
+#   - storageClassName   — leave commented to use the cluster's default
+#                          StorageClass. Uncomment + set if you want to
+#                          pin to a specific class (e.g. "longhorn",
+#                          "rook-ceph-block", "openebs-hostpath").
+#   - accessModes        — must be ReadWriteOnce; the Deployment is
+#                          single-replica with strategy Recreate, and
+#                          SQLite cannot be shared across nodes.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: harbormaster-data
+  labels:
+    app.kubernetes.io/name: harbormaster
+    app.kubernetes.io/component: web
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  # storageClassName: ""   # uncomment + set to override the cluster default

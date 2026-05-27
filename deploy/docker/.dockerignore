@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/.vite
+**/coverage
+**/*.test
+**/*.out
+.git
+.worktrees
+.idea
+.vscode
+*.env.local
+data/

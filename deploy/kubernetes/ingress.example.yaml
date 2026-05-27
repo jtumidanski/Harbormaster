@@ -1,0 +1,56 @@
+# Harbormaster — Ingress example (nginx-ingress controller).
+#
+# Knobs operators routinely change (top of file for visibility):
+#   - host                       — public hostname (replace example.com)
+#   - tls.secretName             — TLS cert Secret (cert-manager / manual)
+#   - ingressClassName           — match your controller (nginx, traefik,
+#                                  istio, contour, etc.)
+#   - proxy-body-size annotation — keep >= HARBORMASTER_UPLOAD_MAX_BYTES
+#                                  plus headroom (default cap is 100 MiB).
+#
+# SSE-aware annotations:
+#   The empty-bucket endpoint streams progress over Server-Sent Events.
+#   nginx-ingress buffers responses by default, which would batch progress
+#   events and freeze the UI. The annotations below disable buffering and
+#   raise the read/send timeouts to one hour so large empties don't time
+#   out. If you front Harbormaster with a different ingress controller
+#   (Traefik, HAProxy, Contour), translate these annotations into the
+#   equivalent middleware/IngressRoute config — see
+#   docs/operator/reverse-proxy.md.
+#
+# This example assumes ingress-nginx. For Traefik, switch to an
+# IngressRoute CRD with `serversTransport` setting `responseHeaderTimeout: 1h`
+# and a middleware enabling buffering off.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: harbormaster
+  labels:
+    app.kubernetes.io/name: harbormaster
+  annotations:
+    # Disable response buffering so SSE flushes immediately.
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    # SSE streams + large empty-bucket runs can exceed default 60s.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # Match HARBORMASTER_UPLOAD_MAX_BYTES (default 100 MiB) plus headroom.
+    nginx.ingress.kubernetes.io/proxy-body-size: "200m"
+    # Optional: cert-manager wiring.
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - harbormaster.example.com
+      secretName: harbormaster-tls
+  rules:
+    - host: harbormaster.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: harbormaster
+                port:
+                  name: http

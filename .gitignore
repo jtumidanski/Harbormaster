@@ -1,2 +1,39 @@
-# Task worktrees (managed by /spec-task, /design-task, /plan-task, /execute-task)
+# Go
+apps/backend/bin/
+apps/backend/dist/
+apps/backend/harbormaster
+*.test
+*.out
+coverage.txt
+
+# Node / Vite
+apps/frontend/node_modules/
+apps/frontend/dist/
+apps/frontend/dist-ssr/
+apps/frontend/.vite/
+
+# Editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Worktree fallback (we live inside one)
 .worktrees/
+
+# Local secrets and data
+*.env
+*.env.local
+data/
+harbormaster.db
+harbormaster.db-wal
+harbormaster.db-shm
+encryption.key
+
+# Test artifacts
+apps/frontend/playwright-report/
+apps/frontend/test-results/

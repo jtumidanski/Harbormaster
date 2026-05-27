@@ -1,0 +1,29 @@
+# Harbormaster — ClusterIP Service.
+#
+# Knobs operators routinely change (top of file for visibility):
+#   - type          — ClusterIP (default; recommended). Switch to NodePort
+#                     only for local clusters without an Ingress controller.
+#                     Do NOT use LoadBalancer directly: the Service has no
+#                     TLS termination and no auth in front. Always front
+#                     with an Ingress (see ingress.example.yaml).
+#   - port          — public service port (8080 matches the container)
+#   - targetPort    — must match the container port (http = 8080)
+#   - annotations   — add metrics scrape hints here if you enable
+#                     HARBORMASTER_METRICS_ENABLED and expose :9090
+#                     as a second port.
+apiVersion: v1
+kind: Service
+metadata:
+  name: harbormaster
+  labels:
+    app.kubernetes.io/name: harbormaster
+    app.kubernetes.io/component: web
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: harbormaster
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

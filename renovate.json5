@@ -1,0 +1,59 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["config:base", ":dependencyDashboard", ":semanticCommits"],
+  rangeStrategy: "pin",
+  packageRules: [
+    {
+      matchManagers: ["gomod"],
+      groupName: "go modules",
+      minimumReleaseAge: "3 days",
+    },
+    {
+      matchManagers: ["npm"],
+      groupName: "npm dependencies",
+      minimumReleaseAge: "3 days",
+    },
+    {
+      matchManagers: ["github-actions"],
+      groupName: "github actions",
+      minimumReleaseAge: "3 days",
+      automerge: true,
+      automergeType: "pr",
+      matchUpdateTypes: ["patch"],
+    },
+    {
+      matchManagers: ["dockerfile"],
+      groupName: "docker base images",
+      minimumReleaseAge: "7 days",
+    },
+    {
+      matchUpdateTypes: ["minor"],
+      minimumReleaseAge: "7 days",
+    },
+    {
+      matchUpdateTypes: ["major"],
+      dependencyDashboardApproval: true,
+    },
+    // Never auto-merge runtime / security / auth libs even on patch
+    {
+      matchPackageNames: [
+        "golang.org/x/crypto",
+        "github.com/minio/minio-go/v7",
+        "github.com/minio/madmin-go/v3",
+        "github.com/go-chi/chi/v5",
+        "gorm.io/gorm",
+        "github.com/glebarez/sqlite",
+        "github.com/golang-migrate/migrate/v4",
+        "github.com/spf13/viper",
+        "react",
+        "react-dom",
+        "@tanstack/react-query",
+      ],
+      automerge: false,
+    },
+  ],
+  vulnerabilityAlerts: {
+    labels: ["security"],
+    minimumReleaseAge: "0",
+  },
+}

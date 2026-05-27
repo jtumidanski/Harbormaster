@@ -1,0 +1,111 @@
+name: pr
+on:
+  pull_request:
+    branches: [main, "task-*"]
+
+permissions:
+  contents: read
+
+jobs:
+  frontend-lint:
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: apps/frontend } }
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
+        with: { node-version: "20", cache: "npm", cache-dependency-path: apps/frontend/package-lock.json }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format
+
+  frontend-test:
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: apps/frontend } }
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
+        with: { node-version: "20", cache: "npm", cache-dependency-path: apps/frontend/package-lock.json }
+      - run: npm ci
+      - run: npm test
+
+  frontend-build:
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: apps/frontend } }
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
+        with: { node-version: "20", cache: "npm", cache-dependency-path: apps/frontend/package-lock.json }
+      - run: npm ci
+      - run: npm run build
+
+  backend-lint:
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: apps/backend } }
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
+        with: { go-version-file: apps/backend/go.mod }
+      - uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
+        with: { version: v2.12.2, working-directory: apps/backend }
+
+  backend-test:
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: apps/backend } }
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
+        with: { go-version-file: apps/backend/go.mod }
+      - run: go test -race -count=1 ./...
+
+  backend-build:
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: apps/backend } }
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
+        with: { go-version-file: apps/backend/go.mod }
+      - run: CGO_ENABLED=0 go build ./...
+
+  gitleaks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  dependency-scan:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: "."
+          ignore-unfixed: "true"
+          severity: "CRITICAL,HIGH"
+          format: table
+          exit-code: "1"
+          trivyignores: ".trivyignore"
+
+  license-allowlist:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
+        with: { go-version-file: apps/backend/go.mod }
+      - run: |
+          cd apps/backend
+          go install github.com/google/go-licenses@v1.6.0
+          # Always ignore our own module (no LICENSE at the module root — the
+          # repo LICENSE lives at the tree root) plus any reviewed overrides
+          # from the allowlist. go.mod's go 1.25 directive is satisfied by the
+          # directly-installed Go above, so stdlib resolves without the
+          # module-cache toolchain that breaks go-licenses on std packages.
+          IGNORES="github.com/jtumidanski/Harbormaster"
+          EXTRA=$(yq -r '.ignore[].module' ../../tools/licenses/allowlist.yaml 2>/dev/null | paste -sd, -)
+          if [ -n "$EXTRA" ]; then IGNORES="$IGNORES,$EXTRA"; fi
+          go-licenses check ./... \
+            --allowed_licenses=Apache-2.0,MIT,BSD-2-Clause,BSD-3-Clause,ISC,MPL-2.0,AGPL-3.0,AGPL-3.0-or-later,GPL-3.0,GPL-3.0-or-later \
+            --ignore="$IGNORES"

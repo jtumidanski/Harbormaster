@@ -1,0 +1,27 @@
+# Harbormaster — Caddy reverse-proxy example.
+#
+# Save as /etc/caddy/Caddyfile (or include from your main Caddyfile) and
+# adjust:
+#   - site address (harbormaster.example.com) — Caddy will provision a
+#     Let's Encrypt certificate automatically for public hostnames
+#   - upstream target — service name + port (defaults to docker-compose name)
+#   - request body size — bump if HARBORMASTER_UPLOAD_MAX_BYTES is raised
+#
+# Notes on Server-Sent Events:
+#   `flush_interval -1` disables response buffering, which is required for
+#   the empty-bucket SSE stream to deliver progress events as they happen.
+#   `response_header_timeout 1h` matches large-bucket empty runs.
+
+harbormaster.example.com {
+    reverse_proxy harbormaster:8080 {
+        flush_interval -1
+        transport http {
+            response_header_timeout 1h
+        }
+    }
+
+    # Match HARBORMASTER_UPLOAD_MAX_BYTES (default 100 MiB) plus headroom.
+    request_body {
+        max_size 200MB
+    }
+}

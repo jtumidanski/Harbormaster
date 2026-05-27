@@ -156,7 +156,7 @@ func TestRoutes_PostSetupAliasNotFound(t *testing.T) {
 	p, _ := newProcessor(t, mcPath)
 	srv := newRouter(p)
 
-	var req setup.SetupRequest
+	var req setup.Request
 	req.Admin.Username = "admin"
 	req.Admin.Password = "pw"
 	req.MinIO.FromMcAlias = "missing"

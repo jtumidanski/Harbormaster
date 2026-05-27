@@ -413,39 +413,8 @@ func (p *Processor) Create(ctx context.Context, name string, opts CreateOpts, ac
 	if err := s3.MakeBucket(ctx, name, miniogo.MakeBucketOptions{}); err != nil {
 		return Bucket{}, failAudit(mapClientError(err, "failed to create bucket"))
 	}
-	if opts.VersioningEnabled {
-		if err := applyVersioning(ctx, s3, name, true); err != nil {
-			return Bucket{}, failAudit(apierror.Internal(err.Error()))
-		}
-	}
-	if opts.Quota != nil && opts.Quota.Bytes > 0 {
-		// FIFO requires versioning off; if the caller supplied
-		// VersioningEnabled=true alongside a FIFO quota that's a
-		// validation error the caller should have caught at the REST
-		// layer. Defence in depth here so it's not silently accepted.
-		if opts.Quota.Kind == QuotaKindFifo && opts.VersioningEnabled {
-			return Bucket{}, failAudit(apierror.New(http.StatusUnprocessableEntity,
-				"fifo_requires_versioning_off",
-				"FIFO quota requires versioning to be disabled"))
-		}
-		if err := applyQuota(ctx, adm, name, opts.Quota.Kind, opts.Quota.Bytes); err != nil {
-			return Bucket{}, failAudit(apierror.Internal(err.Error()))
-		}
-	}
-	if opts.PublicAccess != "" && opts.PublicAccess != PublicAccessPrivate {
-		policyJSON, perr := policies.BucketPolicyFor(name, string(opts.PublicAccess))
-		if perr != nil {
-			return Bucket{}, failAudit(apierror.New(http.StatusBadRequest,
-				"public_access_invalid", perr.Error()))
-		}
-		if err := applyPolicy(ctx, s3, name, policyJSON); err != nil {
-			return Bucket{}, failAudit(apierror.Internal(err.Error()))
-		}
-	}
-	if tmpl != nil && p.Lifecycle != nil {
-		if err := p.Lifecycle.Create(ctx, name, tmpl.days, tmpl.prefix); err != nil {
-			return Bucket{}, failAudit(apierror.Internal("failed to apply lifecycle template: " + err.Error()))
-		}
+	if err := p.applyCreateOpts(ctx, adm, s3, name, opts, tmpl); err != nil {
+		return Bucket{}, failAudit(err)
 	}
 	p.recordAudit(ctx, audit.Event{
 		Actor:          actor,
@@ -457,6 +426,46 @@ func (p *Processor) Create(ctx context.Context, name string, opts CreateOpts, ac
 		PayloadSummary: auditPayload,
 	})
 	return p.Get(ctx, name)
+}
+
+// applyCreateOpts applies the optional bucket settings (versioning, quota,
+// public-access policy, lifecycle template) to a freshly created bucket.
+// Each failure returns a typed apierror so Create routes it through failAudit.
+func (p *Processor) applyCreateOpts(ctx context.Context, adm adminAPI, s3 s3API, name string, opts CreateOpts, tmpl *lifecycleTemplate) error {
+	if opts.VersioningEnabled {
+		if err := applyVersioning(ctx, s3, name, true); err != nil {
+			return apierror.Internal(err.Error())
+		}
+	}
+	if opts.Quota != nil && opts.Quota.Bytes > 0 {
+		// FIFO requires versioning off; if the caller supplied
+		// VersioningEnabled=true alongside a FIFO quota that's a
+		// validation error the caller should have caught at the REST
+		// layer. Defence in depth here so it's not silently accepted.
+		if opts.Quota.Kind == QuotaKindFifo && opts.VersioningEnabled {
+			return apierror.New(http.StatusUnprocessableEntity,
+				"fifo_requires_versioning_off",
+				"FIFO quota requires versioning to be disabled")
+		}
+		if err := applyQuota(ctx, adm, name, opts.Quota.Kind, opts.Quota.Bytes); err != nil {
+			return apierror.Internal(err.Error())
+		}
+	}
+	if opts.PublicAccess != "" && opts.PublicAccess != PublicAccessPrivate {
+		policyJSON, perr := policies.BucketPolicyFor(name, string(opts.PublicAccess))
+		if perr != nil {
+			return apierror.New(http.StatusBadRequest, "public_access_invalid", perr.Error())
+		}
+		if err := applyPolicy(ctx, s3, name, policyJSON); err != nil {
+			return apierror.Internal(err.Error())
+		}
+	}
+	if tmpl != nil && p.Lifecycle != nil {
+		if err := p.Lifecycle.Create(ctx, name, tmpl.days, tmpl.prefix); err != nil {
+			return apierror.Internal("failed to apply lifecycle template: " + err.Error())
+		}
+	}
+	return nil
 }
 
 // Delete removes bucket after confirming the name (operator typed the
@@ -494,15 +503,15 @@ func (p *Processor) Delete(ctx context.Context, name, confirmName, actor, source
 	// the underlying lister goroutine does not leak (per minio-go docs).
 	objCh := s3.ListObjects(ctx, name, miniogo.ListObjectsOptions{MaxKeys: 1})
 	nonEmpty := false
-	for obj := range objCh {
+	// Peek at most one object to decide emptiness; drain the rest so the
+	// underlying lister goroutine does not leak (per minio-go docs).
+	if obj, ok := <-objCh; ok {
 		if obj.Err != nil {
-			// Drain remaining sends before returning so the lister exits.
 			go drain(objCh)
 			return failAudit(mapClientError(obj.Err, "failed to check bucket emptiness"))
 		}
 		nonEmpty = true
 		go drain(objCh)
-		break
 	}
 	if nonEmpty {
 		return failAudit(apierror.New(http.StatusConflict, "bucket_not_empty",

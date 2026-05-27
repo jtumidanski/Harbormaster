@@ -1,52 +1,77 @@
+version: "2"
 run:
-  timeout: 5m
+  go: "1.25"
   tests: true
-  go: "1.24"
-
 linters:
-  disable-all: true
+  default: none
   enable:
-    - errcheck
-    - govet
-    - staticcheck
-    - revive
-    - gocyclo
-    - unparam
-    - unused
     - bodyclose
-    - noctx
+    - errcheck
     - forbidigo
+    - gocyclo
     - gosec
+    - govet
     - ineffassign
     - misspell
     - nakedret
+    - noctx
     - prealloc
+    - revive
+    - staticcheck
+    - unparam
+    - unused
     - whitespace
-
-linters-settings:
-  gocyclo:
-    min-complexity: 18
-  forbidigo:
-    forbid:
-      - p: "^fmt\\.Print(ln|f)?$"
-        msg: "use the logger, not fmt.Print*"
-      - p: "^panic$"
-        msg: "do not panic in production code; return an error"
-  revive:
+  settings:
+    forbidigo:
+      forbid:
+        - pattern: ^fmt\.Print(ln|f)?$
+          msg: use the logger, not fmt.Print*
+        - pattern: ^panic$
+          msg: do not panic in production code; return an error
+    gocyclo:
+      min-complexity: 18
+    gosec:
+      excludes:
+        - G115
+    revive:
+      rules:
+        - name: exported
+          severity: warning
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
     rules:
-      - name: exported
-        severity: warning
-  gosec:
-    excludes:
-      - G115  # acceptable int conversions are reviewed manually
-
-issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - forbidigo
-        - gosec
-        - gocyclo
-    - path: cmd/harbormaster/main\.go
-      linters:
-        - forbidigo  # main may print fatal errors via fmt.Fprintln(os.Stderr, …)
+      # Tests legitimately use context-free HTTP/net constructors and helper
+      # signatures whose returns aren't all consumed by every caller.
+      - linters:
+          - forbidigo
+          - gocyclo
+          - gosec
+          - noctx
+          - unparam
+        path: _test\.go
+      - linters:
+          - forbidigo
+        path: cmd/harbormaster/main\.go
+      # Inline copy of the upstream golang-migrate sqlite driver: it mirrors
+      # upstream (no request context on the database.Driver interface) and runs
+      # only at startup against controlled, constant SQL.
+      - linters:
+          - noctx
+          - gosec
+        path: internal/db/sqlite_migrate_driver\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

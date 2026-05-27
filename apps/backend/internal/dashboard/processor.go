@@ -175,13 +175,6 @@ func NewProcessor(pool PoolGetter, bks BucketsLister, a AuditQuerier) *Processor
 	return &Processor{pool: pool, bks: bks, auditer: a, now: time.Now}
 }
 
-// withClock is exposed for tests so they can pin a deterministic "now"
-// when asserting failures-window cutoff math. Not used in production.
-func (p *Processor) withClock(now func() time.Time) *Processor {
-	p.now = now
-	return p
-}
-
 // Build runs the four read fan-outs in parallel under an errgroup and
 // returns the assembled View. The first sub-call to fail cancels the
 // shared context so the surviving goroutines abort their RPCs instead of

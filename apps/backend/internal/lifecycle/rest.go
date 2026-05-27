@@ -4,22 +4,22 @@ import (
 	"encoding/json"
 )
 
-// LifecycleRuleResource is the JSON:API resource wrapper for a Rule.
+// RuleResource is the JSON:API resource wrapper for a Rule.
 // The transport layer encodes it via internal/jsonapi.Encoder. Per
 // api-contracts.md §lifecycle-rules the attributes object differs
 // between managed and unmanaged rules: managed rules expose the
 // structured (kind, days, prefix) trio, unmanaged rules expose only a
 // human-readable summary string.
-type LifecycleRuleResource struct {
+type RuleResource struct {
 	Rule
 }
 
 // ResourceType returns the canonical JSON:API type string.
-func (LifecycleRuleResource) ResourceType() string { return "lifecycle_rules" }
+func (RuleResource) ResourceType() string { return "lifecycle_rules" }
 
 // ResourceID returns the rule's MinIO-side ID (the natural primary key
 // inside a bucket's lifecycle configuration).
-func (r LifecycleRuleResource) ResourceID() string { return r.Rule.ID }
+func (r RuleResource) ResourceID() string { return r.ID }
 
 // MarshalJSON renders the attributes block. The shape is conditional
 // on the Managed flag because the two flavours expose disjoint
@@ -30,8 +30,8 @@ func (r LifecycleRuleResource) ResourceID() string { return r.Rule.ID }
 // We don't put struct JSON tags on Rule itself because the domain
 // type is consumed by other (snake_case-agnostic) callers; the
 // wire-shape adaptation lives here.
-func (r LifecycleRuleResource) MarshalJSON() ([]byte, error) {
-	if r.Rule.Managed {
+func (r RuleResource) MarshalJSON() ([]byte, error) {
+	if r.Managed {
 		return json.Marshal(struct {
 			Managed bool   `json:"managed"`
 			Kind    string `json:"kind"`
@@ -39,9 +39,9 @@ func (r LifecycleRuleResource) MarshalJSON() ([]byte, error) {
 			Prefix  string `json:"prefix"`
 		}{
 			Managed: true,
-			Kind:    r.Rule.Kind,
-			Days:    r.Rule.Days,
-			Prefix:  r.Rule.Prefix,
+			Kind:    r.Kind,
+			Days:    r.Days,
+			Prefix:  r.Prefix,
 		})
 	}
 	return json.Marshal(struct {
@@ -49,7 +49,7 @@ func (r LifecycleRuleResource) MarshalJSON() ([]byte, error) {
 		Summary string `json:"summary"`
 	}{
 		Managed: false,
-		Summary: r.Rule.Summary,
+		Summary: r.Summary,
 	})
 }
 

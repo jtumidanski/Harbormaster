@@ -31,8 +31,8 @@ var ErrAlreadyInitialized = errors.New("setup already completed")
 // or unreadable alias. HTTP layer maps to 422.
 var ErrMcAliasNotFound = errors.New("mc_alias_not_found")
 
-// SetupRequest carries the form fields submitted to POST /api/v1/setup.
-type SetupRequest struct {
+// Request carries the form fields submitted to POST /api/v1/setup.
+type Request struct {
 	Admin struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -43,7 +43,7 @@ type SetupRequest struct {
 // Submit performs the first-run sequence and is idempotent — it returns
 // ErrAlreadyInitialized on the second call. The sourceIP is accepted for
 // the audit hook that will be wired once internal/audit is reachable here.
-func (p *Processor) Submit(ctx context.Context, req SetupRequest, sourceIP string) error {
+func (p *Processor) Submit(ctx context.Context, req Request, sourceIP string) error {
 	if p.isInitialized(ctx) {
 		return ErrAlreadyInitialized
 	}

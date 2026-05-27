@@ -17,10 +17,7 @@ import (
 
 const defaultMigrationsTable = "schema_migrations"
 
-var (
-	errDatabaseDirty = fmt.Errorf("database is dirty")
-	errNilConfig     = fmt.Errorf("no config")
-)
+var errNilConfig = fmt.Errorf("no config")
 
 type sqliteMigrateConfig struct {
 	MigrationsTable string

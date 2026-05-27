@@ -192,6 +192,7 @@ func (d HandlerDeps) issueCSRF(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d HandlerDeps) setSessionCookie(w http.ResponseWriter, sid string) {
+	//nolint:gosec // G124: HttpOnly/SameSite are set explicitly below; Secure is operator-configurable (d.Secure) for non-TLS homelab access per PRD §session-cookies.
 	http.SetCookie(w, &http.Cookie{
 		Name:     d.SessionCookieName,
 		Value:    sid,
@@ -205,6 +206,7 @@ func (d HandlerDeps) setSessionCookie(w http.ResponseWriter, sid string) {
 }
 
 func (d HandlerDeps) setCSRFCookie(w http.ResponseWriter, token string) {
+	//nolint:gosec // G124: HttpOnly/SameSite are set explicitly below; Secure is operator-configurable (d.Secure) for non-TLS homelab access per PRD §session-cookies.
 	http.SetCookie(w, &http.Cookie{
 		Name:     d.CSRFCookieName,
 		Value:    token,
@@ -218,6 +220,7 @@ func (d HandlerDeps) setCSRFCookie(w http.ResponseWriter, token string) {
 }
 
 func (d HandlerDeps) clearCookie(w http.ResponseWriter, name string) {
+	//nolint:gosec // G124: HttpOnly/SameSite are set explicitly below; Secure is operator-configurable (d.Secure) for non-TLS homelab access per PRD §session-cookies.
 	http.SetCookie(w, &http.Cookie{
 		Name:     name,
 		Value:    "",

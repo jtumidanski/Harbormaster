@@ -38,8 +38,10 @@ func (c *Cipher) Encrypt(plaintext []byte) (string, error) {
 	if _, err := rand.Read(nonce); err != nil {
 		return "", fmt.Errorf("read nonce: %w", err)
 	}
-	ct := c.aead.Seal(nil, nonce, plaintext, nil)
-	return base64.StdEncoding.EncodeToString(append(nonce, ct...)), nil
+	// Seal appends the ciphertext+tag onto nonce, yielding nonce||ct||tag in a
+	// single allocation (no separate append of the sealed output).
+	sealed := c.aead.Seal(nonce, nonce, plaintext, nil)
+	return base64.StdEncoding.EncodeToString(sealed), nil
 }
 
 // Decrypt reverses Encrypt. Returns an error if the envelope is malformed or

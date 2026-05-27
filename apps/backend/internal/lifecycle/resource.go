@@ -68,7 +68,7 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 	}
 	resources := make([]jsonapi.Resource, len(rules))
 	for i, rule := range rules {
-		resources[i] = LifecycleRuleResource{Rule: rule}
+		resources[i] = RuleResource{Rule: rule}
 	}
 	w.Header().Set("Content-Type", "application/vnd.api+json")
 	w.WriteHeader(http.StatusOK)
@@ -103,7 +103,7 @@ func (h *handler) create(w http.ResponseWriter, r *http.Request) {
 		apierror.Write(w, apierror.StyleJSONAPI, err)
 		return
 	}
-	writeSingle(w, h.enc, http.StatusCreated, LifecycleRuleResource{Rule: rule})
+	writeSingle(w, h.enc, http.StatusCreated, RuleResource{Rule: rule})
 }
 
 // delete removes the rule identified by the {rule_id} path param.

@@ -39,25 +39,3 @@ func getSessionByID(id string) func(*gorm.DB) (Session, error) {
 		return MakeSession(e)
 	}
 }
-
-// getActiveSessionsByAdmin lists every session owned by the given admin user
-// regardless of expiry. The sweeper handles expiry removal separately.
-func getActiveSessionsByAdmin(adminUserID uint) func(*gorm.DB) ([]Session, error) {
-	return func(db *gorm.DB) ([]Session, error) {
-		var entities []sessionEntity
-		if err := db.Where("admin_user_id = ?", adminUserID).
-			Order("created_at DESC").
-			Find(&entities).Error; err != nil {
-			return nil, fmt.Errorf("auth.getActiveSessionsByAdmin(%d): %w", adminUserID, err)
-		}
-		out := make([]Session, len(entities))
-		for i, e := range entities {
-			m, err := MakeSession(e)
-			if err != nil {
-				return nil, err
-			}
-			out[i] = m
-		}
-		return out, nil
-	}
-}

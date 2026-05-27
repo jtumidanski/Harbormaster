@@ -36,10 +36,7 @@ func (r UserResource) MarshalJSON() ([]byte, error) {
 	}
 	out.AttachedTemplates = make([]TemplateWire, 0, len(r.AttachedTemplates))
 	for _, t := range r.AttachedTemplates {
-		out.AttachedTemplates = append(out.AttachedTemplates, TemplateWire{
-			Name:   t.Name,
-			Params: t.Params,
-		})
+		out.AttachedTemplates = append(out.AttachedTemplates, TemplateWire(t))
 	}
 	return json.Marshal(out)
 }
@@ -65,7 +62,7 @@ func (r CreateUserRequest) ToTemplateRefs() []TemplateRef {
 	}
 	out := make([]TemplateRef, 0, len(r.Templates))
 	for _, t := range r.Templates {
-		out = append(out, TemplateRef{Name: t.Name, Params: t.Params})
+		out = append(out, TemplateRef(t))
 	}
 	return out
 }
@@ -112,10 +109,7 @@ func (r CreatedUserResource) MarshalJSON() ([]byte, error) {
 	}
 	out.AttachedTemplates = make([]TemplateWire, 0, len(r.User.AttachedTemplates))
 	for _, t := range r.User.AttachedTemplates {
-		out.AttachedTemplates = append(out.AttachedTemplates, TemplateWire{
-			Name:   t.Name,
-			Params: t.Params,
-		})
+		out.AttachedTemplates = append(out.AttachedTemplates, TemplateWire(t))
 	}
 	return json.Marshal(out)
 }
@@ -142,7 +136,7 @@ type UpdatePoliciesRequest struct {
 func (r UpdatePoliciesRequest) ToTemplateRefs() []TemplateRef {
 	out := make([]TemplateRef, 0, len(r.Templates))
 	for _, t := range r.Templates {
-		out = append(out, TemplateRef{Name: t.Name, Params: t.Params})
+		out = append(out, TemplateRef(t))
 	}
 	return out
 }

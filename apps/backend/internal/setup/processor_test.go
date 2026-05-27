@@ -14,10 +14,10 @@ import (
 	"github.com/jtumidanski/Harbormaster/internal/setup"
 )
 
-// validRequest returns a SetupRequest carrying explicit MinIO credentials.
+// validRequest returns a Request carrying explicit MinIO credentials.
 // Helper used to keep the per-test body short.
-func validRequest() setup.SetupRequest {
-	var req setup.SetupRequest
+func validRequest() setup.Request {
+	var req setup.Request
 	req.Admin.Username = "admin"
 	req.Admin.Password = "correct horse battery staple"
 	req.MinIO = connection.SubmitInput{
@@ -98,7 +98,7 @@ func TestSubmit_FromMcAlias(t *testing.T) {
 	p, gdb := newProcessor(t, mcPath)
 	ctx := context.Background()
 
-	var req setup.SetupRequest
+	var req setup.Request
 	req.Admin.Username = "admin"
 	req.Admin.Password = "x" + "correct horse battery staple"
 	req.MinIO = connection.SubmitInput{
@@ -150,7 +150,7 @@ func TestSubmit_McAliasNotFound(t *testing.T) {
 	p, gdb := newProcessor(t, mcPath)
 	ctx := context.Background()
 
-	var req setup.SetupRequest
+	var req setup.Request
 	req.Admin.Username = "admin"
 	req.Admin.Password = "pw"
 	req.MinIO.FromMcAlias = "missing"

@@ -12,24 +12,24 @@ import (
 	"github.com/jtumidanski/Harbormaster/internal/jsonapi"
 )
 
-// AuditEventResource wraps an Event for JSON:API transport.
-// The JSON marshaller emits the documented AuditEventAttrs shape so the
+// EventResource wraps an Event for JSON:API transport.
+// The JSON marshaller emits the documented EventAttrs shape so the
 // generic encoder produces the contract-correct `attributes` block.
-type AuditEventResource struct {
+type EventResource struct {
 	Event Event
 }
 
 // ResourceType returns the JSON:API type name.
 // Per api-contracts.md §GET /api/v1/audit-events the type is the
 // underscored form "audit_events".
-func (r AuditEventResource) ResourceType() string { return "audit_events" }
+func (r EventResource) ResourceType() string { return "audit_events" }
 
 // ResourceID returns the event's ULID.
-func (r AuditEventResource) ResourceID() string { return r.Event.ID }
+func (r EventResource) ResourceID() string { return r.Event.ID }
 
-// MarshalJSON renders the Event as the documented AuditEventAttrs shape.
+// MarshalJSON renders the Event as the documented EventAttrs shape.
 // The encoder uses the result as the JSON:API resource's `attributes`.
-func (r AuditEventResource) MarshalJSON() ([]byte, error) {
+func (r EventResource) MarshalJSON() ([]byte, error) {
 	return json.Marshal(ToAttrs(r.Event))
 }
 
@@ -99,7 +99,7 @@ func (h *auditHandler) list(w http.ResponseWriter, r *http.Request) {
 
 	resources := make([]jsonapi.Resource, len(events))
 	for i, e := range events {
-		resources[i] = AuditEventResource{Event: e}
+		resources[i] = EventResource{Event: e}
 	}
 
 	// Normalise page meta after the helper clamps Size — operators see

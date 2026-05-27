@@ -44,7 +44,7 @@ func (p *Processor) handleSubmit(w http.ResponseWriter, r *http.Request) {
 			"setup_already_completed", "Setup has already been completed."))
 		return
 	}
-	var body SetupRequest
+	var body Request
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		apierror.Write(w, apierror.StyleAction, apierror.New(http.StatusBadRequest,
 			"bad_request", "Invalid JSON body"))

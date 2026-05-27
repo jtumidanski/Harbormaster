@@ -68,7 +68,7 @@ type bucketAdminAdapter struct {
 // surfaces as the zero value plus nil error so the processor's tolerant
 // usage-fetch path treats it as "scanner has not seen this bucket yet".
 func (a bucketAdminAdapter) BucketUsageInfo(ctx context.Context, bucket string) (madmin.BucketUsageInfo, error) {
-	info, err := a.AdminClient.DataUsageInfo(ctx)
+	info, err := a.DataUsageInfo(ctx)
 	if err != nil {
 		return madmin.BucketUsageInfo{}, err
 	}

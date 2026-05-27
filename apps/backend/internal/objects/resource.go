@@ -131,6 +131,7 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 	// large file parts spill to disk under r.Body, which MaxBytesReader
 	// still polices.
 	const maxMemory = 32 << 20
+	//nolint:gosec // G120: r.Body is wrapped in http.MaxBytesReader (cap=UploadMaxBytes) above, so form parsing is bounded; oversize surfaces as 413 upload_too_large.
 	if err := r.ParseMultipartForm(maxMemory); err != nil {
 		if isMaxBytesError(err) {
 			apierror.Write(w, apierror.StyleJSONAPI, apierror.New(

@@ -119,6 +119,7 @@ func transport(c Credentials, useTLS bool) (*http.Transport, error) {
 	if !useTLS {
 		return t, nil
 	}
+	//nolint:gosec // G402: InsecureSkipVerify is an operator opt-in (TLSSkipVerify) for self-signed MinIO in homelab deployments; defaults to false.
 	tlsConfig := &tls.Config{InsecureSkipVerify: c.TLSSkipVerify}
 	if c.CustomCAPEMText != "" {
 		pool, err := x509.SystemCertPool()

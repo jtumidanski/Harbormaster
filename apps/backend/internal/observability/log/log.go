@@ -22,7 +22,7 @@ func NewWith(level, format string, w io.Writer) (zerolog.Logger, error) {
 	if err != nil {
 		return zerolog.Nop(), fmt.Errorf("invalid log level %q: %w", level, err)
 	}
-	var out io.Writer = w
+	out := w
 	if format == "console" {
 		out = zerolog.ConsoleWriter{Out: w}
 	}

@@ -128,6 +128,7 @@ func (s *Service) StartOrAttach(ctx context.Context, bucket string, purgeVersion
 	if runFn == nil {
 		runFn = s.run
 	}
+	//nolint:gosec // G118: the worker deliberately uses a detached context so cancelling the originating request does not abort an in-flight empty-bucket job (see StartOrAttach doc).
 	go runFn(context.Background(), sub, purgeVersions)
 	return pc, sub.done, nil
 }
@@ -208,11 +209,11 @@ func (s *Service) terminate(sub *subscription, r Result, _ time.Time, _ int64, p
 	sub.subs = nil
 	s.mu.Unlock()
 
-	// Send the terminal Result. done is buffered (cap=1) so this never blocks
-	// even when no subscriber is reading yet.
-	sub.done <- r
-	close(sub.done)
-
+	// Persist the terminal DB row and emit the audit event BEFORE signalling
+	// completion. The done send below is a happens-before edge for every
+	// subscriber, so any consumer woken by the terminal Result must be able to
+	// observe the fully-recorded state (final job row + exactly-once audit).
+	// Signalling first would race these writes against the receiver.
 	if r.ErrorMessage != "" {
 		_ = MarkError(s.db, sub.jobID, r.ErrorMessage)
 	} else {
@@ -221,11 +222,11 @@ func (s *Service) terminate(sub *subscription, r Result, _ time.Time, _ int64, p
 
 	if s.audit != nil {
 		payload := map[string]any{
-			"job_id":                       sub.jobID,
-			"deleted_count":                r.DeletedTotal,
-			"duration_ms":                  r.DurationMS,
-			"purge_versions":               purgeVersions,
-			"versioning_enabled_at_start":  versioningEnabledAtStart,
+			"job_id":                      sub.jobID,
+			"deleted_count":               r.DeletedTotal,
+			"duration_ms":                 r.DurationMS,
+			"purge_versions":              purgeVersions,
+			"versioning_enabled_at_start": versioningEnabledAtStart,
 		}
 		out := OutcomeSuccess
 		if r.ErrorMessage != "" {
@@ -233,4 +234,9 @@ func (s *Service) terminate(sub *subscription, r Result, _ time.Time, _ int64, p
 		}
 		s.audit.Record(context.Background(), ActionBucketEmpty, sub.bucket, out, payload, r.ErrorMessage)
 	}
+
+	// Send the terminal Result last. done is buffered (cap=1) so this never
+	// blocks even when no subscriber is reading yet.
+	sub.done <- r
+	close(sub.done)
 }

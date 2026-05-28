@@ -25,6 +25,8 @@ export function ThemeProvider({ children }: PropsWithChildren) {
     const apply = () => {
       const r: Resolved = theme === "system" ? (mql.matches ? "dark" : "light") : theme;
       document.documentElement.classList.toggle("dark", r === "dark");
+      // Match native UI (scrollbars, form controls, autofill) to the theme.
+      document.documentElement.style.colorScheme = r;
       setResolved(r);
     };
     apply();

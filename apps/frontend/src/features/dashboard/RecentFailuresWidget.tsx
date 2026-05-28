@@ -48,7 +48,7 @@ export function RecentFailuresWidget({
       <div className="flex items-center justify-between border-b p-4">
         <h2 className="text-lg font-semibold">Recent failures</h2>
         <Select value={window} onValueChange={(v) => onWindowChange(v as DashboardWindow)}>
-          <SelectTrigger className="h-8 w-24" aria-label="Failures window">
+          <SelectTrigger className="h-8 w-36" aria-label="Failures window">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

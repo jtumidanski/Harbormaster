@@ -6,6 +6,7 @@ import { AppError } from "@/lib/api/errors";
 import { dashboardKeys } from "@/lib/api/keys";
 import { fetchDashboard } from "./api";
 import type { DashboardWindow, NodeStatus } from "./types";
+import { BucketSizeChart } from "./BucketSizeChart";
 import { RecentActivityList } from "./RecentActivityList";
 import { RecentFailuresWidget } from "./RecentFailuresWidget";
 
@@ -180,6 +181,10 @@ export function DashboardPage() {
             ))}
           </div>
         )}
+      </section>
+
+      <section aria-label="Storage by bucket" className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <BucketSizeChart />
       </section>
 
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">

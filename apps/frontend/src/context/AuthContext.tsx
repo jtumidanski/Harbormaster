@@ -39,7 +39,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
         try {
           await api.post("/api/v1/auth/logout");
         } finally {
+          // Drop every cached query, then explicitly seed `me` as null so the
+          // auth gate flips to the unauthenticated routes synchronously. Relying
+          // on clear()'s refetch left a window where the stale `me` was still
+          // truthy, so /login fell through to the authenticated "Not found".
           qc.clear();
+          qc.setQueryData(authKeys.me(), null);
         }
       },
     }),

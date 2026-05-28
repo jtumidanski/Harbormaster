@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { capitalize } from "@/lib/utils";
 import type { EventSummary } from "./types";
 
 function formatRelative(iso: string): string {
@@ -31,7 +32,7 @@ function OutcomeBadge({ outcome }: { outcome: string }) {
           : "bg-destructive/15 text-destructive"
       }
     >
-      {outcome}
+      {capitalize(outcome)}
     </Badge>
   );
 }

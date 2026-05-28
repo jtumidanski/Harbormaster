@@ -12,6 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TableSkeleton } from "@/components/common/TableSkeleton";
+import { capitalize } from "@/lib/utils";
 import { AppError } from "@/lib/api/errors";
 import { activityKeys } from "@/lib/api/keys";
 import { listAuditEvents } from "./api";
@@ -67,7 +68,7 @@ function OutcomeBadge({ outcome }: { outcome: string }) {
           : "bg-destructive/15 text-destructive"
       }
     >
-      {outcome}
+      {capitalize(outcome)}
     </Badge>
   );
 }

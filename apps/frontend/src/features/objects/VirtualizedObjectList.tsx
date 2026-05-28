@@ -25,7 +25,7 @@ export type VirtualizedObjectListProps = {
   onDownload: (key: string) => void;
   onDelete: (key: string) => void;
   onShare: (key: string) => void;
-  onPreview: (key: string, contentType: string) => void;
+  onPreview: (key: string, contentType: string, size: number) => void;
 };
 
 function formatBytes(bytes: number): string {
@@ -152,7 +152,7 @@ export function VirtualizedObjectList({
                   <button
                     type="button"
                     className="flex flex-1 items-center gap-2 truncate text-left hover:underline"
-                    onClick={() => onPreview(e.key, e.content_type)}
+                    onClick={() => onPreview(e.key, e.content_type, e.size)}
                     title={e.key}
                   >
                     <span className="truncate">{keyTail(e.key)}</span>

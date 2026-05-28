@@ -8,11 +8,12 @@ import {
 } from "@/components/ui/dialog";
 import { downloadURL } from "./api";
 
-// Cap preview fetches at 1 MiB via a Range header so opening a 4 GiB
-// object never tries to slurp the whole thing. The backend honours the
-// browser's Range request because S3 GetObject returns 206 partial
-// content for it.
+// Text/JSON previews are Range-capped at 1 MiB so opening a huge log never
+// slurps the whole thing — a partial text view is still useful. Images and
+// PDFs cannot be rendered from a truncated byte range, so they are fetched in
+// full up to IMAGE_PREVIEW_CAP_BYTES; larger ones prompt a download instead.
 const PREVIEW_CAP_BYTES = 1024 * 1024;
+const IMAGE_PREVIEW_CAP_BYTES = 25 * 1024 * 1024;
 
 export type PreviewPaneProps = {
   open: boolean;
@@ -20,6 +21,7 @@ export type PreviewPaneProps = {
   bucket: string;
   objectKey: string;
   contentType: string;
+  size: number;
 };
 
 type PreviewKind = "image" | "pdf" | "json" | "text" | "binary";
@@ -75,6 +77,7 @@ type PreviewState =
   | { kind: "text"; text: string }
   | { kind: "json"; text: string }
   | { kind: "binary" }
+  | { kind: "too_large" }
   | { kind: "error"; message: string };
 
 export function PreviewPane({
@@ -83,6 +86,7 @@ export function PreviewPane({
   bucket,
   objectKey,
   contentType,
+  size,
 }: PreviewPaneProps) {
   const [state, setState] = useState<PreviewState>({ kind: "loading" });
 
@@ -98,10 +102,18 @@ export function PreviewPane({
       return;
     }
 
+    // Images/PDFs can't render from a truncated byte range, so fetch them whole
+    // — but refuse oversized ones rather than pull tens of MiB into a blob.
+    const wantsFull = flavour === "image" || flavour === "pdf";
+    if (wantsFull && size > IMAGE_PREVIEW_CAP_BYTES) {
+      setState({ kind: "too_large" });
+      return;
+    }
+
     const load = async () => {
       try {
         const res = await fetch(downloadURL(bucket, objectKey), {
-          headers: { Range: `bytes=0-${PREVIEW_CAP_BYTES - 1}` },
+          headers: wantsFull ? {} : { Range: `bytes=0-${PREVIEW_CAP_BYTES - 1}` },
           credentials: "include",
         });
         if (!res.ok && res.status !== 206) {
@@ -141,7 +153,7 @@ export function PreviewPane({
       cancelled = true;
       if (blobUrlToRevoke) URL.revokeObjectURL(blobUrlToRevoke);
     };
-  }, [open, bucket, objectKey, contentType]);
+  }, [open, bucket, objectKey, contentType, size]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -162,6 +174,11 @@ export function PreviewPane({
           {state.kind === "binary" && (
             <p className="text-sm text-muted-foreground">
               No preview available — download to view.
+            </p>
+          )}
+          {state.kind === "too_large" && (
+            <p className="text-sm text-muted-foreground">
+              File is larger than 25 MiB — download to view.
             </p>
           )}
           {state.kind === "image" && (

@@ -23,11 +23,13 @@ func (r UserResource) ResourceID() string { return r.AccessKey }
 // caches it.
 func (r UserResource) MarshalJSON() ([]byte, error) {
 	type alias struct {
+		AccessKey         string         `json:"access_key"`
 		Status            string         `json:"status"`
 		AttachedTemplates []TemplateWire `json:"attached_templates"`
 		OtherPolicies     []string       `json:"other_policies"`
 	}
 	out := alias{
+		AccessKey:     r.AccessKey,
 		Status:        r.Status,
 		OtherPolicies: r.OtherPolicies,
 	}
@@ -94,12 +96,14 @@ func (r CreatedUserResource) ResourceID() string { return r.User.AccessKey }
 // including the one-time secret_key.
 func (r CreatedUserResource) MarshalJSON() ([]byte, error) {
 	type alias struct {
+		AccessKey         string         `json:"access_key"`
 		Status            string         `json:"status"`
 		AttachedTemplates []TemplateWire `json:"attached_templates"`
 		OtherPolicies     []string       `json:"other_policies"`
 		SecretKey         string         `json:"secret_key"`
 	}
 	out := alias{
+		AccessKey:     r.User.AccessKey,
 		Status:        r.User.Status,
 		OtherPolicies: r.User.OtherPolicies,
 		SecretKey:     r.SecretKey,

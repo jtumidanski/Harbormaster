@@ -264,7 +264,7 @@ type PolicyTemplateResource struct {
 }
 
 // ResourceType returns the canonical JSON:API type string.
-func (r PolicyTemplateResource) ResourceType() string { return "policy-templates" }
+func (r PolicyTemplateResource) ResourceType() string { return "policy_templates" }
 
 // ResourceID returns the template name (the natural primary key).
 func (r PolicyTemplateResource) ResourceID() string { return r.Template.Name }

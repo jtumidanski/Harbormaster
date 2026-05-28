@@ -79,14 +79,23 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 		apierror.Write(w, apierror.StyleJSONAPI, err)
 		return
 	}
-	resources := make([]jsonapi.Resource, len(bs))
-	for i, b := range bs {
+	params := parseListParams(r.URL.Query())
+	sortBuckets(bs, params.sort)
+	total := len(bs)
+	pageItems, totalPages := pageOf(bs, params.number, params.size)
+	resources := make([]jsonapi.Resource, len(pageItems))
+	for i, b := range pageItems {
 		resources[i] = BucketResource{Bucket: b}
 	}
 	w.Header().Set("Content-Type", "application/vnd.api+json")
 	w.WriteHeader(http.StatusOK)
 	_ = h.enc.Collection(w, resources, &jsonapi.Meta{
-		Page: &jsonapi.Page{TotalRecords: len(bs), TotalPages: 1},
+		Page: &jsonapi.Page{
+			Number:       params.number,
+			Size:         params.size,
+			TotalRecords: total,
+			TotalPages:   totalPages,
+		},
 	}, nil)
 }
 

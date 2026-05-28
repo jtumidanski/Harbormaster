@@ -94,7 +94,9 @@ export function ActivityFeedPage() {
     setSearchParams(sp);
   }
 
-  const events: AuditEvent[] = q.data?.data?.map((d) => d.attributes) ?? [];
+  // The event id lives at the JSON:API resource level (data[].id), not in
+  // attributes — merge it in so row keys (and any id-based lookups) work.
+  const events: AuditEvent[] = q.data?.data?.map((d) => ({ ...d.attributes, id: d.id })) ?? [];
   const meta = q.data?.meta?.page;
   const totalPages = meta?.total_pages ?? 1;
 

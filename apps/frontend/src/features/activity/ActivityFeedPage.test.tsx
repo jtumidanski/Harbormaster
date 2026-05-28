@@ -19,7 +19,8 @@ function eventPayload(id: string, overrides: Record<string, unknown> = {}) {
     type: "audit_events",
     id,
     attributes: {
-      id,
+      // NOTE: the real backend puts the event id only at the resource level
+      // (data[].id), never in attributes — keep the mock faithful to that.
       occurred_at: "2024-06-01T12:00:00Z",
       actor: "alice",
       source_ip: "10.0.0.1",

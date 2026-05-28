@@ -23,7 +23,7 @@ func Routes(p *Processor) func(chi.Router) {
 }
 
 func (p *Processor) handleStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, StatusResponse{SetupCompleted: p.Status(r.Context())})
+	writeJSON(w, http.StatusOK, StatusResponse{Initialized: p.Status(r.Context())})
 }
 
 func (p *Processor) handleMcAliases(w http.ResponseWriter, _ *http.Request) {

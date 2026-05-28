@@ -1,8 +1,10 @@
 package setup
 
-// StatusResponse is the body returned by GET /api/v1/setup/status.
+// StatusResponse is the body returned by GET /api/v1/setup/status. The wire
+// key is `initialized` per api-contracts.md — the SPA reads exactly that key
+// to decide between the setup wizard and the login page, so it must not drift.
 type StatusResponse struct {
-	SetupCompleted bool `json:"setup_completed"`
+	Initialized bool `json:"initialized"`
 }
 
 // McAliasesResponse is the body returned by GET /api/v1/setup/mc-aliases.

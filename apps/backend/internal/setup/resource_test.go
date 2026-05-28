@@ -23,7 +23,11 @@ func newRouter(p *setup.Processor) http.Handler {
 }
 
 // TestRoutes_StatusEndpoint exercises GET /setup/status before and after a
-// successful Submit, and asserts the JSON shape {"setup_completed": bool}.
+// successful Submit, asserting the documented wire shape {"initialized": bool}
+// (api-contracts.md). Asserting the raw JSON key — not a Go struct field — is
+// deliberate: the SPA reads `initialized`, so emitting any other key (e.g. the
+// legacy `setup_completed`) leaves the frontend permanently on the setup
+// wizard and 409-looping after setup completes.
 func TestRoutes_StatusEndpoint(t *testing.T) {
 	p, _ := newProcessor(t, "/nonexistent")
 	srv := newRouter(p)
@@ -32,9 +36,11 @@ func TestRoutes_StatusEndpoint(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
-	var resp setup.StatusResponse
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	require.False(t, resp.SetupCompleted)
+	var before map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &before))
+	require.Contains(t, before, "initialized", "status must use the contract key `initialized`")
+	require.NotContains(t, before, "setup_completed", "status must not use the legacy key")
+	require.Equal(t, false, before["initialized"])
 
 	// Flip via the processor; the next GET should see it.
 	require.NoError(t, p.Submit(context.Background(), validRequest(), "127.0.0.1"))
@@ -43,8 +49,9 @@ func TestRoutes_StatusEndpoint(t *testing.T) {
 	w2 := httptest.NewRecorder()
 	srv.ServeHTTP(w2, req2)
 	require.Equal(t, http.StatusOK, w2.Code)
-	require.NoError(t, json.Unmarshal(w2.Body.Bytes(), &resp))
-	require.True(t, resp.SetupCompleted)
+	var after map[string]any
+	require.NoError(t, json.Unmarshal(w2.Body.Bytes(), &after))
+	require.Equal(t, true, after["initialized"])
 }
 
 // TestRoutes_McAliasesEndpoint exercises the three branches of

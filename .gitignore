@@ -28,6 +28,7 @@ Thumbs.db
 # Local secrets and data
 *.env
 *.env.local
+.envrc
 data/
 harbormaster.db
 harbormaster.db-wal

@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import type { EventSummary } from "./types";
 
 function formatRelative(iso: string): string {
@@ -38,7 +39,7 @@ function OutcomeBadge({ outcome }: { outcome: string }) {
 export function RecentActivityList({ events }: { events: EventSummary[] }) {
   const shown = events.slice(0, 25);
   return (
-    <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
+    <Card>
       <div className="flex items-center justify-between border-b p-4">
         <h2 className="text-lg font-semibold">Recent activity</h2>
         <Link to="/activity" className="text-sm text-primary hover:underline">
@@ -66,6 +67,6 @@ export function RecentActivityList({ events }: { events: EventSummary[] }) {
           ))}
         </ul>
       )}
-    </div>
+    </Card>
   );
 }

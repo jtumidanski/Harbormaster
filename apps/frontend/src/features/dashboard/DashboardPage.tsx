@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import { AppError } from "@/lib/api/errors";
 import { dashboardKeys } from "@/lib/api/keys";
 import { fetchDashboard } from "./api";
@@ -52,17 +53,17 @@ function formatUptime(seconds: number): string {
 
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border bg-card p-4 text-card-foreground shadow-sm">
+    <Card className="p-4">
       <p className="text-sm text-muted-foreground">{label}</p>
       <p className="mt-1 text-2xl font-semibold">{value}</p>
-    </div>
+    </Card>
   );
 }
 
 function NodeCard({ node }: { node: NodeStatus }) {
   const healthy = node.drives.unhealthy === 0 && node.state.toLowerCase() === "online";
   return (
-    <div className="rounded-lg border bg-card p-4 text-card-foreground shadow-sm">
+    <Card className="p-4">
       <div className="flex items-center justify-between">
         <p className="truncate text-sm font-medium" title={node.endpoint}>
           {node.endpoint}
@@ -82,7 +83,7 @@ function NodeCard({ node }: { node: NodeStatus }) {
         Drives: {node.drives.healthy}/{node.drives.total} healthy
         {node.drives.unhealthy > 0 ? ` (${node.drives.unhealthy} unhealthy)` : ""}
       </p>
-    </div>
+    </Card>
   );
 }
 
@@ -130,10 +131,7 @@ export function DashboardPage() {
     <div className="space-y-6 p-6">
       <h1 className="text-2xl font-semibold">Dashboard</h1>
 
-      <section
-        aria-label="Server"
-        className="rounded-lg border bg-card p-4 text-card-foreground shadow-sm"
-      >
+      <Card aria-label="Server" className="p-4">
         <h2 className="mb-2 text-lg font-semibold">Server</h2>
         <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
           <div>
@@ -149,7 +147,7 @@ export function DashboardPage() {
             <dd className="font-medium">{formatUptime(view.server.uptime_seconds)}</dd>
           </div>
         </dl>
-      </section>
+      </Card>
 
       <section aria-label="Totals" className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard label="Buckets" value={view.totals.buckets.toLocaleString()} />

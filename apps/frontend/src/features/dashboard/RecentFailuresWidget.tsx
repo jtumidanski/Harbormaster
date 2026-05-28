@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { Card } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -44,7 +45,7 @@ export function RecentFailuresWidget({
   )}&to=${encodeURIComponent(to)}`;
 
   return (
-    <div className="flex h-full flex-col rounded-lg border bg-card text-card-foreground shadow-sm">
+    <Card className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b p-4">
         <h2 className="text-lg font-semibold">Recent failures</h2>
         <Select value={window} onValueChange={(v) => onWindowChange(v as DashboardWindow)}>
@@ -88,6 +89,6 @@ export function RecentFailuresWidget({
           See all
         </Link>
       </div>
-    </div>
+    </Card>
   );
 }

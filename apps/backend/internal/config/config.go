@@ -21,6 +21,7 @@ type Config struct {
 	LogFormat                 string
 	SessionTimeout            time.Duration
 	SessionCookieName         string
+	SessionCookieSecure       bool
 	BasePath                  string
 	TrustedProxies            []string
 	UploadMaxBytes            int64
@@ -60,6 +61,7 @@ func Load() (Config, error) {
 		LogFormat:                v.GetString("LOG_FORMAT"),
 		SessionTimeout:           v.GetDuration("SESSION_TIMEOUT"),
 		SessionCookieName:        v.GetString("SESSION_COOKIE_NAME"),
+		SessionCookieSecure:      v.GetBool("SESSION_COOKIE_SECURE"),
 		BasePath:                 normalizeBasePath(v.GetString("BASE_PATH")),
 		TrustedProxies:           splitCSV(v.GetString("TRUSTED_PROXIES")),
 		UploadMaxBytes:           v.GetInt64("UPLOAD_MAX_BYTES"),
@@ -95,6 +97,10 @@ func defaults(v *viper.Viper) {
 	v.SetDefault("LOG_FORMAT", "json")
 	v.SetDefault("SESSION_TIMEOUT", 8*time.Hour)
 	v.SetDefault("SESSION_COOKIE_NAME", "harbormaster_session")
+	// Secure by default. Operators serving over plain HTTP (no TLS-terminating
+	// proxy) must set HARBORMASTER_SESSION_COOKIE_SECURE=false, or browsers
+	// will silently drop the session cookie and login will not persist.
+	v.SetDefault("SESSION_COOKIE_SECURE", true)
 	v.SetDefault("BASE_PATH", "/")
 	v.SetDefault("UPLOAD_MAX_BYTES", int64(104857600))
 	v.SetDefault("SHARE_LINK_MAX_TTL", 168*time.Hour)

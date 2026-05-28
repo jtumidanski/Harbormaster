@@ -193,7 +193,7 @@ func runServe(ctx context.Context, _ io.Writer) error {
 		CSRFCookieName:    csrfCookieName,
 		BasePath:          cfg.BasePath,
 		SessionTimeout:    cfg.SessionTimeout,
-		Secure:            true,
+		Secure:            cfg.SessionCookieSecure,
 	}
 
 	publicRoutes := func(r chi.Router) {

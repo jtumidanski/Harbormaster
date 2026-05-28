@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -78,9 +79,11 @@ export function UserDetailPage() {
         <p className="text-destructive">
           {q.error instanceof AppError ? q.error.message : "Failed to load user."}
         </p>
-        <Link to="/users" className="text-sm text-primary hover:underline">
-          Back to users
-        </Link>
+        <Button variant="outline" size="sm" asChild>
+          <Link to="/users">
+            <ArrowLeft aria-hidden="true" /> Back to users
+          </Link>
+        </Button>
       </div>
     );
   }
@@ -91,9 +94,11 @@ export function UserDetailPage() {
   return (
     <div className="p-6 space-y-4">
       <div>
-        <Link to="/users" className="text-sm text-muted-foreground hover:underline">
-          ← Users
-        </Link>
+        <Button variant="ghost" size="sm" asChild className="-ml-2 text-muted-foreground">
+          <Link to="/users">
+            <ArrowLeft aria-hidden="true" /> Users
+          </Link>
+        </Button>
         <div className="mt-1 flex items-center justify-between gap-3">
           <h1 className="font-mono text-2xl font-semibold">{user.access_key}</h1>
           <div className="flex items-center gap-2">

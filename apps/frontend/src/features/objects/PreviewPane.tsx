@@ -53,6 +53,23 @@ const TEXT_EXTENSIONS = new Set([
   "xml",
 ]);
 
+// MinIO often stores objects with an empty or octet-stream content type, so we
+// fall back to the file extension to recognise images/PDFs that would otherwise
+// be treated as un-previewable binaries.
+const IMAGE_EXTENSIONS = new Set([
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "svg",
+  "bmp",
+  "ico",
+  "avif",
+  "tif",
+  "tiff",
+]);
+
 function extOf(key: string): string {
   const i = key.lastIndexOf(".");
   return i >= 0 ? key.slice(i + 1).toLowerCase() : "";
@@ -64,6 +81,8 @@ function classify(contentType: string, key: string): PreviewKind {
   if (ct === "application/pdf") return "pdf";
   if (ct === "application/json" || ct === "application/ld+json") return "json";
   const ext = extOf(key);
+  if (IMAGE_EXTENSIONS.has(ext)) return "image";
+  if (ext === "pdf") return "pdf";
   if (ext === "json") return "json";
   if (TEXT_PREFIXES.some((p) => ct.startsWith(p))) return "text";
   if (TEXT_CONTENT_TYPES.has(ct)) return "text";

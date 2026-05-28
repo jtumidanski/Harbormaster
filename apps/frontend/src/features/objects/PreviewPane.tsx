@@ -90,6 +90,24 @@ function classify(contentType: string, key: string): PreviewKind {
   return "binary";
 }
 
+const KIND_LABELS: Record<PreviewKind, string> = {
+  image: "Image",
+  pdf: "PDF document",
+  json: "JSON",
+  text: "Text",
+  binary: "Binary file",
+};
+
+// MinIO frequently reports an empty or generic octet-stream content type even
+// for files we render fine. Rather than the unhelpful "unknown content type",
+// show the real MIME type when it's meaningful, otherwise a label for the kind
+// we actually detected (and will render).
+function describeType(contentType: string, key: string): string {
+  const ct = contentType.trim();
+  if (ct && ct.toLowerCase() !== "application/octet-stream") return ct;
+  return KIND_LABELS[classify(contentType, key)];
+}
+
 type PreviewState =
   | { kind: "loading" }
   | { kind: "image" | "pdf"; blobUrl: string }
@@ -179,7 +197,7 @@ export function PreviewPane({
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle className="truncate font-mono text-sm">{objectKey}</DialogTitle>
-          <DialogDescription>{contentType || "unknown content type"}</DialogDescription>
+          <DialogDescription>{describeType(contentType, objectKey)}</DialogDescription>
         </DialogHeader>
         <div className="min-h-[200px]">
           {state.kind === "loading" && (

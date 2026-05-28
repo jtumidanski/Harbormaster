@@ -113,9 +113,14 @@ export function AppShell() {
     <SidebarProvider>
       <Sidebar collapsible="icon">
         <SidebarHeader>
-          <div className="flex items-center gap-2 px-2 py-1 font-semibold group-data-[collapsible=icon]:hidden">
-            Harbormaster
-          </div>
+          <Link
+            to="/"
+            aria-label="Harbormaster home"
+            className="flex items-center gap-2 rounded-md px-2 py-1.5 font-semibold hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+          >
+            <img src="/favicon.svg" alt="" className="size-6 shrink-0" />
+            <span className="group-data-[collapsible=icon]:hidden">Harbormaster</span>
+          </Link>
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>

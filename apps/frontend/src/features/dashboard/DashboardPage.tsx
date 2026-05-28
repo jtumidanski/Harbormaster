@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { capitalize } from "@/lib/utils";
 import { AppError } from "@/lib/api/errors";
 import { dashboardKeys } from "@/lib/api/keys";
 import { fetchDashboard } from "./api";
@@ -76,7 +77,7 @@ function NodeCard({ node }: { node: NodeStatus }) {
               : "bg-destructive/15 text-destructive"
           }
         >
-          {node.state}
+          {capitalize(node.state)}
         </Badge>
       </div>
       <p className="mt-2 text-sm text-muted-foreground">
@@ -149,11 +150,16 @@ export function DashboardPage() {
         </dl>
       </Card>
 
-      <section aria-label="Totals" className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard label="Buckets" value={view.totals.buckets.toLocaleString()} />
-        <StatCard label="Estimated size" value={formatBytes(view.totals.estimated_bytes)} />
-        <StatCard label="Objects" value={view.totals.objects.toLocaleString()} />
-      </section>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <section aria-label="Totals" className="grid grid-cols-1 gap-4">
+          <StatCard label="Buckets" value={view.totals.buckets.toLocaleString()} />
+          <StatCard label="Estimated size" value={formatBytes(view.totals.estimated_bytes)} />
+          <StatCard label="Objects" value={view.totals.objects.toLocaleString()} />
+        </section>
+        <section aria-label="Storage by bucket">
+          <BucketSizeChart />
+        </section>
+      </div>
 
       {view.warnings.length > 0 && (
         <Alert variant="destructive">
@@ -179,10 +185,6 @@ export function DashboardPage() {
             ))}
           </div>
         )}
-      </section>
-
-      <section aria-label="Storage by bucket" className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <BucketSizeChart />
       </section>
 
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">

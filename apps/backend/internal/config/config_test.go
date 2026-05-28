@@ -21,6 +21,16 @@ func TestLoadDefaults(t *testing.T) {
 	require.Equal(t, 168*time.Hour, cfg.ShareLinkMaxTTL)
 	require.Equal(t, "proxy", cfg.DownloadProxyMode)
 	require.False(t, cfg.MetricsEnabled)
+	require.True(t, cfg.SessionCookieSecure, "session cookie Secure attribute defaults to true")
+}
+
+func TestLoadSessionCookieSecureCanBeDisabled(t *testing.T) {
+	t.Setenv("HARBORMASTER_DATA_DIR", t.TempDir())
+	t.Setenv("HARBORMASTER_SESSION_COOKIE_SECURE", "false")
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.False(t, cfg.SessionCookieSecure,
+		"operators serving over plain HTTP must be able to disable the Secure attribute")
 }
 
 func TestLoadOverridesFromEnv(t *testing.T) {

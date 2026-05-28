@@ -26,7 +26,7 @@ export type ObjectBrowserPageProps = {
   bucket: string;
 };
 
-type PreviewState = { key: string; contentType: string } | null;
+type PreviewState = { key: string; contentType: string; size: number } | null;
 
 export function ObjectBrowserPage({ bucket }: ObjectBrowserPageProps) {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -109,7 +109,7 @@ export function ObjectBrowserPage({ bucket }: ObjectBrowserPageProps) {
           onDownload={onDownload}
           onDelete={(key) => setDeleteKey(key)}
           onShare={(key) => setShareKey(key)}
-          onPreview={(key, contentType) => setPreview({ key, contentType })}
+          onPreview={(key, contentType, size) => setPreview({ key, contentType, size })}
         />
       )}
 
@@ -140,6 +140,7 @@ export function ObjectBrowserPage({ bucket }: ObjectBrowserPageProps) {
           bucket={bucket}
           objectKey={preview.key}
           contentType={preview.contentType}
+          size={preview.size}
         />
       )}
 

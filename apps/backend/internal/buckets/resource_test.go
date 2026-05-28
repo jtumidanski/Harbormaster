@@ -88,6 +88,73 @@ func TestListReturnsJSONAPICollection(t *testing.T) {
 	}
 }
 
+// TestBucketResourceMarshalsSnakeCaseAttributes pins the wire contract for the
+// attributes block. Without a custom MarshalJSON the embedded Bucket serialises
+// with Go field names (PascalCase: "ObjectCount"), but the API contract and the
+// SPA both read snake_case ("object_count") — the mismatch renders every field
+// undefined client-side and crashes the bucket list on the first non-empty load.
+func TestBucketResourceMarshalsSnakeCaseAttributes(t *testing.T) {
+	r := BucketResource{Bucket{
+		Name:              "photos",
+		CreatedAt:         time.Unix(1700000000, 0).UTC(),
+		EstimatedBytes:    2048,
+		ObjectCount:       7,
+		VersioningEnabled: true,
+		HasLifecycleRules: true,
+		PublicAccess:      PublicAccessPublicRead,
+		Quota:             &Quota{Kind: QuotaKindHard, Bytes: 4096, UsedBytes: 2048},
+	}}
+	raw, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for _, k := range []string{
+		"name", "created_at", "estimated_bytes", "object_count",
+		"versioning_enabled", "has_lifecycle_rules", "public_access",
+	} {
+		if _, ok := m[k]; !ok {
+			t.Errorf("attributes missing snake_case key %q; got %s", k, raw)
+		}
+	}
+	if _, leaked := m["ObjectCount"]; leaked {
+		t.Errorf("attributes leaked PascalCase key: %s", raw)
+	}
+	if m["object_count"] != float64(7) {
+		t.Errorf("object_count: got %v want 7", m["object_count"])
+	}
+	q, ok := m["quota"].(map[string]any)
+	if !ok {
+		t.Fatalf("quota not a nested object: %s", raw)
+	}
+	for _, k := range []string{"kind", "bytes", "used_bytes"} {
+		if _, ok := q[k]; !ok {
+			t.Errorf("quota missing snake_case key %q; got %s", k, raw)
+		}
+	}
+}
+
+// TestBucketResourceMarshalsNilQuotaAsNull ensures the optional quota block is
+// emitted as JSON null (not omitted, not "{}") so the SPA's `quota: Quota|null`
+// guard works.
+func TestBucketResourceMarshalsNilQuotaAsNull(t *testing.T) {
+	raw, err := json.Marshal(BucketResource{Bucket{Name: "b", PublicAccess: PublicAccessPrivate}})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	v, present := m["quota"]
+	if !present || v != nil {
+		t.Errorf("quota: got %v (present=%v) want null", v, present)
+	}
+}
+
 // TestCreateRejectsInvalidName drives the POST /buckets endpoint with a
 // name MinIO's strict rules reject ("Photos" — uppercase letters). The
 // handler must return 422 + the JSON:API errors[] envelope with code

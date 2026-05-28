@@ -1,8 +1,18 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { TableSkeleton } from "@/components/common/TableSkeleton";
 import { AppError } from "@/lib/api/errors";
 import { usersKeys } from "@/lib/api/keys";
 import { listUsers } from "./api";
@@ -23,10 +33,10 @@ function TemplateChip({ tpl }: { tpl: TemplateRef }) {
           .join(", ")})`
       : "";
   return (
-    <span className="inline-flex items-center rounded-full border bg-muted/40 px-2 py-0.5 font-mono text-xs">
+    <Badge variant="outline" className="font-mono font-normal">
       {tpl.name}
       {params}
-    </span>
+    </Badge>
   );
 }
 
@@ -65,7 +75,7 @@ export function UserListPage() {
       </div>
 
       {q.isLoading ? (
-        <p className="text-muted-foreground">Loading…</p>
+        <TableSkeleton columns={3} />
       ) : q.isError ? (
         <p className="text-destructive">
           {q.error instanceof AppError ? q.error.message : "Failed to load users."}
@@ -80,28 +90,22 @@ export function UserListPage() {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-md border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left">
-              <tr>
-                <th scope="col" className="px-3 py-2 font-medium">
-                  Access key
-                </th>
-                <th scope="col" className="px-3 py-2 font-medium">
-                  Status
-                </th>
-                <th scope="col" className="px-3 py-2 font-medium">
-                  Attached templates
-                </th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Access key</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Attached templates</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {filtered.map((u) => (
-                <tr
+                <TableRow
                   key={u.access_key}
-                  className="cursor-pointer border-t hover:bg-accent/40"
+                  className="cursor-pointer"
                   onClick={() => navigate(`/users/${encodeURIComponent(u.access_key)}`)}
                 >
-                  <td className="px-3 py-2 font-medium">
+                  <TableCell className="font-medium">
                     <button
                       type="button"
                       className="text-primary hover:underline"
@@ -112,15 +116,13 @@ export function UserListPage() {
                     >
                       {u.access_key}
                     </button>
-                  </td>
-                  <td className="px-3 py-2">
-                    <span
-                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${statusBadgeClass(u.status)}`}
-                    >
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={statusBadgeClass(u.status)}>
                       {u.status === "enabled" ? "Enabled" : "Disabled"}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2">
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
                     {u.attached_templates.length === 0 ? (
                       <span className="text-xs text-muted-foreground">None</span>
                     ) : (
@@ -130,11 +132,11 @@ export function UserListPage() {
                         ))}
                       </div>
                     )}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
 

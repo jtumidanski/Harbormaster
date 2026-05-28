@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { AppError } from "@/lib/api/errors";
 import { usersKeys } from "@/lib/api/keys";
 import { ServiceAccountList } from "@/features/service-accounts/ServiceAccountList";
@@ -21,10 +22,10 @@ function TemplateChip({ tpl }: { tpl: TemplateRef }) {
           .join(", ")})`
       : "";
   return (
-    <span className="inline-flex items-center rounded-full border bg-muted/40 px-2 py-0.5 font-mono text-xs">
+    <Badge variant="outline" className="bg-muted/40 font-mono font-normal">
       {tpl.name}
       {params}
-    </span>
+    </Badge>
   );
 }
 

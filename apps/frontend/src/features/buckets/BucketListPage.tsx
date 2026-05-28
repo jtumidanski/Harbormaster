@@ -1,7 +1,17 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { TableSkeleton } from "@/components/common/TableSkeleton";
 import { AppError } from "@/lib/api/errors";
 import { bucketsKeys } from "@/lib/api/keys";
 import { listBuckets } from "./api";
@@ -53,16 +63,6 @@ function publicAccessBadgeClass(mode: PublicAccess): string {
   }
 }
 
-function Badge({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${className}`}
-    >
-      {children}
-    </span>
-  );
-}
-
 function quotaCell(b: Bucket): string {
   if (!b.quota) return "—";
   const used = formatBytes(b.quota.used_bytes);
@@ -92,7 +92,7 @@ export function BucketListPage() {
       </div>
 
       {q.isLoading ? (
-        <p className="text-muted-foreground">Loading…</p>
+        <TableSkeleton columns={8} />
       ) : q.isError ? (
         <p className="text-destructive">
           {q.error instanceof AppError ? q.error.message : "Failed to load buckets."}
@@ -103,43 +103,27 @@ export function BucketListPage() {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-md border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left">
-              <tr>
-                <th scope="col" className="px-3 py-2 font-medium">
-                  Name
-                </th>
-                <th scope="col" className="px-3 py-2 font-medium">
-                  Created
-                </th>
-                <th scope="col" className="px-3 py-2 font-medium">
-                  Size
-                </th>
-                <th scope="col" className="px-3 py-2 font-medium">
-                  Objects
-                </th>
-                <th scope="col" className="px-3 py-2 font-medium">
-                  Versioning
-                </th>
-                <th scope="col" className="px-3 py-2 font-medium">
-                  Lifecycle
-                </th>
-                <th scope="col" className="px-3 py-2 font-medium">
-                  Public access
-                </th>
-                <th scope="col" className="px-3 py-2 font-medium">
-                  Quota
-                </th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead>Size</TableHead>
+                <TableHead>Objects</TableHead>
+                <TableHead>Versioning</TableHead>
+                <TableHead>Lifecycle</TableHead>
+                <TableHead>Public access</TableHead>
+                <TableHead>Quota</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {buckets.map((b) => (
-                <tr
+                <TableRow
                   key={b.name}
-                  className="cursor-pointer border-t hover:bg-accent/40"
+                  className="cursor-pointer"
                   onClick={() => navigate(`/buckets/${encodeURIComponent(b.name)}`)}
                 >
-                  <td className="px-3 py-2 font-medium">
+                  <TableCell className="font-medium">
                     <button
                       type="button"
                       className="text-primary hover:underline"
@@ -150,12 +134,15 @@ export function BucketListPage() {
                     >
                       {b.name}
                     </button>
-                  </td>
-                  <td className="px-3 py-2 text-muted-foreground">{formatDate(b.created_at)}</td>
-                  <td className="px-3 py-2">{formatBytes(b.estimated_bytes)}</td>
-                  <td className="px-3 py-2">{b.object_count.toLocaleString()}</td>
-                  <td className="px-3 py-2">
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatDate(b.created_at)}
+                  </TableCell>
+                  <TableCell>{formatBytes(b.estimated_bytes)}</TableCell>
+                  <TableCell>{b.object_count.toLocaleString()}</TableCell>
+                  <TableCell>
                     <Badge
+                      variant="outline"
                       className={
                         b.versioning_enabled
                           ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200"
@@ -164,9 +151,10 @@ export function BucketListPage() {
                     >
                       {b.versioning_enabled ? "On" : "Off"}
                     </Badge>
-                  </td>
-                  <td className="px-3 py-2">
+                  </TableCell>
+                  <TableCell>
                     <Badge
+                      variant="outline"
                       className={
                         b.has_lifecycle_rules
                           ? "bg-sky-100 text-sky-900 dark:bg-sky-900/30 dark:text-sky-200"
@@ -175,17 +163,17 @@ export function BucketListPage() {
                     >
                       {b.has_lifecycle_rules ? "Yes" : "No"}
                     </Badge>
-                  </td>
-                  <td className="px-3 py-2">
-                    <Badge className={publicAccessBadgeClass(b.public_access)}>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={publicAccessBadgeClass(b.public_access)}>
                       {publicAccessLabel(b.public_access)}
                     </Badge>
-                  </td>
-                  <td className="px-3 py-2 text-muted-foreground">{quotaCell(b)}</td>
-                </tr>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{quotaCell(b)}</TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
 

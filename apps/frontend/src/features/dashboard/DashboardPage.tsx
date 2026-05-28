@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { AppError } from "@/lib/api/errors";
 import { dashboardKeys } from "@/lib/api/keys";
 import { fetchDashboard } from "./api";
@@ -65,15 +66,16 @@ function NodeCard({ node }: { node: NodeStatus }) {
         <p className="truncate text-sm font-medium" title={node.endpoint}>
           {node.endpoint}
         </p>
-        <span
-          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${
+        <Badge
+          variant="outline"
+          className={
             healthy
               ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200"
               : "bg-destructive/15 text-destructive"
-          }`}
+          }
         >
           {node.state}
-        </span>
+        </Badge>
       </div>
       <p className="mt-2 text-sm text-muted-foreground">
         Drives: {node.drives.healthy}/{node.drives.total} healthy

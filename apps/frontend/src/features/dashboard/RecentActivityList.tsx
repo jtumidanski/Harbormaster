@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { Badge } from "@/components/ui/badge";
 import type { EventSummary } from "./types";
 
 function formatRelative(iso: string): string {
@@ -21,15 +22,16 @@ function formatRelative(iso: string): string {
 function OutcomeBadge({ outcome }: { outcome: string }) {
   const ok = outcome === "success";
   return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${
+    <Badge
+      variant="outline"
+      className={
         ok
           ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200"
           : "bg-destructive/15 text-destructive"
-      }`}
+      }
     >
       {outcome}
-    </span>
+    </Badge>
   );
 }
 

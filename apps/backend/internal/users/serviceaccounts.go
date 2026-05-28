@@ -280,6 +280,7 @@ func (r ServiceAccountResource) ResourceID() string { return r.AccessKey }
 // includes it on the 201 response.
 func (r ServiceAccountResource) MarshalJSON() ([]byte, error) {
 	type alias struct {
+		AccessKey        string        `json:"access_key"`
 		ParentUser       string        `json:"parent_user"`
 		Name             string        `json:"name,omitempty"`
 		Description      string        `json:"description,omitempty"`
@@ -287,6 +288,7 @@ func (r ServiceAccountResource) MarshalJSON() ([]byte, error) {
 		AttachedTemplate *TemplateWire `json:"attached_template,omitempty"`
 	}
 	out := alias{
+		AccessKey:   r.AccessKey,
 		ParentUser:  r.ParentUser,
 		Name:        r.Name,
 		Description: r.Description,
@@ -318,6 +320,7 @@ func (r CreatedServiceAccountResource) ResourceID() string { return r.ServiceAcc
 // service account, including the one-time secret_key.
 func (r CreatedServiceAccountResource) MarshalJSON() ([]byte, error) {
 	type alias struct {
+		AccessKey        string        `json:"access_key"`
 		ParentUser       string        `json:"parent_user"`
 		Name             string        `json:"name,omitempty"`
 		Description      string        `json:"description,omitempty"`
@@ -326,6 +329,7 @@ func (r CreatedServiceAccountResource) MarshalJSON() ([]byte, error) {
 		SecretKey        string        `json:"secret_key"`
 	}
 	out := alias{
+		AccessKey:   r.ServiceAccount.AccessKey,
 		ParentUser:  r.ServiceAccount.ParentUser,
 		Name:        r.ServiceAccount.Name,
 		Description: r.ServiceAccount.Description,

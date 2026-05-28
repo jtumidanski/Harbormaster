@@ -1,7 +1,17 @@
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { TableSkeleton } from "@/components/common/TableSkeleton";
 import { AppError } from "@/lib/api/errors";
 import { activityKeys } from "@/lib/api/keys";
 import { listAuditEvents } from "./api";
@@ -49,15 +59,16 @@ function truncate(s: string | null, max: number): string {
 function OutcomeBadge({ outcome }: { outcome: string }) {
   const ok = outcome === "success";
   return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${
+    <Badge
+      variant="outline"
+      className={
         ok
           ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200"
           : "bg-destructive/15 text-destructive"
-      }`}
+      }
     >
       {outcome}
-    </span>
+    </Badge>
   );
 }
 
@@ -108,7 +119,7 @@ export function ActivityFeedPage() {
         <h1 className="mb-4 text-2xl font-semibold">Activity</h1>
 
         {q.isLoading ? (
-          <p className="text-muted-foreground">Loading…</p>
+          <TableSkeleton columns={6} />
         ) : q.isError ? (
           <p className="text-destructive">
             {q.error instanceof AppError ? q.error.message : "Failed to load audit events."}
@@ -119,49 +130,39 @@ export function ActivityFeedPage() {
           </div>
         ) : (
           <div className="overflow-x-auto rounded-md border">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50 text-left">
-                <tr>
-                  <th scope="col" className="px-3 py-2 font-medium">
-                    When
-                  </th>
-                  <th scope="col" className="px-3 py-2 font-medium">
-                    Action
-                  </th>
-                  <th scope="col" className="px-3 py-2 font-medium">
-                    Target
-                  </th>
-                  <th scope="col" className="px-3 py-2 font-medium">
-                    Outcome
-                  </th>
-                  <th scope="col" className="px-3 py-2 font-medium">
-                    Source IP
-                  </th>
-                  <th scope="col" className="px-3 py-2 font-medium">
-                    Error
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>When</TableHead>
+                  <TableHead>Action</TableHead>
+                  <TableHead>Target</TableHead>
+                  <TableHead>Outcome</TableHead>
+                  <TableHead>Source IP</TableHead>
+                  <TableHead>Error</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {events.map((e) => (
-                  <tr key={e.id} className="border-t">
-                    <td className="px-3 py-2 text-muted-foreground">{formatDate(e.occurred_at)}</td>
-                    <td className="px-3 py-2 font-medium">{e.action}</td>
-                    <td className="px-3 py-2">
+                  <TableRow key={e.id}>
+                    <TableCell className="text-muted-foreground">
+                      {formatDate(e.occurred_at)}
+                    </TableCell>
+                    <TableCell className="font-medium">{e.action}</TableCell>
+                    <TableCell>
                       {e.target_type}
                       {e.target_id ? `:${e.target_id}` : ""}
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       <OutcomeBadge outcome={e.outcome} />
-                    </td>
-                    <td className="px-3 py-2 text-muted-foreground">{e.source_ip}</td>
-                    <td className="px-3 py-2 text-destructive" title={e.error_message ?? undefined}>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{e.source_ip}</TableCell>
+                    <TableCell className="text-destructive" title={e.error_message ?? undefined}>
                       {truncate(e.error_message, MAX_ERROR_LENGTH)}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
 

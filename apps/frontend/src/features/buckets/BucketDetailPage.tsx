@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -161,11 +162,9 @@ export function BucketDetailPage() {
           </Link>
           <h1 className="text-2xl font-semibold">{bucket.name}</h1>
         </div>
-        <span
-          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${publicAccessBadgeClass(bucket.public_access)}`}
-        >
+        <Badge variant="outline" className={publicAccessBadgeClass(bucket.public_access)}>
           {publicAccessLabel(bucket.public_access)}
-        </span>
+        </Badge>
       </div>
 
       <Tabs defaultValue="overview">

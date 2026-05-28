@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { ArrowLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -143,9 +144,11 @@ export function BucketDetailPage() {
         <p className="text-destructive">
           {q.error instanceof AppError ? q.error.message : "Failed to load bucket."}
         </p>
-        <Link to="/buckets" className="text-sm text-primary hover:underline">
-          Back to buckets
-        </Link>
+        <Button variant="outline" size="sm" asChild>
+          <Link to="/buckets">
+            <ArrowLeft aria-hidden="true" /> Back to buckets
+          </Link>
+        </Button>
       </div>
     );
   }
@@ -157,9 +160,11 @@ export function BucketDetailPage() {
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <Link to="/buckets" className="text-sm text-muted-foreground hover:underline">
-            ← Buckets
-          </Link>
+          <Button variant="ghost" size="sm" asChild className="-ml-2 text-muted-foreground">
+            <Link to="/buckets">
+              <ArrowLeft aria-hidden="true" /> Buckets
+            </Link>
+          </Button>
           <h1 className="text-2xl font-semibold">{bucket.name}</h1>
         </div>
         <Badge variant="outline" className={publicAccessBadgeClass(bucket.public_access)}>

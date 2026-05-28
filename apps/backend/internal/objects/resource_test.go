@@ -144,27 +144,24 @@ func TestUpload_OverCap_Returns413(t *testing.T) {
 	if rr.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status: got %d want 413; body=%s", rr.Code, rr.Body.String())
 	}
+	// 413 is rendered action-style so the SPA can read details.limit_bytes
+	// (the JSON:API errors[] envelope drops the Details map).
 	var doc struct {
-		Errors []struct {
-			Status string `json:"status"`
-			Code   string `json:"code"`
-		} `json:"errors"`
+		Error struct {
+			Code    string         `json:"code"`
+			Message string         `json:"message"`
+			Details map[string]any `json:"details"`
+		} `json:"error"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &doc); err != nil {
 		t.Fatalf("decode: %v body=%s", err, rr.Body.String())
 	}
-	if len(doc.Errors) != 1 || doc.Errors[0].Code != "upload_too_large" {
-		t.Fatalf("errors: %+v body=%s", doc.Errors, rr.Body.String())
+	if doc.Error.Code != "upload_too_large" {
+		t.Fatalf("error.code: got %q body=%s", doc.Error.Code, rr.Body.String())
 	}
-	// The action-shape WriteError doesn't surface details in the JSON:API
-	// errors[] envelope by default; re-decode raw to inspect the
-	// jsonapi.Error meta-level fields. The default Encoder writes "title"
-	// and "detail" but the limit_bytes lives in the deferred Details map.
-	// For T3.7-3.10 we accept that the structured limit_bytes hint
-	// surfaces via the apierror.Details path; the contract guarantees the
-	// code + status + that the body mentions the limit in the message.
-	if !strings.Contains(rr.Body.String(), "1024") {
-		t.Errorf("body missing limit in message: %s", rr.Body.String())
+	if doc.Error.Details["limit_bytes"] != float64(cap) {
+		t.Errorf("details.limit_bytes: got %v want %d; body=%s",
+			doc.Error.Details["limit_bytes"], cap, rr.Body.String())
 	}
 	if len(s3.putCalls) != 0 {
 		t.Errorf("PutObject fired despite cap rejection: %+v", s3.putCalls)

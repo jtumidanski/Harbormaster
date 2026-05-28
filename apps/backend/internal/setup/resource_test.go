@@ -115,7 +115,7 @@ func TestRoutes_PostSetupHappyPath(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
-	require.Equal(t, http.StatusNoContent, w.Code)
+	require.Equal(t, http.StatusCreated, w.Code)
 
 	// Second call: 409 setup_already_completed.
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/setup", bytes.NewReader(body))
@@ -129,7 +129,7 @@ func TestRoutes_PostSetupHappyPath(t *testing.T) {
 		} `json:"error"`
 	}
 	require.NoError(t, json.Unmarshal(w2.Body.Bytes(), &env))
-	require.Equal(t, "setup_already_completed", env.Error.Code)
+	require.Equal(t, "already_initialized", env.Error.Code)
 }
 
 // TestRoutes_PostSetupBadJSON asserts that an invalid request body returns

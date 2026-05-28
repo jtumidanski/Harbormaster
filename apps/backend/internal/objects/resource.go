@@ -118,9 +118,9 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 // The request body is wrapped in http.MaxBytesReader so the configured
 // HARBORMASTER_UPLOAD_MAX_BYTES ceiling is enforced at the transport
 // layer. A body that exceeds the cap surfaces as 413 upload_too_large
-// with details.limit_bytes set to the ceiling; the typed envelope is
-// rendered via apierror.StyleJSONAPI to match the resource style of the
-// rest of the endpoint surface.
+// with details.limit_bytes set to the ceiling; the 413 is rendered
+// action-style (per api-contracts.md) so the SPA can surface the configured
+// limit, even though the rest of this endpoint surface uses JSON:API errors.
 func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 	bucket := chi.URLParam(r, "bucket")
 
@@ -134,7 +134,10 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 	//nolint:gosec // G120: r.Body is wrapped in http.MaxBytesReader (cap=UploadMaxBytes) above, so form parsing is bounded; oversize surfaces as 413 upload_too_large.
 	if err := r.ParseMultipartForm(maxMemory); err != nil {
 		if isMaxBytesError(err) {
-			apierror.Write(w, apierror.StyleJSONAPI, apierror.New(
+			// Action-style so details.limit_bytes reaches the SPA; the
+			// JSON:API errors[] envelope drops the Details map, which left
+			// the upload dialog always showing the hardcoded default cap.
+			apierror.Write(w, apierror.StyleAction, apierror.New(
 				http.StatusRequestEntityTooLarge,
 				"upload_too_large",
 				fmt.Sprintf("upload exceeds the configured maximum of %d bytes", cap),
@@ -180,7 +183,10 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 	entry, err := h.p.Upload(r.Context(), bucket, key, limited, contentType, actor, ip)
 	if err != nil {
 		if isMaxBytesError(err) {
-			apierror.Write(w, apierror.StyleJSONAPI, apierror.New(
+			// Action-style so details.limit_bytes reaches the SPA; the
+			// JSON:API errors[] envelope drops the Details map, which left
+			// the upload dialog always showing the hardcoded default cap.
+			apierror.Write(w, apierror.StyleAction, apierror.New(
 				http.StatusRequestEntityTooLarge,
 				"upload_too_large",
 				fmt.Sprintf("upload exceeds the configured maximum of %d bytes", cap),

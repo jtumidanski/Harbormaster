@@ -155,6 +155,65 @@ func TestBucketResourceMarshalsNilQuotaAsNull(t *testing.T) {
 	}
 }
 
+// TestList_PaginatesAndSorts verifies GET /buckets honours page[number],
+// page[size], and sort — previously the handler ignored all three and always
+// returned one name-sorted page (total_pages hardcoded to 1), so the UI pager
+// never appeared and non-name sorts were no-ops.
+func TestList_PaginatesAndSorts(t *testing.T) {
+	h, _, s3 := newTestRouter(t)
+	s3.buckets = []miniogo.BucketInfo{
+		{Name: "mike", CreationDate: time.Unix(1700000002, 0).UTC()},
+		{Name: "alpha", CreationDate: time.Unix(1700000001, 0).UTC()},
+		{Name: "zulu", CreationDate: time.Unix(1700000003, 0).UTC()},
+	}
+	type page struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+		Meta struct {
+			Page struct {
+				Number       int `json:"number"`
+				Size         int `json:"size"`
+				TotalPages   int `json:"total_pages"`
+				TotalRecords int `json:"total_records"`
+			} `json:"page"`
+		} `json:"meta"`
+	}
+	decode := func(rr *httptest.ResponseRecorder) page {
+		t.Helper()
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status %d: %s", rr.Code, rr.Body.String())
+		}
+		var p page
+		if err := json.Unmarshal(rr.Body.Bytes(), &p); err != nil {
+			t.Fatalf("decode: %v body=%s", err, rr.Body.String())
+		}
+		return p
+	}
+
+	// Page 1, size 2, default sort=name asc -> [alpha, mike]; 3 records, 2 pages.
+	p1 := decode(doRequest(t, h, http.MethodGet, "/api/v1/buckets?page[number]=1&page[size]=2", nil))
+	if len(p1.Data) != 2 || p1.Data[0].ID != "alpha" || p1.Data[1].ID != "mike" {
+		t.Fatalf("page1 ids: %+v", p1.Data)
+	}
+	if p1.Meta.Page.TotalRecords != 3 || p1.Meta.Page.TotalPages != 2 ||
+		p1.Meta.Page.Number != 1 || p1.Meta.Page.Size != 2 {
+		t.Fatalf("page1 meta: %+v", p1.Meta.Page)
+	}
+
+	// Page 2 -> [zulu].
+	p2 := decode(doRequest(t, h, http.MethodGet, "/api/v1/buckets?page[number]=2&page[size]=2", nil))
+	if len(p2.Data) != 1 || p2.Data[0].ID != "zulu" {
+		t.Fatalf("page2 ids: %+v", p2.Data)
+	}
+
+	// sort=-name descending -> [zulu, mike, alpha].
+	p3 := decode(doRequest(t, h, http.MethodGet, "/api/v1/buckets?sort=-name", nil))
+	if len(p3.Data) != 3 || p3.Data[0].ID != "zulu" || p3.Data[2].ID != "alpha" {
+		t.Fatalf("desc ids: %+v", p3.Data)
+	}
+}
+
 // TestCreateRejectsInvalidName drives the POST /buckets endpoint with a
 // name MinIO's strict rules reject ("Photos" — uppercase letters). The
 // handler must return 422 + the JSON:API errors[] envelope with code

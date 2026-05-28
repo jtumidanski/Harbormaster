@@ -120,7 +120,7 @@ func TestPolicyTemplatesEndpoint(t *testing.T) {
 	require.Len(t, doc.Data, 3)
 	names := map[string]json.RawMessage{}
 	for _, d := range doc.Data {
-		require.Equal(t, "policy-templates", d.Type)
+		require.Equal(t, "policy_templates", d.Type)
 		names[d.Attributes.Name] = d.Attributes.ParamsSchema
 	}
 	require.Contains(t, names, "read-only")
@@ -136,7 +136,7 @@ func TestServiceAccountCreateRevealsSecretOnce(t *testing.T) {
 	sa, adm := newTestSAProcessor(t)
 	adm.addServiceCreds = madmin.Credentials{AccessKey: "svc1", SecretKey: "secret-xyz-123"}
 
-	body := bytes.NewBufferString(`{"data":{"type":"service-accounts","attributes":{"name":"ci","description":"d"}}}`)
+	body := bytes.NewBufferString(`{"data":{"type":"service_accounts","attributes":{"name":"ci","description":"d"}}}`)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/users/alice/service-accounts", body)
 	req.Header.Set("Content-Type", "application/vnd.api+json")

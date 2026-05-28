@@ -270,7 +270,7 @@ type ServiceAccountResource struct {
 }
 
 // ResourceType returns the canonical JSON:API type string.
-func (r ServiceAccountResource) ResourceType() string { return "service-accounts" }
+func (r ServiceAccountResource) ResourceType() string { return "service_accounts" }
 
 // ResourceID returns the access key.
 func (r ServiceAccountResource) ResourceID() string { return r.AccessKey }
@@ -311,7 +311,7 @@ type CreatedServiceAccountResource struct {
 }
 
 // ResourceType returns the canonical JSON:API type string.
-func (r CreatedServiceAccountResource) ResourceType() string { return "service-accounts" }
+func (r CreatedServiceAccountResource) ResourceType() string { return "service_accounts" }
 
 // ResourceID returns the access key.
 func (r CreatedServiceAccountResource) ResourceID() string { return r.ServiceAccount.AccessKey }
@@ -350,14 +350,18 @@ func (r CreatedServiceAccountResource) MarshalJSON() ([]byte, error) {
 type CreateServiceAccountRequest struct {
 	Name        string        `json:"name"`
 	Description string        `json:"description"`
-	Template    *TemplateWire `json:"template,omitempty"`
+	// TemplateOverride scopes the child credential to a policy template.
+	// The wire key is `template_override` per api-contracts.md and the SPA;
+	// it was previously decoded as `template`, so the operator's selection
+	// was silently dropped and every service account inherited the parent.
+	TemplateOverride *TemplateWire `json:"template_override,omitempty"`
 }
 
 // Override converts the wire DTO into the domain pointer, returning nil
 // when no template override was supplied.
 func (r CreateServiceAccountRequest) Override() *TemplateRef {
-	if r.Template == nil {
+	if r.TemplateOverride == nil {
 		return nil
 	}
-	return &TemplateRef{Name: r.Template.Name, Params: r.Template.Params}
+	return &TemplateRef{Name: r.TemplateOverride.Name, Params: r.TemplateOverride.Params}
 }

@@ -41,7 +41,7 @@ func (p *Processor) handleMcAliases(w http.ResponseWriter, _ *http.Request) {
 func (p *Processor) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	if p.Status(r.Context()) {
 		apierror.Write(w, apierror.StyleAction, apierror.New(http.StatusConflict,
-			"setup_already_completed", "Setup has already been completed."))
+			"already_initialized", "Setup has already been completed."))
 		return
 	}
 	var body Request
@@ -55,7 +55,8 @@ func (p *Processor) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	// Contract: 201 Created with {"initialized": true}.
+	writeJSON(w, http.StatusCreated, StatusResponse{Initialized: true})
 }
 
 // writeError renders an error from Submit through the action-style envelope.
@@ -66,7 +67,7 @@ func (p *Processor) handleSubmit(w http.ResponseWriter, r *http.Request) {
 func writeError(w http.ResponseWriter, err error) {
 	if errors.Is(err, ErrAlreadyInitialized) {
 		apierror.Write(w, apierror.StyleAction, apierror.New(http.StatusConflict,
-			"setup_already_completed", "Setup has already been completed."))
+			"already_initialized", "Setup has already been completed."))
 		return
 	}
 	if errors.Is(err, ErrMcAliasNotFound) {

@@ -327,6 +327,33 @@ func TestCreateNoncurrentInvalidDays(t *testing.T) {
 	}
 }
 
+// TestCreateNoncurrentInvalidNewerNoncurrent confirms that when noncurrent_days
+// is valid but newer_noncurrent_versions is negative, the returned *apierror.Error
+// points at /data/attributes/newer_noncurrent_versions — not at noncurrent_days —
+// so the SPA highlights the correct form field.
+func TestCreateNoncurrentInvalidNewerNoncurrent(t *testing.T) {
+	t.Parallel()
+	p, s := newTestProcessor(t, nil)
+	_, err := p.CreateNoncurrent(context.Background(), "b", 30, -1, "", "actor", "ip")
+	if err == nil {
+		t.Fatal("want error for newer_noncurrent_versions=-1; got nil")
+	}
+	var ae *apierror.Error
+	if !errors.As(err, &ae) {
+		t.Fatalf("want *apierror.Error; got %T", err)
+	}
+	if ae.HTTPStatus != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d; want 422", ae.HTTPStatus)
+	}
+	const wantPointer = "/data/attributes/newer_noncurrent_versions"
+	if ae.Pointer != wantPointer {
+		t.Errorf("pointer = %q; want %q", ae.Pointer, wantPointer)
+	}
+	if len(s.setCalls) != 0 {
+		t.Errorf("SetBucketLifecycle called %d times; want 0 on validation failure", len(s.setCalls))
+	}
+}
+
 // TestCreateAbortMPUBuildsRule asserts that CreateAbortMPU generates the
 // correct minio AbortIncompleteMultipartUpload rule shape and returns a
 // Rule with Kind == KindAbortIncompleteMPU and the right DaysAfterInitiation.

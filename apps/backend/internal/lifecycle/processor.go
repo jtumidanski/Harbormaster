@@ -243,9 +243,15 @@ func (p *Processor) CreateNoncurrent(ctx context.Context, bucket string, noncurr
 		"prefix":                    prefix,
 	}
 	failAudit := p.lifecycleFailAudit(ctx, actor, sourceIP, bucket, payload)
-	if err := validateNoncurrent(noncurrentDays, newerNoncurrent); err != nil {
+	if noncurrentDays <= 0 {
 		return Rule{}, failAudit(apierror.New(http.StatusUnprocessableEntity,
-			"invalid_lifecycle_rule", err.Error()).WithPointer("/data/attributes/noncurrent_days"))
+			"invalid_lifecycle_rule", "noncurrent_days must be > 0").
+			WithPointer("/data/attributes/noncurrent_days"))
+	}
+	if newerNoncurrent < 0 {
+		return Rule{}, failAudit(apierror.New(http.StatusUnprocessableEntity,
+			"invalid_lifecycle_rule", "newer_noncurrent_versions must be >= 0").
+			WithPointer("/data/attributes/newer_noncurrent_versions"))
 	}
 	s3, err := p.clients(ctx)
 	if err != nil {

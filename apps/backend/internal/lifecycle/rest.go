@@ -22,27 +22,60 @@ func (RuleResource) ResourceType() string { return "lifecycle_rules" }
 func (r RuleResource) ResourceID() string { return r.ID }
 
 // MarshalJSON renders the attributes block. The shape is conditional
-// on the Managed flag because the two flavours expose disjoint
-// information: a managed rule's structured fields would be misleading
-// on an unmanaged rule (the values are zero/empty by construction),
-// and an unmanaged rule's Summary doesn't apply to a managed rule.
+// on the Managed flag and, for managed rules, on the Kind value,
+// because each lifecycle kind exposes a disjoint set of configuration
+// fields. Unmanaged rules expose only a human-readable summary string.
+//
+// Managed shapes by kind:
+//   - KindExpiration           → {managed, kind, days, prefix}
+//   - KindNoncurrentExpiration → {managed, kind, noncurrent_days, newer_noncurrent_versions, prefix}
+//   - KindAbortIncompleteMPU   → {managed, kind, days_after_initiation, prefix}
 //
 // We don't put struct JSON tags on Rule itself because the domain
 // type is consumed by other (snake_case-agnostic) callers; the
 // wire-shape adaptation lives here.
 func (r RuleResource) MarshalJSON() ([]byte, error) {
 	if r.Managed {
-		return json.Marshal(struct {
-			Managed bool   `json:"managed"`
-			Kind    string `json:"kind"`
-			Days    int    `json:"days"`
-			Prefix  string `json:"prefix"`
-		}{
-			Managed: true,
-			Kind:    r.Kind,
-			Days:    r.Days,
-			Prefix:  r.Prefix,
-		})
+		switch r.Kind {
+		case KindNoncurrentExpiration:
+			return json.Marshal(struct {
+				Managed                 bool   `json:"managed"`
+				Kind                    string `json:"kind"`
+				NoncurrentDays          int    `json:"noncurrent_days"`
+				NewerNoncurrentVersions int    `json:"newer_noncurrent_versions"`
+				Prefix                  string `json:"prefix"`
+			}{
+				Managed:                 true,
+				Kind:                    r.Kind,
+				NoncurrentDays:          r.NoncurrentDays,
+				NewerNoncurrentVersions: r.NewerNoncurrentVersions,
+				Prefix:                  r.Prefix,
+			})
+		case KindAbortIncompleteMPU:
+			return json.Marshal(struct {
+				Managed             bool   `json:"managed"`
+				Kind                string `json:"kind"`
+				DaysAfterInitiation int    `json:"days_after_initiation"`
+				Prefix              string `json:"prefix"`
+			}{
+				Managed:             true,
+				Kind:                r.Kind,
+				DaysAfterInitiation: r.DaysAfterInitiation,
+				Prefix:              r.Prefix,
+			})
+		default: // KindExpiration and any future forward-compat kind
+			return json.Marshal(struct {
+				Managed bool   `json:"managed"`
+				Kind    string `json:"kind"`
+				Days    int    `json:"days"`
+				Prefix  string `json:"prefix"`
+			}{
+				Managed: true,
+				Kind:    r.Kind,
+				Days:    r.Days,
+				Prefix:  r.Prefix,
+			})
+		}
 	}
 	return json.Marshal(struct {
 		Managed bool   `json:"managed"`
@@ -56,11 +89,17 @@ func (r RuleResource) MarshalJSON() ([]byte, error) {
 // CreateRequest is the attributes block accepted by
 // POST /api/v1/buckets/{name}/lifecycle-rules. The wire contract is
 // JSON:API single-resource style (`{data:{type,attributes:{…}}}`),
-// decoded via jsonapi.Decoder.Single. Only kind="expiration" is
-// accepted in v1; the handler validates that explicitly so a future
-// "transition" kind can land without changing the wire shape.
+// decoded via jsonapi.Decoder.Single.
+//
+// The superset struct carries every kind's fields. The handler
+// switches on Kind to dispatch to the appropriate Processor method and
+// validates that only the three supported kinds are accepted. Fields
+// not relevant to the chosen kind are ignored.
 type CreateRequest struct {
-	Kind   string `json:"kind"`
-	Days   int    `json:"days"`
-	Prefix string `json:"prefix"`
+	Kind                    string `json:"kind"`
+	Days                    int    `json:"days"`
+	NoncurrentDays          int    `json:"noncurrent_days"`
+	NewerNoncurrentVersions int    `json:"newer_noncurrent_versions"`
+	DaysAfterInitiation     int    `json:"days_after_initiation"`
+	Prefix                  string `json:"prefix"`
 }

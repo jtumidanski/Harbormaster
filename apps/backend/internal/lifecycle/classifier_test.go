@@ -204,7 +204,7 @@ func TestCountTagFilters(t *testing.T) {
 
 // TestGenerateRuleIDFormat locks in the deterministic ID format the
 // classifier relies on to recognise our own rules. A drift here that
-// is not mirrored in managedIDRE would silently re-classify every
+// is not mirrored in expireIDRE would silently re-classify every
 // previously-managed rule as unmanaged on the next list call.
 func TestGenerateRuleIDFormat(t *testing.T) {
 	t.Parallel()
@@ -222,8 +222,54 @@ func TestGenerateRuleIDFormat(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("generateRuleID(%d, %q) = %q; want %q", tc.days, tc.prefix, got, tc.want)
 		}
-		if !managedIDRE.MatchString(got) {
-			t.Errorf("generateRuleID(%d, %q) = %q does NOT match managedIDRE", tc.days, tc.prefix, got)
+		if !expireIDRE.MatchString(got) {
+			t.Errorf("generateRuleID(%d, %q) = %q does NOT match expireIDRE", tc.days, tc.prefix, got)
 		}
+	}
+}
+
+func TestClassifyNoncurrentManaged(t *testing.T) {
+	r := mlifecycle.Rule{
+		ID:     "harbormaster-noncurrent-uploads-30d",
+		Status: "Enabled",
+		NoncurrentVersionExpiration: mlifecycle.NoncurrentVersionExpiration{
+			NoncurrentDays:          mlifecycle.ExpirationDays(30),
+			NewerNoncurrentVersions: 3,
+		},
+		RuleFilter: mlifecycle.Filter{Prefix: "uploads/"},
+	}
+	got := classify(r)
+	if !got.Managed || got.Kind != KindNoncurrentExpiration {
+		t.Fatalf("expected managed noncurrent, got %+v", got)
+	}
+	if got.NoncurrentDays != 30 || got.NewerNoncurrentVersions != 3 || got.Prefix != "uploads/" {
+		t.Errorf("fields wrong: %+v", got)
+	}
+}
+
+func TestClassifyAbortMPUManaged(t *testing.T) {
+	r := mlifecycle.Rule{
+		ID:     "harbormaster-abortmpu-all-7d",
+		Status: "Enabled",
+		AbortIncompleteMultipartUpload: mlifecycle.AbortIncompleteMultipartUpload{
+			DaysAfterInitiation: mlifecycle.ExpirationDays(7),
+		},
+	}
+	got := classify(r)
+	if !got.Managed || got.Kind != KindAbortIncompleteMPU || got.DaysAfterInitiation != 7 {
+		t.Fatalf("expected managed abort-mpu(7), got %+v", got)
+	}
+}
+
+func TestClassifyNoncurrentWithForeignActionIsUnmanaged(t *testing.T) {
+	// A noncurrent-ID rule that ALSO carries an expiration action is foreign-shaped.
+	r := mlifecycle.Rule{
+		ID:                          "harbormaster-noncurrent-all-30d",
+		Status:                      "Enabled",
+		NoncurrentVersionExpiration: mlifecycle.NoncurrentVersionExpiration{NoncurrentDays: mlifecycle.ExpirationDays(30)},
+		Expiration:                  mlifecycle.Expiration{Days: mlifecycle.ExpirationDays(5)},
+	}
+	if got := classify(r); got.Managed {
+		t.Fatalf("expected unmanaged, got %+v", got)
 	}
 }

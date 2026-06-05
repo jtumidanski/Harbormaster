@@ -8,46 +8,82 @@ import (
 	mlifecycle "github.com/minio/minio-go/v7/pkg/lifecycle"
 )
 
-// managedIDRE matches the deterministic ID format generateRuleID emits.
-// The optional "-<prefix-slug>" tail mirrors slugifyPrefix's allowed
-// charset (lowercase alphanumerics, dots, hyphens). A rule's ID must
-// match this pattern as a *precondition* of the managed-classification
-// path; the full shape check (no transition, no abort, no tag filter,
-// expiration only, positive days) gates the actual Managed=true verdict
-// below.
-var managedIDRE = regexp.MustCompile(`^harbormaster-expire-\d+d(-[a-z0-9.-]+)?$`)
+// Managed-ID regexes, one per family. A rule's ID must match exactly one
+// of these as a precondition of the managed path; the per-family shape
+// check below gates the actual Managed verdict.
+var (
+	expireIDRE     = regexp.MustCompile(`^harbormaster-expire-\d+d(-[a-z0-9.-]+)?$`)
+	noncurrentIDRE = regexp.MustCompile(`^harbormaster-noncurrent-[a-z0-9.-]+-\d+d$`)
+	abortMPUIDRE   = regexp.MustCompile(`^harbormaster-abortmpu-[a-z0-9.-]+-\d+d$`)
+)
 
-// classify maps an upstream lifecycle.Rule into the domain Rule shape.
-// The decision tree is intentionally narrow: a rule is "managed" iff it
-// matches the deterministic ID format AND its server-side config matches
-// the exact subset Harbormaster's create form produces (expiration-only,
-// no transitions, no abort-incomplete-multipart, no tag filters). Any
-// drift — even one a future admin tool added to the same rule ID — flips
-// the classification to "unmanaged" so the form never tries to render
-// config it cannot represent.
-//
-// Unmanaged rules carry a value-free Summary string (action count, kind
-// list, tag-filter count) so the UI can show "something exists here"
-// without leaking potentially sensitive tag keys/values.
+// classify maps an upstream lifecycle.Rule into the domain Rule shape. A
+// rule is "managed" iff its ID matches exactly one managed family AND its
+// server-side config is exactly that family's action with nothing foreign
+// (no other actions, no tag filters). Any drift flips it to "unmanaged".
 func classify(r mlifecycle.Rule) Rule {
-	if managedIDRE.MatchString(r.ID) &&
-		r.Transition.IsNull() &&
-		r.NoncurrentVersionTransition.StorageClass == "" &&
-		r.NoncurrentVersionExpiration.IsDaysNull() &&
-		r.AbortIncompleteMultipartUpload.DaysAfterInitiation == 0 &&
-		r.DelMarkerExpiration.Days == 0 &&
-		!r.Expiration.IsDaysNull() &&
-		int(r.Expiration.Days) > 0 &&
-		hasNoTagFilters(r) {
+	switch {
+	case expireIDRE.MatchString(r.ID) && isExpirationShaped(r):
 		return Rule{
-			ID:      r.ID,
-			Managed: true,
-			Kind:    "expiration",
-			Days:    int(r.Expiration.Days),
-			Prefix:  r.RuleFilter.Prefix,
+			ID: r.ID, Managed: true, Kind: KindExpiration,
+			Days: int(r.Expiration.Days), Prefix: r.RuleFilter.Prefix,
+		}
+	case noncurrentIDRE.MatchString(r.ID) && isNoncurrentShaped(r):
+		return Rule{
+			ID: r.ID, Managed: true, Kind: KindNoncurrentExpiration,
+			NoncurrentDays:          int(r.NoncurrentVersionExpiration.NoncurrentDays),
+			NewerNoncurrentVersions: int(r.NoncurrentVersionExpiration.NewerNoncurrentVersions),
+			Prefix:                  r.RuleFilter.Prefix,
+		}
+	case abortMPUIDRE.MatchString(r.ID) && isAbortMPUShaped(r):
+		return Rule{
+			ID: r.ID, Managed: true, Kind: KindAbortIncompleteMPU,
+			DaysAfterInitiation: int(r.AbortIncompleteMultipartUpload.DaysAfterInitiation),
+			Prefix:              r.RuleFilter.Prefix,
 		}
 	}
 	return Rule{ID: r.ID, Managed: false, Summary: summarize(r)}
+}
+
+// isExpirationShaped is true iff r carries exactly one Expiration action
+// (positive days), no other actions, and no tag filters.
+func isExpirationShaped(r mlifecycle.Rule) bool {
+	return r.Transition.IsNull() &&
+		r.NoncurrentVersionTransition.StorageClass == "" &&
+		r.NoncurrentVersionExpiration.IsDaysNull() &&
+		r.NoncurrentVersionExpiration.NewerNoncurrentVersions == 0 &&
+		r.AbortIncompleteMultipartUpload.IsDaysNull() &&
+		r.DelMarkerExpiration.IsNull() &&
+		!r.Expiration.IsDaysNull() && int(r.Expiration.Days) > 0 &&
+		hasNoTagFilters(r)
+}
+
+// isNoncurrentShaped is true iff r carries exactly one
+// NoncurrentVersionExpiration action (positive NoncurrentDays), no other
+// actions, and no tag filters.
+func isNoncurrentShaped(r mlifecycle.Rule) bool {
+	return r.Transition.IsNull() &&
+		r.NoncurrentVersionTransition.StorageClass == "" &&
+		r.Expiration.IsDaysNull() &&
+		r.AbortIncompleteMultipartUpload.IsDaysNull() &&
+		r.DelMarkerExpiration.IsNull() &&
+		!r.NoncurrentVersionExpiration.IsDaysNull() &&
+		int(r.NoncurrentVersionExpiration.NoncurrentDays) > 0 &&
+		hasNoTagFilters(r)
+}
+
+// isAbortMPUShaped is true iff r carries exactly one
+// AbortIncompleteMultipartUpload action (positive DaysAfterInitiation), no
+// other actions, and no tag filters.
+func isAbortMPUShaped(r mlifecycle.Rule) bool {
+	return r.Transition.IsNull() &&
+		r.NoncurrentVersionTransition.StorageClass == "" &&
+		r.Expiration.IsDaysNull() &&
+		r.NoncurrentVersionExpiration.IsDaysNull() &&
+		r.NoncurrentVersionExpiration.NewerNoncurrentVersions == 0 &&
+		r.DelMarkerExpiration.IsNull() &&
+		!r.AbortIncompleteMultipartUpload.IsDaysNull() &&
+		hasNoTagFilters(r)
 }
 
 // summarize composes the human-readable, value-free description an

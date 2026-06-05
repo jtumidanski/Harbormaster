@@ -65,7 +65,7 @@ func Write(w http.ResponseWriter, style Style, err error) {
 	case StyleJSONAPI:
 		_ = jsonapi.WriteError(w, jsonapi.Error{
 			Status: ae.HTTPStatus, Code: ae.Code, Title: ae.Code,
-			Detail: ae.Message, Pointer: ae.Pointer,
+			Detail: ae.Message, Pointer: ae.Pointer, Meta: ae.Details,
 		})
 	default:
 		writeAction(w, ae)

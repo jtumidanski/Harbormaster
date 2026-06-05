@@ -8,6 +8,7 @@ import type { PropsWithChildren } from "react";
 import { Toaster } from "sonner";
 import { PolicyEditorDialog } from "./PolicyEditorDialog";
 import * as policiesApi from "./policiesApi";
+import type { PolicyDetail } from "./types";
 
 function makeQueryClient(): QueryClient {
   return new QueryClient({
@@ -89,6 +90,56 @@ describe("PolicyEditorDialog", () => {
         Version: "2012-10-17",
         Statement: [{ Effect: "Allow", Action: ["s3:GetObject"], Resource: ["arn:aws:s3:::*"] }],
       });
+    });
+  });
+
+  it("EDIT mode: prefills name (disabled) + document from server; submit calls updatePolicy with parsed object", async () => {
+    const policyDoc = { Version: "2012-10-17", Statement: [] };
+    const mockDetail: PolicyDetail = {
+      name: "existing-policy",
+      origin: "custom",
+      editable: true,
+      statement_summary: "",
+      document: policyDoc,
+    };
+    vi.spyOn(policiesApi, "getPolicy").mockResolvedValue(mockDetail);
+    const updateSpy = vi.spyOn(policiesApi, "updatePolicy").mockResolvedValue(undefined);
+
+    const user = userEvent.setup();
+    const qc = makeQueryClient();
+    render(
+      <Wrapper qc={qc}>
+        <PolicyEditorDialog
+          open={true}
+          onOpenChange={() => {}}
+          mode="edit"
+          policyName="existing-policy"
+        />
+      </Wrapper>,
+    );
+
+    // Name input must be disabled in edit mode and prefilled once query resolves
+    const nameInput = await screen.findByLabelText(/name/i);
+    expect(nameInput).toBeDisabled();
+    await waitFor(() => {
+      expect(nameInput).toHaveValue("existing-policy");
+    });
+
+    // Document textarea must be prefilled with pretty-printed JSON
+    const documentTextarea = await screen.findByLabelText(/document/i);
+    await waitFor(() => {
+      expect(documentTextarea).toHaveValue(JSON.stringify(policyDoc, null, 2));
+    });
+
+    // Change the document to different valid JSON
+    const updatedDoc = { Version: "2012-10-17", Statement: [{ Effect: "Deny", Action: ["s3:*"], Resource: ["*"] }] };
+    await user.clear(documentTextarea);
+    await user.paste(JSON.stringify(updatedDoc));
+
+    await user.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => {
+      expect(updateSpy).toHaveBeenCalledWith("existing-policy", updatedDoc);
     });
   });
 });

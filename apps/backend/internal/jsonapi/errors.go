@@ -8,19 +8,21 @@ import (
 
 // Error is the JSON:API errors[] item shape used by Harbormaster.
 type Error struct {
-	Status  int    `json:"-"`
-	Code    string `json:"code"`
-	Title   string `json:"title"`
-	Detail  string `json:"detail,omitempty"`
-	Pointer string `json:"-"`
+	Status  int            `json:"-"`
+	Code    string         `json:"code"`
+	Title   string         `json:"title"`
+	Detail  string         `json:"detail,omitempty"`
+	Pointer string         `json:"-"`
+	Meta    map[string]any `json:"meta,omitempty"`
 }
 
 type wireError struct {
-	Status string        `json:"status"`
-	Code   string        `json:"code"`
-	Title  string        `json:"title"`
-	Detail string        `json:"detail,omitempty"`
-	Source *wireErrorSrc `json:"source,omitempty"`
+	Status string         `json:"status"`
+	Code   string         `json:"code"`
+	Title  string         `json:"title"`
+	Detail string         `json:"detail,omitempty"`
+	Source *wireErrorSrc  `json:"source,omitempty"`
+	Meta   map[string]any `json:"meta,omitempty"`
 }
 
 type wireErrorSrc struct {
@@ -43,6 +45,9 @@ func WriteError(w io.Writer, errs ...Error) error {
 		}
 		if e.Pointer != "" {
 			wires[i].Source = &wireErrorSrc{Pointer: e.Pointer}
+		}
+		if len(e.Meta) > 0 {
+			wires[i].Meta = e.Meta
 		}
 	}
 	enc := json.NewEncoder(w)

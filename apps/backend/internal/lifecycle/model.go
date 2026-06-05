@@ -13,6 +13,13 @@
 // the form trying to parse a config it cannot represent.
 package lifecycle
 
+// Managed lifecycle kinds. A managed Rule's Kind is exactly one of these.
+const (
+	KindExpiration           = "expiration"
+	KindNoncurrentExpiration = "noncurrent-expiration"
+	KindAbortIncompleteMPU   = "abort-incomplete-multipart"
+)
+
 // Rule is the immutable read view of a single lifecycle rule attached
 // to a bucket. The shape is intentionally minimal: managed rules carry
 // their structured (days, prefix) details; unmanaged rules carry only
@@ -38,9 +45,7 @@ type Rule struct {
 	// or the redacted Summary.
 	Managed bool
 
-	// Kind is one of {"expiration"} for managed v1. Reserved as an
-	// enum so future managed kinds (transition, noncurrent expiration)
-	// can land without breaking the wire contract.
+	// Kind is one of {KindExpiration, KindNoncurrentExpiration, KindAbortIncompleteMPU} for managed rules.
 	Kind string
 
 	// Days is the expiration day count for managed rules. Zero for
@@ -50,6 +55,20 @@ type Rule struct {
 	// Prefix is the optional key prefix filter for managed rules.
 	// Empty string means "applies to the whole bucket". Unmanaged.
 	Prefix string
+
+	// NoncurrentDays is the age (days) after which a noncurrent version
+	// expires. Non-zero only for Kind == KindNoncurrentExpiration.
+	NoncurrentDays int
+
+	// NewerNoncurrentVersions optionally retains this many newest
+	// noncurrent versions before expiring older ones. Zero means "no
+	// retention floor". Only meaningful for KindNoncurrentExpiration.
+	NewerNoncurrentVersions int
+
+	// DaysAfterInitiation is the age (days) after which an incomplete
+	// multipart upload is aborted. Non-zero only for
+	// Kind == KindAbortIncompleteMPU.
+	DaysAfterInitiation int
 
 	// Summary is the human-readable, value-free description of an
 	// unmanaged rule: action count, action kinds, and tag-filter count

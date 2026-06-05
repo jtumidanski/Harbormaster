@@ -13,6 +13,7 @@ import (
 	"github.com/jtumidanski/Harbormaster/internal/dashboard"
 	"github.com/jtumidanski/Harbormaster/internal/jobs/bucketempty"
 	"github.com/jtumidanski/Harbormaster/internal/lifecycle"
+	"github.com/jtumidanski/Harbormaster/internal/metrics"
 	hmminio "github.com/jtumidanski/Harbormaster/internal/minio"
 	"github.com/jtumidanski/Harbormaster/internal/objects"
 	"github.com/jtumidanski/Harbormaster/internal/policies"
@@ -345,4 +346,13 @@ func (a dashboardPoolAdapter) ServerInfo(ctx context.Context) (dashboard.ServerI
 // small dashboard view types.
 func newDashboardPoolGetter(pool *hmminio.Pool) dashboard.PoolGetter {
 	return dashboardPoolAdapter{pool: pool}
+}
+
+// newMetricsSourceGetter returns a metrics.SourceGetter bound to the live
+// pool. Each call builds a fresh madmin MetricsClient (cheap; re-reads creds
+// + transport) so credential rotations are picked up automatically.
+func newMetricsSourceGetter(pool *hmminio.Pool) metrics.SourceGetter {
+	return func(ctx context.Context) (metrics.MetricsSource, error) {
+		return pool.NewMetricsClient(ctx)
+	}
 }

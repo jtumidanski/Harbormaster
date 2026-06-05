@@ -69,6 +69,35 @@ func (p *Pool) Get(ctx context.Context) (*madmin.AdminClient, *miniogo.Client, e
 // ErrNotInitialized is returned by Get when the pool has no active connection.
 var ErrNotInitialized = errors.New("minio pool: connection not yet configured")
 
+// NewMetricsClient builds a madmin MetricsClient from the active connection,
+// reusing the pool's TLS transport (custom CA / skip-verify). Returns
+// ErrNotInitialized when no connection is configured.
+func (p *Pool) NewMetricsClient(ctx context.Context) (*madmin.MetricsClient, error) {
+	_ = ctx
+	p.mu.RLock()
+	cred := p.cred
+	ready := p.mc != nil && p.madm != nil
+	p.mu.RUnlock()
+	if !ready {
+		return nil, ErrNotInitialized
+	}
+	parsed, useTLS, host, err := parseEndpoint(cred.EndpointURL)
+	if err != nil {
+		return nil, err
+	}
+	_ = parsed
+	tr, err := transport(cred, useTLS)
+	if err != nil {
+		return nil, err
+	}
+	mcl, err := madmin.NewMetricsClient(host, cred.AccessKey, cred.SecretKey, useTLS)
+	if err != nil {
+		return nil, err
+	}
+	mcl.SetCustomTransport(tr)
+	return mcl, nil
+}
+
 func build(c Credentials) (*miniogo.Client, *madmin.AdminClient, error) {
 	parsed, useTLS, host, err := parseEndpoint(c.EndpointURL)
 	if err != nil {
@@ -100,6 +129,8 @@ func build(c Credentials) (*miniogo.Client, *madmin.AdminClient, error) {
 
 // parseEndpoint parses an HTTP(S) URL and returns the parsed URL,
 // a boolean indicating if TLS is used, and the host:port string.
+//
+//nolint:unparam // *url.URL is returned for callers that need it; current callers discard it.
 func parseEndpoint(raw string) (*url.URL, bool, string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {

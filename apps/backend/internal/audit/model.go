@@ -28,6 +28,9 @@ const (
 	ActionServiceAccountRevoke  = "service_account.revoke"
 	ActionLifecycleRuleCreate   = "lifecycle_rule.create"
 	ActionLifecycleRuleDelete   = "lifecycle_rule.delete"
+	ActionPolicyCreate          = "policy.create"
+	ActionPolicyUpdate          = "policy.update"
+	ActionPolicyDelete          = "policy.delete"
 	ActionSessionLogin          = "session.login"
 	ActionSessionLogout         = "session.logout"
 	ActionSessionLoginFailed    = "session.login_failed"
@@ -64,6 +67,9 @@ func AllActions() []string {
 		ActionServiceAccountRevoke,
 		ActionLifecycleRuleCreate,
 		ActionLifecycleRuleDelete,
+		ActionPolicyCreate,
+		ActionPolicyUpdate,
+		ActionPolicyDelete,
 		ActionSessionLogin,
 		ActionSessionLogout,
 		ActionSessionLoginFailed,

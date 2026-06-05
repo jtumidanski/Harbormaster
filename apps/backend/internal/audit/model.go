@@ -24,6 +24,8 @@ const (
 	ActionUserDisable           = "user.disable"
 	ActionUserEnable            = "user.enable"
 	ActionUserPoliciesUpdate    = "user.policies.update"
+	ActionUserPolicyAttach      = "user.policy.attach"
+	ActionUserPolicyDetach      = "user.policy.detach"
 	ActionServiceAccountCreate  = "service_account.create"
 	ActionServiceAccountRevoke  = "service_account.revoke"
 	ActionLifecycleRuleCreate   = "lifecycle_rule.create"
@@ -63,6 +65,8 @@ func AllActions() []string {
 		ActionUserDisable,
 		ActionUserEnable,
 		ActionUserPoliciesUpdate,
+		ActionUserPolicyAttach,
+		ActionUserPolicyDetach,
 		ActionServiceAccountCreate,
 		ActionServiceAccountRevoke,
 		ActionLifecycleRuleCreate,

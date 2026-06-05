@@ -18,9 +18,9 @@ func TestNoSecretsInPayloadAnyAction(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	// Verify AllActions() returns all 33 constants.
+	// Verify AllActions() returns all 35 constants.
 	allActions := audit.AllActions()
-	require.Len(t, allActions, 33, "AllActions() should return exactly 33 actions")
+	require.Len(t, allActions, 35, "AllActions() should return exactly 35 actions")
 
 	for _, a := range allActions {
 		a := a // capture

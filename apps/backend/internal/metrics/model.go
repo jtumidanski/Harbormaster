@@ -68,8 +68,8 @@ type Point struct {
 	V float64
 }
 
-// MetricsView is the aggregated dashboard payload.
-type MetricsView struct {
+// View is the aggregated dashboard payload.
+type View struct {
 	Window      Window
 	StepSeconds int
 	Collected   bool

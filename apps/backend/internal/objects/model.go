@@ -46,3 +46,25 @@ type ShareLink struct {
 	URL       string
 	ExpiresAt time.Time
 }
+
+// ObjectVersion is the immutable read view of a single object version or
+// delete marker. Size is a pointer so delete markers serialise as null.
+type ObjectVersion struct {
+	Key            string
+	VersionID      string
+	Size           *int64
+	LastModified   time.Time
+	ETag           string
+	ContentType    string
+	IsLatest       bool
+	IsDeleteMarker bool
+}
+
+// VersionListResult is one page of an object's version history. NextToken
+// is an opaque base64 offset cursor; Truncated is set when the safety cap
+// stopped the scan before exhaustion.
+type VersionListResult struct {
+	Versions  []ObjectVersion
+	NextToken string
+	Truncated bool
+}

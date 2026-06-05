@@ -38,11 +38,13 @@ export async function parseErrorResponse(res: Response): Promise<AppError> {
     const pointer = (e.source as Record<string, unknown> | undefined)?.pointer as
       | string
       | undefined;
+    const details = e.meta as AppErrorDetails | undefined;
     return new AppError({
       status: res.status,
       code: String(e.code ?? "unknown"),
       message: String(e.detail ?? e.title ?? res.statusText),
       ...(pointer !== undefined ? { pointer } : {}),
+      ...(details !== undefined ? { details } : {}),
     });
   }
   if (b.error && typeof b.error === "object") {

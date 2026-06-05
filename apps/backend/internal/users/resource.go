@@ -162,7 +162,7 @@ func (h *handler) updatePolicies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	actor, ip := actorFromRequest(r)
-	if err := h.p.UpdatePolicies(r.Context(), ak, body.ToTemplateRefs(), actor, ip); err != nil {
+	if err := h.p.UpdatePolicies(r.Context(), ak, body.ToTemplateRefs(), body.Policies, actor, ip); err != nil {
 		apierror.Write(w, apierror.StyleAction, err)
 		return
 	}

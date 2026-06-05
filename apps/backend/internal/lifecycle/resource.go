@@ -79,8 +79,13 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 
 // create accepts a JSON:API single-resource document with attributes
 // matching CreateRequest and returns the newly created rule as a
-// JSON:API single document on 201. Only kind="expiration" is accepted
-// in v1; any other kind surfaces as a typed 422 envelope with
+// JSON:API single document on 201. The handler dispatches to the
+// correct Processor method based on the kind field:
+//   - "expiration"                     → Processor.Create
+//   - "noncurrent-expiration"          → Processor.CreateNoncurrent
+//   - "abort-incomplete-multipart"     → Processor.CreateAbortMPU
+//
+// Any other (or absent) kind surfaces as a typed 422 envelope with
 // source.pointer set to /data/attributes/kind so the SPA can attach
 // the message to the right form field.
 func (h *handler) create(w http.ResponseWriter, r *http.Request) {
@@ -91,14 +96,25 @@ func (h *handler) create(w http.ResponseWriter, r *http.Request) {
 			"bad_request", "Invalid JSON:API request body"))
 		return
 	}
-	if attrs.Kind != "expiration" {
+	actor, ip := actorFromRequest(r)
+	var (
+		rule Rule
+		err  error
+	)
+	switch attrs.Kind {
+	case KindExpiration:
+		rule, err = h.p.Create(r.Context(), bucket, attrs.Days, attrs.Prefix, actor, ip)
+	case KindNoncurrentExpiration:
+		rule, err = h.p.CreateNoncurrent(r.Context(), bucket, attrs.NoncurrentDays, attrs.NewerNoncurrentVersions, attrs.Prefix, actor, ip)
+	case KindAbortIncompleteMPU:
+		rule, err = h.p.CreateAbortMPU(r.Context(), bucket, attrs.DaysAfterInitiation, attrs.Prefix, actor, ip)
+	default:
 		apierror.Write(w, apierror.StyleJSONAPI, apierror.New(http.StatusUnprocessableEntity,
-			"invalid_lifecycle_rule",
-			"only kind=\"expiration\" is supported").WithPointer("/data/attributes/kind"))
+			"unsupported_lifecycle_kind",
+			"only expiration, noncurrent-expiration, and abort-incomplete-multipart are supported").
+			WithPointer("/data/attributes/kind"))
 		return
 	}
-	actor, ip := actorFromRequest(r)
-	rule, err := h.p.Create(r.Context(), bucket, attrs.Days, attrs.Prefix, actor, ip)
 	if err != nil {
 		apierror.Write(w, apierror.StyleJSONAPI, err)
 		return
@@ -130,4 +146,3 @@ func writeSingle(w http.ResponseWriter, enc *jsonapi.Encoder, status int, res js
 	w.WriteHeader(status)
 	_ = enc.Single(w, res, nil)
 }
-

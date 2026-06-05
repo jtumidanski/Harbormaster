@@ -13,8 +13,10 @@ import (
 	"github.com/jtumidanski/Harbormaster/internal/dashboard"
 	"github.com/jtumidanski/Harbormaster/internal/jobs/bucketempty"
 	"github.com/jtumidanski/Harbormaster/internal/lifecycle"
+	"github.com/jtumidanski/Harbormaster/internal/metrics"
 	hmminio "github.com/jtumidanski/Harbormaster/internal/minio"
 	"github.com/jtumidanski/Harbormaster/internal/objects"
+	"github.com/jtumidanski/Harbormaster/internal/policies"
 	"github.com/jtumidanski/Harbormaster/internal/users"
 )
 
@@ -123,6 +125,37 @@ func (a objectS3Adapter) GetObject(ctx context.Context, bucket, object string, o
 	return a.Client.GetObject(ctx, bucket, object, opts)
 }
 
+// ListObjectVersions drains the high-level Client.ListObjects channel
+// (WithVersions=true) into a slice, capping at maxScan to bound
+// pathological keys. The bool return is "truncated" — true when the scan
+// hit maxScan before the channel closed.
+//
+// A cancelable context is derived from the caller's ctx and cancelled via
+// defer so the minio-go producer goroutine is torn down on every return
+// path — including early truncation and error returns — preventing the
+// goroutine from blocking on a channel send forever.
+func (a objectS3Adapter) ListObjectVersions(ctx context.Context, bucket, key string, maxScan int) ([]miniogo.ObjectInfo, bool, error) {
+	cctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	ch := a.ListObjects(cctx, bucket, miniogo.ListObjectsOptions{
+		Prefix:       key,
+		WithVersions: true,
+	})
+	out := make([]miniogo.ObjectInfo, 0, 16)
+	truncated := false
+	for info := range ch {
+		if info.Err != nil {
+			return nil, false, info.Err
+		}
+		if len(out) >= maxScan {
+			truncated = true
+			break
+		}
+		out = append(out, info)
+	}
+	return out, truncated, nil
+}
+
 // newObjectClientGetter returns an objects.ClientGetter bound to the live
 // MinIO pool. Each call resolves the current client, wraps it in
 // objectS3Adapter so ListObjectsV2 routes through miniogo.Core, and hands
@@ -208,13 +241,27 @@ func newSAClientGetter(pool *hmminio.Pool) users.SAClientGetter {
 	})
 }
 
+// newPoliciesClientGetter returns a policies.ClientGetter bound to the live
+// MinIO pool. The live *madmin.AdminClient satisfies policies.AdminClient by
+// structural typing, so no per-method adapter is needed.
+func newPoliciesClientGetter(pool *hmminio.Pool) policies.ClientGetter {
+	return policies.NewClientGetter(func(ctx context.Context) (policies.AdminClient, error) {
+		madm, _, err := pool.Get(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return madm, nil
+	})
+}
+
 // Compile-time anchors keeping the adapter types in sync with their
 // destination interfaces; a future signature drift fails the build here.
 var (
-	_ objects.S3Client          = objectS3Adapter{}
-	_ lifecycle.S3Client        = lifecycleS3Adapter{}
-	_ buckets.LifecycleCreator  = bucketLifecycleAdapter{}
-	_ dashboard.PoolGetter      = dashboardPoolAdapter{}
+	_ objects.S3Client         = objectS3Adapter{}
+	_ lifecycle.S3Client       = lifecycleS3Adapter{}
+	_ buckets.LifecycleCreator = bucketLifecycleAdapter{}
+	_ dashboard.PoolGetter     = dashboardPoolAdapter{}
+	_ policies.AdminClient     = (*madmin.AdminClient)(nil)
 )
 
 // dashboardPoolAdapter satisfies dashboard.PoolGetter by translating the
@@ -299,4 +346,13 @@ func (a dashboardPoolAdapter) ServerInfo(ctx context.Context) (dashboard.ServerI
 // small dashboard view types.
 func newDashboardPoolGetter(pool *hmminio.Pool) dashboard.PoolGetter {
 	return dashboardPoolAdapter{pool: pool}
+}
+
+// newMetricsSourceGetter returns a metrics.SourceGetter bound to the live
+// pool. Each call builds a fresh madmin MetricsClient (cheap; re-reads creds
+// + transport) so credential rotations are picked up automatically.
+func newMetricsSourceGetter(pool *hmminio.Pool) metrics.SourceGetter {
+	return func(ctx context.Context) (metrics.MetricsSource, error) {
+		return pool.NewMetricsClient(ctx)
+	}
 }

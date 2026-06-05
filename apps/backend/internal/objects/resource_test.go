@@ -325,5 +325,167 @@ func TestDelete_HTTP_Returns204(t *testing.T) {
 	}
 }
 
+// TestListVersions_HTTP_ReturnsJSONAPI asserts the listVersions handler
+// emits a JSON:API collection document whose data[].type == "object_versions"
+// and whose meta.page.next_token carries the next-page cursor.
+func TestListVersions_HTTP_ReturnsJSONAPI(t *testing.T) {
+	t0 := time.Unix(1700000000, 0).UTC()
+	sz1 := int64(100)
+
+	stub := &stubS3{
+		versions: []miniogo.ObjectInfo{
+			{Key: "cat.jpg", VersionID: "v2", IsLatest: true, Size: 200, ContentType: "image/jpeg", LastModified: t0.Add(2 * time.Second)},
+			{Key: "cat.jpg", VersionID: "v1", Size: int64(sz1), ContentType: "image/jpeg", LastModified: t0.Add(1 * time.Second)},
+		},
+	}
+	h, _ := newTestRouter(t, ProcessorConfig{}, stub)
+
+	// Request only page size 1 so the next_token fires.
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/buckets/photos/objects/versions?key=cat.jpg&page%5Bsize%5D=1", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got %d want 200; body=%s", rr.Code, rr.Body.String())
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "application/vnd.api+json" {
+		t.Errorf("Content-Type: %q", ct)
+	}
+
+	var doc struct {
+		Data []struct {
+			Type string `json:"type"`
+			ID   string `json:"id"`
+		} `json:"data"`
+		Meta struct {
+			Page struct {
+				NextToken string `json:"next_token"`
+			} `json:"page"`
+		} `json:"meta"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &doc); err != nil {
+		t.Fatalf("decode: %v body=%s", err, rr.Body.String())
+	}
+	if len(doc.Data) != 1 {
+		t.Fatalf("data length: got %d want 1", len(doc.Data))
+	}
+	if doc.Data[0].Type != "object_versions" {
+		t.Errorf("data[0].type: got %q want object_versions", doc.Data[0].Type)
+	}
+	if doc.Data[0].ID != "cat.jpg@v2" {
+		t.Errorf("data[0].id: got %q want cat.jpg@v2", doc.Data[0].ID)
+	}
+	if doc.Meta.Page.NextToken == "" {
+		t.Errorf("meta.page.next_token should be non-empty (truncated at page size 1)")
+	}
+}
+
+// TestRestoreVersion_HTTP_Returns200 posts a JSON body to /restore-version
+// and asserts the response is 200 plain-JSON with key/version_id/restored_from.
+func TestRestoreVersion_HTTP_Returns200(t *testing.T) {
+	t0 := time.Unix(1700000000, 0).UTC()
+	stub := &stubS3{
+		versions: []miniogo.ObjectInfo{
+			{Key: "cat.jpg", VersionID: "v1", Size: 100, ContentType: "image/jpeg", LastModified: t0},
+		},
+	}
+	h, _ := newTestRouter(t, ProcessorConfig{}, stub)
+
+	body := strings.NewReader(`{"key":"cat.jpg","version_id":"v1"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/buckets/photos/objects/restore-version", body)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got %d want 200; body=%s", rr.Code, rr.Body.String())
+	}
+	var doc map[string]string
+	if err := json.Unmarshal(rr.Body.Bytes(), &doc); err != nil {
+		t.Fatalf("decode: %v body=%s", err, rr.Body.String())
+	}
+	if doc["key"] != "cat.jpg" {
+		t.Errorf("key: %q", doc["key"])
+	}
+	if doc["restored_from"] != "v1" {
+		t.Errorf("restored_from: %q", doc["restored_from"])
+	}
+}
+
+// TestDeleteVersion_HTTP_Returns204 sends a DELETE with confirm:true and
+// asserts the response is 204 No Content.
+func TestDeleteVersion_HTTP_Returns204(t *testing.T) {
+	h, _ := newTestRouter(t, ProcessorConfig{}, nil)
+
+	body := strings.NewReader(`{"confirm":true}`)
+	req := httptest.NewRequest(http.MethodDelete,
+		"/api/v1/buckets/photos/objects/version?key=cat.jpg&version_id=v1", body)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status: got %d want 204; body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+// TestUndelete_HTTP_Returns200 posts a JSON body to /undelete on a key
+// that has a delete marker and asserts the response is 200 plain-JSON
+// with key and version_id.
+func TestUndelete_HTTP_Returns200(t *testing.T) {
+	t0 := time.Unix(1700000000, 0).UTC()
+	stub := &stubS3{
+		versions: []miniogo.ObjectInfo{
+			{Key: "cat.jpg", VersionID: "dm1", IsLatest: true, IsDeleteMarker: true, LastModified: t0.Add(1 * time.Second)},
+			{Key: "cat.jpg", VersionID: "v1", Size: 100, ContentType: "image/jpeg", LastModified: t0},
+		},
+	}
+	h, _ := newTestRouter(t, ProcessorConfig{}, stub)
+
+	body := strings.NewReader(`{"key":"cat.jpg"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/buckets/photos/objects/undelete", body)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got %d want 200; body=%s", rr.Code, rr.Body.String())
+	}
+	var doc map[string]string
+	if err := json.Unmarshal(rr.Body.Bytes(), &doc); err != nil {
+		t.Fatalf("decode: %v body=%s", err, rr.Body.String())
+	}
+	if doc["key"] != "cat.jpg" {
+		t.Errorf("key: %q", doc["key"])
+	}
+	if doc["version_id"] != "v1" {
+		t.Errorf("version_id: %q (want v1, the exposed non-marker)", doc["version_id"])
+	}
+}
+
+// TestDownload_VersionID_DirectMode asserts that providing version_id in the
+// query string passes versionId into the presigned URL parameters.
+func TestDownload_VersionID_DirectMode(t *testing.T) {
+	stubURL, _ := url.Parse("https://minio.example/photos/cat.jpg?X-Amz-Signature=abc")
+	stub := &stubS3{presignReturn: stubURL}
+	h, _ := newTestRouter(t, ProcessorConfig{DownloadProxyMode: "direct"}, stub)
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/buckets/photos/objects/download?key=cat.jpg&version_id=v42", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("status: got %d want 307; body=%s", rr.Code, rr.Body.String())
+	}
+	if len(stub.presignCalls) != 1 {
+		t.Fatalf("PresignedGetObject calls: got %d want 1", len(stub.presignCalls))
+	}
+	if got := stub.presignCalls[0].Params.Get("versionId"); got != "v42" {
+		t.Errorf("versionId param: %q", got)
+	}
+}
+
 // Compile-time sanity: ensure newTestProcessor and Routes interoperate.
 var _ = context.Background

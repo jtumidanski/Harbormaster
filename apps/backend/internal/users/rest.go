@@ -18,14 +18,15 @@ func (r UserResource) ResourceType() string { return "users" }
 func (r UserResource) ResourceID() string { return r.AccessKey }
 
 // MarshalJSON shapes the on-the-wire payload for a User. We expose the
-// status, attached templates, and other policies but never the secret —
-// MinIO does not return the secret on GetUserInfo and Harbormaster never
-// caches it.
+// status, attached templates, attached policies, and other policies but
+// never the secret — MinIO does not return the secret on GetUserInfo and
+// Harbormaster never caches it.
 func (r UserResource) MarshalJSON() ([]byte, error) {
 	type alias struct {
 		AccessKey         string         `json:"access_key"`
 		Status            string         `json:"status"`
 		AttachedTemplates []TemplateWire `json:"attached_templates"`
+		AttachedPolicies  []string       `json:"attached_policies"`
 		OtherPolicies     []string       `json:"other_policies"`
 	}
 	out := alias{
@@ -39,6 +40,11 @@ func (r UserResource) MarshalJSON() ([]byte, error) {
 	out.AttachedTemplates = make([]TemplateWire, 0, len(r.AttachedTemplates))
 	for _, t := range r.AttachedTemplates {
 		out.AttachedTemplates = append(out.AttachedTemplates, TemplateWire(t))
+	}
+	if r.AttachedPolicies == nil {
+		out.AttachedPolicies = []string{}
+	} else {
+		out.AttachedPolicies = r.AttachedPolicies
 	}
 	return json.Marshal(out)
 }
@@ -99,6 +105,7 @@ func (r CreatedUserResource) MarshalJSON() ([]byte, error) {
 		AccessKey         string         `json:"access_key"`
 		Status            string         `json:"status"`
 		AttachedTemplates []TemplateWire `json:"attached_templates"`
+		AttachedPolicies  []string       `json:"attached_policies"`
 		OtherPolicies     []string       `json:"other_policies"`
 		SecretKey         string         `json:"secret_key"`
 	}
@@ -114,6 +121,11 @@ func (r CreatedUserResource) MarshalJSON() ([]byte, error) {
 	out.AttachedTemplates = make([]TemplateWire, 0, len(r.User.AttachedTemplates))
 	for _, t := range r.User.AttachedTemplates {
 		out.AttachedTemplates = append(out.AttachedTemplates, TemplateWire(t))
+	}
+	if r.User.AttachedPolicies == nil {
+		out.AttachedPolicies = []string{}
+	} else {
+		out.AttachedPolicies = r.User.AttachedPolicies
 	}
 	return json.Marshal(out)
 }
@@ -134,6 +146,7 @@ type DeleteUserRequest struct {
 // PUT /users/{access_key}/policies.
 type UpdatePoliciesRequest struct {
 	Templates []TemplateWire `json:"templates"`
+	Policies  []string       `json:"policies"`
 }
 
 // ToTemplateRefs converts the wire DTO into the domain slice.

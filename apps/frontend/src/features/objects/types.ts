@@ -28,3 +28,32 @@ export type ObjectListResponse = {
     };
   };
 };
+
+// JSON:API wire types for the version history endpoint.
+// size is null for delete markers (they have no object content).
+export type ObjectVersionAttributes = {
+  key: string;
+  version_id: string;
+  size: number | null;
+  last_modified: string;
+  etag?: string;
+  content_type?: string;
+  is_latest: boolean;
+  is_delete_marker: boolean;
+};
+
+export type ObjectVersionItem = {
+  type: "object_versions";
+  id: string; // "<key>@<version_id>"
+  attributes: ObjectVersionAttributes;
+};
+
+export type ObjectVersionListResponse = {
+  data: ObjectVersionItem[];
+  meta?: {
+    page?: {
+      size: number;
+      next_token?: string;
+    };
+  };
+};

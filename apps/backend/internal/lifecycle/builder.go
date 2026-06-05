@@ -70,3 +70,62 @@ func validateDays(days int) error {
 	}
 	return nil
 }
+
+// idSlug returns the prefix slug used in a managed rule ID, or "all" when
+// the prefix is empty (whole-bucket scope). Reuses slugifyPrefix so the
+// charset stays in lock-step with the classifier regex.
+func idSlug(prefix string) string {
+	if prefix == "" {
+		return "all"
+	}
+	slug := slugifyPrefix(prefix)
+	if slug == "" {
+		return "all"
+	}
+	return slug
+}
+
+// clampRuleID truncates an over-long generated ID and trims a trailing
+// delimiter so it still satisfies the classifier regex.
+func clampRuleID(id string) string {
+	if len(id) > MaxRuleIDLen {
+		id = strings.TrimRight(id[:MaxRuleIDLen], "-.")
+	}
+	return id
+}
+
+// generateNoncurrentRuleID returns the deterministic ID for a managed
+// noncurrent-version-expiration rule: "harbormaster-noncurrent-<slug>-<days>d".
+func generateNoncurrentRuleID(days int, prefix string) string {
+	id := fmt.Sprintf("harbormaster-noncurrent-%s-%dd", idSlug(prefix), days)
+	return clampRuleID(id)
+}
+
+// generateAbortMPURuleID returns the deterministic ID for a managed
+// abort-incomplete-multipart rule: "harbormaster-abortmpu-<slug>-<days>d".
+func generateAbortMPURuleID(days int, prefix string) string {
+	id := fmt.Sprintf("harbormaster-abortmpu-%s-%dd", idSlug(prefix), days)
+	return clampRuleID(id)
+}
+
+// validateNoncurrent enforces the operator-facing contract for a
+// noncurrent-expiration rule: noncurrent_days >= 1 and (optional)
+// newer_noncurrent_versions >= 0.
+func validateNoncurrent(noncurrentDays, newerNoncurrent int) error {
+	if noncurrentDays <= 0 {
+		return errors.New("noncurrent_days must be > 0")
+	}
+	if newerNoncurrent < 0 {
+		return errors.New("newer_noncurrent_versions must be >= 0")
+	}
+	return nil
+}
+
+// validateDaysAfterInitiation enforces days_after_initiation >= 1 for an
+// abort-incomplete-multipart rule.
+func validateDaysAfterInitiation(days int) error {
+	if days <= 0 {
+		return errors.New("days_after_initiation must be > 0")
+	}
+	return nil
+}

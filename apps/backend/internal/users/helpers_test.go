@@ -2,6 +2,7 @@ package users
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -29,7 +30,8 @@ import (
 type stubAdmin struct {
 	mu sync.Mutex
 
-	users map[string]madmin.UserInfo // access_key -> info (PolicyName is comma-separated)
+	users  map[string]madmin.UserInfo // access_key -> info (PolicyName is comma-separated)
+	canned map[string]json.RawMessage // name -> raw policy doc (for ListCannedPolicies)
 
 	addUserCalls       []addUserCall
 	addUserErr         error
@@ -43,6 +45,7 @@ type stubAdmin struct {
 	detachErr          error
 	addCannedCalls     []addCannedCall
 	addCannedErr       error
+	listCannedErr      error
 	addServiceCalls    []madmin.AddServiceAccountReq
 	addServiceCreds    madmin.Credentials
 	addServiceErr      error
@@ -68,7 +71,10 @@ type addCannedCall struct {
 }
 
 func newStubAdmin() *stubAdmin {
-	return &stubAdmin{users: map[string]madmin.UserInfo{}}
+	return &stubAdmin{
+		users:  map[string]madmin.UserInfo{},
+		canned: map[string]json.RawMessage{},
+	}
 }
 
 func (s *stubAdmin) ListUsers(_ context.Context) (map[string]madmin.UserInfo, error) {
@@ -192,6 +198,29 @@ func (s *stubAdmin) AddCannedPolicy(_ context.Context, name string, body []byte)
 	copy(cp, body)
 	s.addCannedCalls = append(s.addCannedCalls, addCannedCall{Name: name, Body: cp})
 	return nil
+}
+
+func (s *stubAdmin) ListCannedPolicies(_ context.Context) (map[string]json.RawMessage, error) {
+	if s.listCannedErr != nil {
+		return nil, s.listCannedErr
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[string]json.RawMessage, len(s.canned))
+	for k, v := range s.canned {
+		out[k] = v
+	}
+	return out, nil
+}
+
+func (s *stubAdmin) InfoCannedPolicy(_ context.Context, name string) ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	doc, ok := s.canned[name]
+	if !ok {
+		return nil, nil
+	}
+	return []byte(doc), nil
 }
 
 func (s *stubAdmin) ListServiceAccounts(_ context.Context, _ string) (madmin.ListServiceAccountsResp, error) {

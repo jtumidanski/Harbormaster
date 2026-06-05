@@ -36,15 +36,34 @@ func assertGoldenKeys(t *testing.T, got, want []string) {
 	}
 }
 
-// TestLifecycleRuleWireContract pins the two discriminated attribute shapes the
-// SPA consumes; the rule id is intentionally absent from attributes (the client
-// reads it from the JSON:API resource id).
+// TestLifecycleRuleWireContract pins the three discriminated managed attribute
+// shapes plus the unmanaged summary shape the SPA consumes; the rule id is
+// intentionally absent from attributes (the client reads it from the JSON:API
+// resource id).
 func TestLifecycleRuleWireContract(t *testing.T) {
-	assertGoldenKeys(t, goldenKeySet(t, RuleResource{Rule{
-		ID: "harbormaster-expire-30d", Managed: true, Kind: "expiration", Days: 30, Prefix: "p/",
-	}}), []string{"days", "kind", "managed", "prefix"})
+	t.Run("expiration", func(t *testing.T) {
+		assertGoldenKeys(t, goldenKeySet(t, RuleResource{Rule{
+			ID: "harbormaster-expire-30d", Managed: true, Kind: KindExpiration, Days: 30, Prefix: "p/",
+		}}), []string{"days", "kind", "managed", "prefix"})
+	})
 
-	assertGoldenKeys(t, goldenKeySet(t, RuleResource{Rule{
-		ID: "legacy", Managed: false, Summary: "expire after 90d",
-	}}), []string{"managed", "summary"})
+	t.Run("noncurrent-expiration", func(t *testing.T) {
+		assertGoldenKeys(t, goldenKeySet(t, RuleResource{Rule{
+			ID: "harbormaster-noncurrent-30d", Managed: true, Kind: KindNoncurrentExpiration,
+			NoncurrentDays: 30, NewerNoncurrentVersions: 3, Prefix: "uploads/",
+		}}), []string{"kind", "managed", "newer_noncurrent_versions", "noncurrent_days", "prefix"})
+	})
+
+	t.Run("abort-incomplete-multipart", func(t *testing.T) {
+		assertGoldenKeys(t, goldenKeySet(t, RuleResource{Rule{
+			ID: "harbormaster-abortmpu-7d", Managed: true, Kind: KindAbortIncompleteMPU,
+			DaysAfterInitiation: 7, Prefix: "",
+		}}), []string{"days_after_initiation", "kind", "managed", "prefix"})
+	})
+
+	t.Run("unmanaged", func(t *testing.T) {
+		assertGoldenKeys(t, goldenKeySet(t, RuleResource{Rule{
+			ID: "legacy", Managed: false, Summary: "expire after 90d",
+		}}), []string{"managed", "summary"})
+	})
 }

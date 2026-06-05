@@ -24,10 +24,15 @@ const (
 	ActionUserDisable           = "user.disable"
 	ActionUserEnable            = "user.enable"
 	ActionUserPoliciesUpdate    = "user.policies.update"
+	ActionUserPolicyAttach      = "user.policy.attach"
+	ActionUserPolicyDetach      = "user.policy.detach"
 	ActionServiceAccountCreate  = "service_account.create"
 	ActionServiceAccountRevoke  = "service_account.revoke"
 	ActionLifecycleRuleCreate   = "lifecycle_rule.create"
 	ActionLifecycleRuleDelete   = "lifecycle_rule.delete"
+	ActionPolicyCreate          = "policy.create"
+	ActionPolicyUpdate          = "policy.update"
+	ActionPolicyDelete          = "policy.delete"
 	ActionSessionLogin          = "session.login"
 	ActionSessionLogout         = "session.logout"
 	ActionSessionLoginFailed    = "session.login_failed"
@@ -35,6 +40,9 @@ const (
 	ActionConnectionTest        = "connection.test"
 	ActionAdminPasswordChange   = "admin.password.change"
 	ActionAdminEncryptionReset  = "admin.encryption.reset"
+	ActionObjectVersionRestore  = "object.version.restore"
+	ActionObjectVersionDelete   = "object.version.delete"
+	ActionObjectUndelete        = "object.undelete"
 )
 
 // AllActions returns a slice of every defined action constant.
@@ -57,10 +65,15 @@ func AllActions() []string {
 		ActionUserDisable,
 		ActionUserEnable,
 		ActionUserPoliciesUpdate,
+		ActionUserPolicyAttach,
+		ActionUserPolicyDetach,
 		ActionServiceAccountCreate,
 		ActionServiceAccountRevoke,
 		ActionLifecycleRuleCreate,
 		ActionLifecycleRuleDelete,
+		ActionPolicyCreate,
+		ActionPolicyUpdate,
+		ActionPolicyDelete,
 		ActionSessionLogin,
 		ActionSessionLogout,
 		ActionSessionLoginFailed,
@@ -68,6 +81,9 @@ func AllActions() []string {
 		ActionConnectionTest,
 		ActionAdminPasswordChange,
 		ActionAdminEncryptionReset,
+		ActionObjectVersionRestore,
+		ActionObjectVersionDelete,
+		ActionObjectUndelete,
 	}
 }
 
@@ -82,7 +98,7 @@ const (
 // before persistence — callers must not assume that submitted payloads reach
 // storage unmodified.
 type Event struct {
-	ID             string         // ULID (Crockford base32)
+	ID             string // ULID (Crockford base32)
 	OccurredAt     time.Time
 	Actor          string
 	SourceIP       string

@@ -55,6 +55,16 @@ function installStorageShim(key: "localStorage" | "sessionStorage") {
 installStorageShim("localStorage");
 installStorageShim("sessionStorage");
 
+// jsdom does not implement ResizeObserver which Recharts' ResponsiveContainer
+// relies on. Install a no-op shim so chart tests don't throw.
+if (typeof window.ResizeObserver === "undefined") {
+  window.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
 // jsdom does not implement PointerEvent / pointer capture APIs that Radix
 // primitives (Select, Dialog) call into during interaction.
 type ElProto = HTMLElement & {

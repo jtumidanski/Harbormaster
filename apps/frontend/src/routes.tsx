@@ -10,9 +10,10 @@ import { BucketDetailPage } from "@/features/buckets/BucketDetailPage";
 import { ConnectionSettingsPage } from "@/features/connection/ConnectionSettingsPage";
 import { UserListPage } from "@/features/users/UserListPage";
 import { UserDetailPage } from "@/features/users/UserDetailPage";
-import { PolicyTemplatesPage } from "@/features/policies/PolicyTemplatesPage";
+import { PoliciesPage } from "@/features/policies/PoliciesPage";
 import { DashboardPage } from "@/features/dashboard/DashboardPage";
 import { ActivityFeedPage } from "@/features/activity/ActivityFeedPage";
+import { MetricsPage } from "@/features/metrics/MetricsPage";
 
 export function AppRoutes() {
   const { me, isLoading: meLoading } = useAuth();
@@ -39,11 +40,12 @@ export function AppRoutes() {
       <Route element={<AppShell />}>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/metrics" element={<MetricsPage />} />
         <Route path="/buckets" element={<BucketListPage />} />
         <Route path="/buckets/:name" element={<BucketDetailPage />} />
         <Route path="/users" element={<UserListPage />} />
         <Route path="/users/:accessKey" element={<UserDetailPage />} />
-        <Route path="/policies" element={<PolicyTemplatesPage />} />
+        <Route path="/policies" element={<PoliciesPage />} />
         <Route path="/activity" element={<ActivityFeedPage />} />
         <Route path="/settings/account" element={<ChangePasswordPage />} />
         <Route path="/settings/connection" element={<ConnectionSettingsPage />} />

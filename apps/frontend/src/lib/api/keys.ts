@@ -18,6 +18,7 @@ export const bucketsKeys = {
 
 export const objectsKeys = {
   list: (bucket: string, prefix: string) => ["objects", bucket, prefix] as const,
+  versions: (bucket: string, key: string) => ["objects", bucket, "versions", key] as const,
 };
 
 export const lifecycleKeys = {
@@ -38,9 +39,19 @@ export const policyTemplatesKeys = {
   list: () => ["policy-templates"] as const,
 };
 
+export const policiesKeys = {
+  all: () => ["policies"] as const,
+  list: () => ["policies", "list"] as const,
+  detail: (name: string) => ["policies", "detail", name] as const,
+};
+
 export const dashboardKeys = {
   view: (window: string) => ["dashboard", "view", window] as const,
   failures: (window: string) => ["dashboard", "failures", window] as const,
+};
+
+export const metricsKeys = {
+  view: (window: string) => ["metrics", "view", window] as const,
 };
 
 export type AuditFilterKey = {

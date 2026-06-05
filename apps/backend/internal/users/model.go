@@ -25,6 +25,10 @@ type User struct {
 	Status            string // "enabled" | "disabled"
 	AttachedTemplates []TemplateRef
 	OtherPolicies     []string
+	// AttachedPolicies are named custom (origin==custom) canned policies
+	// attached to the user — Harbormaster-managed, distinct from
+	// AttachedTemplates and read-only OtherPolicies.
+	AttachedPolicies []string
 }
 
 // TemplateRef pairs a bundled policy-template name with the params used to

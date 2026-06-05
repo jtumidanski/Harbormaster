@@ -40,3 +40,23 @@ func entryFromUploadInfo(info miniogo.UploadInfo, contentType string) Entry {
 func prefixFromCommonPrefix(cp miniogo.CommonPrefix) Prefix {
 	return Prefix{Name: cp.Prefix}
 }
+
+// versionFromObjectInfo maps a minio-go ObjectInfo (from a WithVersions
+// listing) into the domain ObjectVersion. Delete markers carry no size or
+// content-type, so Size is left nil and ContentType empty.
+func versionFromObjectInfo(info miniogo.ObjectInfo) ObjectVersion {
+	v := ObjectVersion{
+		Key:            info.Key,
+		VersionID:      info.VersionID,
+		LastModified:   info.LastModified,
+		ETag:           info.ETag,
+		IsLatest:       info.IsLatest,
+		IsDeleteMarker: info.IsDeleteMarker,
+	}
+	if !info.IsDeleteMarker {
+		size := info.Size
+		v.Size = &size
+		v.ContentType = info.ContentType
+	}
+	return v
+}

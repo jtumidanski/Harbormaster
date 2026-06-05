@@ -2,6 +2,7 @@ package users
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"sort"
@@ -28,6 +29,8 @@ type adminAPI interface {
 	AttachPolicy(ctx context.Context, req madmin.PolicyAssociationReq) (madmin.PolicyAssociationResp, error)
 	DetachPolicy(ctx context.Context, req madmin.PolicyAssociationReq) (madmin.PolicyAssociationResp, error)
 	AddCannedPolicy(ctx context.Context, name string, body []byte) error
+	ListCannedPolicies(ctx context.Context) (map[string]json.RawMessage, error)
+	InfoCannedPolicy(ctx context.Context, name string) ([]byte, error)
 }
 
 // AdminClient is the public face of adminAPI. It exists so callers outside
@@ -44,6 +47,8 @@ type AdminClient interface {
 	AttachPolicy(ctx context.Context, req madmin.PolicyAssociationReq) (madmin.PolicyAssociationResp, error)
 	DetachPolicy(ctx context.Context, req madmin.PolicyAssociationReq) (madmin.PolicyAssociationResp, error)
 	AddCannedPolicy(ctx context.Context, name string, body []byte) error
+	ListCannedPolicies(ctx context.Context) (map[string]json.RawMessage, error)
+	InfoCannedPolicy(ctx context.Context, name string) ([]byte, error)
 }
 
 // ClientGetter is the concrete dependency the Processor pulls from on
@@ -132,6 +137,10 @@ func (p *Processor) List(ctx context.Context) ([]User, error) {
 	if err != nil {
 		return nil, mapClientError(err, "failed to list users")
 	}
+	deploymentCustom, err := resolveDeploymentCustom(ctx, adm)
+	if err != nil {
+		return nil, mapClientError(err, "failed to list canned policies")
+	}
 	out := make([]User, 0, len(rawUsers))
 	for ak, info := range rawUsers {
 		// Prefer the GetUserInfo result so we get the freshest policy
@@ -144,11 +153,12 @@ func (p *Processor) List(ctx context.Context) ([]User, error) {
 				Msg("users: GetUserInfo failed; falling back to ListUsers row")
 			fresh = info
 		}
-		managed, other := classifyPolicies(splitPolicyList(fresh.PolicyName))
+		managed, customOwned, other := classifyAttachments(splitPolicyList(fresh.PolicyName), deploymentCustom)
 		out = append(out, User{
 			AccessKey:         ak,
 			Status:            string(fresh.Status),
 			AttachedTemplates: managed,
+			AttachedPolicies:  customOwned,
 			OtherPolicies:     other,
 		})
 	}
@@ -165,15 +175,20 @@ func (p *Processor) Get(ctx context.Context, accessKey string) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
+	deploymentCustom, err := resolveDeploymentCustom(ctx, adm)
+	if err != nil {
+		return User{}, mapClientError(err, "failed to list canned policies")
+	}
 	info, err := adm.GetUserInfo(ctx, accessKey)
 	if err != nil {
 		return User{}, mapClientError(err, "failed to get user")
 	}
-	managed, other := classifyPolicies(splitPolicyList(info.PolicyName))
+	managed, customOwned, other := classifyAttachments(splitPolicyList(info.PolicyName), deploymentCustom)
 	return User{
 		AccessKey:         accessKey,
 		Status:            string(info.Status),
 		AttachedTemplates: managed,
+		AttachedPolicies:  customOwned,
 		OtherPolicies:     other,
 	}, nil
 }
@@ -362,12 +377,18 @@ func (p *Processor) Delete(ctx context.Context, accessKey, confirmKey, actor, so
 // Unchanged attachments are left alone so the call is cheap when nothing
 // actually changed.
 //
+// customPolicies is the set of named custom (origin==custom) canned policies
+// to attach. Only policies owned by Harbormaster (present in the deployment's
+// custom set) are ever attached or detached — built-ins (e.g. consoleAdmin)
+// and foreign policies are never touched.
+//
 // OtherPolicies (operator-installed names like consoleAdmin) are left
 // untouched — Harbormaster never detaches a policy it did not attach.
-func (p *Processor) UpdatePolicies(ctx context.Context, accessKey string, requested []TemplateRef, actor, sourceIP string) error {
+func (p *Processor) UpdatePolicies(ctx context.Context, accessKey string, requested []TemplateRef, customPolicies []string, actor, sourceIP string) error {
 	auditPayload := map[string]any{
 		"access_key": accessKey,
 		"templates":  templateNames(requested),
+		"policies":   customPolicies,
 	}
 	failAudit := func(err error) error {
 		p.recordAudit(ctx, audit.Event{
@@ -386,37 +407,89 @@ func (p *Processor) UpdatePolicies(ctx context.Context, accessKey string, reques
 		return failAudit(apierror.New(http.StatusBadRequest, "invalid_access_key", err.Error()))
 	}
 	// Up-front validation of every requested template.
-	for _, ref := range requested {
-		t, ok := policies.Find(ref.Name)
-		if !ok {
-			return failAudit(apierror.New(http.StatusUnprocessableEntity, "unknown_template",
-				"unknown policy template: "+ref.Name))
-		}
-		if _, err := t.Render(ref.Params); err != nil {
-			return failAudit(apierror.New(http.StatusUnprocessableEntity, "invalid_template_params", err.Error()))
-		}
+	if err := validateTemplates(requested); err != nil {
+		return failAudit(err)
 	}
 	adm, err := p.clients(ctx)
 	if err != nil {
 		return failAudit(err)
 	}
+
+	// Resolve the deployment's custom canned policies — only names where
+	// OriginFor == OriginCustom are owned by Harbormaster and safe to diff.
+	deploymentCustom, err := resolveDeploymentCustom(ctx, adm)
+	if err != nil {
+		return failAudit(mapClientError(err, "failed to list canned policies"))
+	}
+
+	// Up-front: every requested custom policy must exist in the deployment.
+	for _, name := range customPolicies {
+		if _, ok := deploymentCustom[name]; !ok {
+			return failAudit(apierror.New(http.StatusUnprocessableEntity, "unknown_policy",
+				"unknown custom policy: "+name).WithPointer("/data/attributes/policies"))
+		}
+	}
+
 	info, err := adm.GetUserInfo(ctx, accessKey)
 	if err != nil {
 		return failAudit(mapClientError(err, "failed to read user info"))
 	}
-	currentManaged, _ := classifyPolicies(splitPolicyList(info.PolicyName))
+	currentManaged, currentCustom, _ := classifyAttachments(splitPolicyList(info.PolicyName), deploymentCustom)
 
-	// Build canonical-name sets for the diff.
-	currentSet := map[string]TemplateRef{}
-	for _, ref := range currentManaged {
+	if err := p.diffTemplates(ctx, adm, accessKey, currentManaged, requested, failAudit); err != nil {
+		return err
+	}
+	if err := p.diffCustomPolicies(ctx, adm, accessKey, currentCustom, customPolicies, actor, sourceIP, failAudit); err != nil {
+		return err
+	}
+
+	p.recordAudit(ctx, audit.Event{
+		Actor:          actor,
+		SourceIP:       sourceIP,
+		Action:         audit.ActionUserPoliciesUpdate,
+		TargetType:     "user",
+		TargetID:       accessKey,
+		Outcome:        audit.OutcomeSuccess,
+		PayloadSummary: auditPayload,
+	})
+	return nil
+}
+
+// validateTemplates performs up-front validation of every requested template
+// ref: unknown names and bad params are rejected before any admin call.
+func validateTemplates(refs []TemplateRef) error {
+	for _, ref := range refs {
+		t, ok := policies.Find(ref.Name)
+		if !ok {
+			return apierror.New(http.StatusUnprocessableEntity, "unknown_template",
+				"unknown policy template: "+ref.Name)
+		}
+		if _, err := t.Render(ref.Params); err != nil {
+			return apierror.New(http.StatusUnprocessableEntity, "invalid_template_params", err.Error())
+		}
+	}
+	return nil
+}
+
+// diffTemplates diffs the current attached templates against the requested
+// set, detaching removed entries and attaching (after materialising) added
+// entries. Unchanged entries are skipped.
+func (p *Processor) diffTemplates(
+	ctx context.Context,
+	adm adminAPI,
+	accessKey string,
+	current []TemplateRef,
+	requested []TemplateRef,
+	failAudit func(error) error,
+) error {
+	currentSet := make(map[string]TemplateRef, len(current))
+	for _, ref := range current {
 		currentSet[templateKey(ref)] = ref
 	}
-	requestedSet := map[string]TemplateRef{}
+	requestedSet := make(map[string]TemplateRef, len(requested))
 	for _, ref := range requested {
 		requestedSet[templateKey(ref)] = ref
 	}
-
-	// Detach removed.
 	for key := range currentSet {
 		if _, keep := requestedSet[key]; keep {
 			continue
@@ -428,7 +501,6 @@ func (p *Processor) UpdatePolicies(ctx context.Context, accessKey string, reques
 			return failAudit(mapClientError(err, "failed to detach policy"))
 		}
 	}
-	// Attach added (materialize first so the canonical policy exists).
 	for key, ref := range requestedSet {
 		if _, have := currentSet[key]; have {
 			continue
@@ -444,16 +516,94 @@ func (p *Processor) UpdatePolicies(ctx context.Context, accessKey string, reques
 			return failAudit(mapClientError(err, "failed to attach policy"))
 		}
 	}
-	p.recordAudit(ctx, audit.Event{
-		Actor:          actor,
-		SourceIP:       sourceIP,
-		Action:         audit.ActionUserPoliciesUpdate,
-		TargetType:     "user",
-		TargetID:       accessKey,
-		Outcome:        audit.OutcomeSuccess,
-		PayloadSummary: auditPayload,
-	})
 	return nil
+}
+
+// diffCustomPolicies diffs the current custom-owned policy set against the
+// requested set. Per-policy Detach/Attach are issued for the delta; each
+// call records an individual audit event. Built-ins and foreign policies
+// are never in either set and are therefore never touched.
+func (p *Processor) diffCustomPolicies(
+	ctx context.Context,
+	adm adminAPI,
+	accessKey string,
+	current []string,
+	requested []string,
+	actor, sourceIP string,
+	failAudit func(error) error,
+) error {
+	currentSet := make(map[string]struct{}, len(current))
+	for _, n := range current {
+		currentSet[n] = struct{}{}
+	}
+	requestedSet := make(map[string]struct{}, len(requested))
+	for _, n := range requested {
+		requestedSet[n] = struct{}{}
+	}
+	for name := range currentSet {
+		if _, keep := requestedSet[name]; keep {
+			continue
+		}
+		if _, err := adm.DetachPolicy(ctx, madmin.PolicyAssociationReq{
+			Policies: []string{name},
+			User:     accessKey,
+		}); err != nil {
+			return failAudit(mapClientError(err, "failed to detach policy"))
+		}
+		p.recordAudit(ctx, audit.Event{
+			Actor:      actor,
+			SourceIP:   sourceIP,
+			Action:     audit.ActionUserPolicyDetach,
+			TargetType: "user",
+			TargetID:   accessKey,
+			Outcome:    audit.OutcomeSuccess,
+			PayloadSummary: map[string]any{
+				"access_key": accessKey,
+				"policy":     name,
+			},
+		})
+	}
+	for name := range requestedSet {
+		if _, have := currentSet[name]; have {
+			continue
+		}
+		if _, err := adm.AttachPolicy(ctx, madmin.PolicyAssociationReq{
+			Policies: []string{name},
+			User:     accessKey,
+		}); err != nil {
+			return failAudit(mapClientError(err, "failed to attach policy"))
+		}
+		p.recordAudit(ctx, audit.Event{
+			Actor:      actor,
+			SourceIP:   sourceIP,
+			Action:     audit.ActionUserPolicyAttach,
+			TargetType: "user",
+			TargetID:   accessKey,
+			Outcome:    audit.OutcomeSuccess,
+			PayloadSummary: map[string]any{
+				"access_key": accessKey,
+				"policy":     name,
+			},
+		})
+	}
+	return nil
+}
+
+// resolveDeploymentCustom fetches all canned policies from MinIO and returns
+// a set of names whose origin is OriginCustom. Only these names are owned by
+// Harbormaster and may be attached/detached on behalf of the operator.
+func resolveDeploymentCustom(ctx context.Context, adm adminAPI) (map[string]struct{}, error) {
+	raw, err := adm.ListCannedPolicies(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]struct{}, len(raw))
+	for name := range raw {
+		if policies.OriginFor(name) == policies.OriginCustom {
+			out[name] = struct{}{}
+		}
+	}
+	return out, nil
 }
 
 // clients is a tiny indirection that wraps the ClientGetter's error in an

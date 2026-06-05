@@ -247,3 +247,180 @@ func TestProcessorDelete_NoLifecycleConfig(t *testing.T) {
 		t.Errorf("SetBucketLifecycle called %d times; want 0", len(s.setCalls))
 	}
 }
+
+// TestCreateNoncurrentBuildsRule asserts that CreateNoncurrent generates
+// the deterministic minio rule shape for a noncurrent-version-expiration
+// rule: the returned Rule has the right Kind/NoncurrentDays/NewerNoncurrentVersions
+// values and the NoncurrentVersionExpiration config that lands in MinIO
+// is correct.
+func TestCreateNoncurrentBuildsRule(t *testing.T) {
+	t.Parallel()
+	p, s := newTestProcessor(t, &stubS3{getErr: errNoSuchLifecycle})
+	rule, err := p.CreateNoncurrent(context.Background(), "b", 30, 3, "uploads/", "actor", "ip")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rule.Kind != KindNoncurrentExpiration {
+		t.Errorf("rule.Kind = %q; want %q", rule.Kind, KindNoncurrentExpiration)
+	}
+	if rule.NoncurrentDays != 30 {
+		t.Errorf("rule.NoncurrentDays = %d; want 30", rule.NoncurrentDays)
+	}
+	if rule.NewerNoncurrentVersions != 3 {
+		t.Errorf("rule.NewerNoncurrentVersions = %d; want 3", rule.NewerNoncurrentVersions)
+	}
+	if len(s.setCalls) != 1 {
+		t.Fatalf("SetBucketLifecycle calls = %d; want 1", len(s.setCalls))
+	}
+	saved := s.setCalls[0].Config.Rules[0]
+	if int(saved.NoncurrentVersionExpiration.NoncurrentDays) != 30 {
+		t.Errorf("minio rule noncurrent days = %d; want 30", int(saved.NoncurrentVersionExpiration.NoncurrentDays))
+	}
+	if saved.NoncurrentVersionExpiration.NewerNoncurrentVersions != 3 {
+		t.Errorf("minio rule newer_noncurrent_versions = %d; want 3", saved.NoncurrentVersionExpiration.NewerNoncurrentVersions)
+	}
+}
+
+// TestCreateNoncurrentMergesIntoExisting confirms the read-modify-write
+// contract: an existing rule is preserved and the new noncurrent rule is
+// appended.
+func TestCreateNoncurrentMergesIntoExisting(t *testing.T) {
+	t.Parallel()
+	existing := mlifecycle.NewConfiguration()
+	existing.Rules = []mlifecycle.Rule{
+		{ID: "pre-existing-rule", Status: "Enabled"},
+	}
+	p, s := newTestProcessor(t, &stubS3{getCfg: existing})
+	if _, err := p.CreateNoncurrent(context.Background(), "b", 10, 0, "", "actor", "ip"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(s.setCalls) != 1 {
+		t.Fatalf("SetBucketLifecycle calls = %d; want 1", len(s.setCalls))
+	}
+	sent := s.setCalls[0].Config.Rules
+	if len(sent) != 2 {
+		t.Fatalf("merged rules = %d; want 2 (pre-existing + new). Got: %#v", len(sent), sent)
+	}
+	if sent[0].ID != "pre-existing-rule" {
+		t.Errorf("pre-existing rule was lost; rules[0].ID = %q", sent[0].ID)
+	}
+}
+
+// TestCreateNoncurrentInvalidDays confirms validation returns a 422 error
+// when noncurrent_days <= 0 and does not call SetBucketLifecycle.
+func TestCreateNoncurrentInvalidDays(t *testing.T) {
+	t.Parallel()
+	p, s := newTestProcessor(t, nil)
+	_, err := p.CreateNoncurrent(context.Background(), "b", 0, 0, "", "actor", "ip")
+	if err == nil {
+		t.Fatal("want error for noncurrent_days=0; got nil")
+	}
+	var ae *apierror.Error
+	if !errors.As(err, &ae) {
+		t.Fatalf("want *apierror.Error; got %T", err)
+	}
+	if ae.HTTPStatus != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d; want 422", ae.HTTPStatus)
+	}
+	if len(s.setCalls) != 0 {
+		t.Errorf("SetBucketLifecycle called %d times; want 0 on validation failure", len(s.setCalls))
+	}
+}
+
+// TestCreateNoncurrentInvalidNewerNoncurrent confirms that when noncurrent_days
+// is valid but newer_noncurrent_versions is negative, the returned *apierror.Error
+// points at /data/attributes/newer_noncurrent_versions — not at noncurrent_days —
+// so the SPA highlights the correct form field.
+func TestCreateNoncurrentInvalidNewerNoncurrent(t *testing.T) {
+	t.Parallel()
+	p, s := newTestProcessor(t, nil)
+	_, err := p.CreateNoncurrent(context.Background(), "b", 30, -1, "", "actor", "ip")
+	if err == nil {
+		t.Fatal("want error for newer_noncurrent_versions=-1; got nil")
+	}
+	var ae *apierror.Error
+	if !errors.As(err, &ae) {
+		t.Fatalf("want *apierror.Error; got %T", err)
+	}
+	if ae.HTTPStatus != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d; want 422", ae.HTTPStatus)
+	}
+	const wantPointer = "/data/attributes/newer_noncurrent_versions"
+	if ae.Pointer != wantPointer {
+		t.Errorf("pointer = %q; want %q", ae.Pointer, wantPointer)
+	}
+	if len(s.setCalls) != 0 {
+		t.Errorf("SetBucketLifecycle called %d times; want 0 on validation failure", len(s.setCalls))
+	}
+}
+
+// TestCreateAbortMPUBuildsRule asserts that CreateAbortMPU generates the
+// correct minio AbortIncompleteMultipartUpload rule shape and returns a
+// Rule with Kind == KindAbortIncompleteMPU and the right DaysAfterInitiation.
+func TestCreateAbortMPUBuildsRule(t *testing.T) {
+	t.Parallel()
+	p, s := newTestProcessor(t, &stubS3{getErr: errNoSuchLifecycle})
+	rule, err := p.CreateAbortMPU(context.Background(), "b", 7, "", "actor", "ip")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rule.Kind != KindAbortIncompleteMPU {
+		t.Errorf("rule.Kind = %q; want %q", rule.Kind, KindAbortIncompleteMPU)
+	}
+	if rule.DaysAfterInitiation != 7 {
+		t.Errorf("rule.DaysAfterInitiation = %d; want 7", rule.DaysAfterInitiation)
+	}
+	if len(s.setCalls) != 1 {
+		t.Fatalf("SetBucketLifecycle calls = %d; want 1", len(s.setCalls))
+	}
+	saved := s.setCalls[0].Config.Rules[0]
+	if int(saved.AbortIncompleteMultipartUpload.DaysAfterInitiation) != 7 {
+		t.Errorf("minio rule days_after_initiation = %d; want 7",
+			int(saved.AbortIncompleteMultipartUpload.DaysAfterInitiation))
+	}
+}
+
+// TestCreateAbortMPUMergesIntoExisting confirms the read-modify-write
+// contract for abort-mpu: an existing rule is preserved.
+func TestCreateAbortMPUMergesIntoExisting(t *testing.T) {
+	t.Parallel()
+	existing := mlifecycle.NewConfiguration()
+	existing.Rules = []mlifecycle.Rule{
+		{ID: "pre-existing-rule", Status: "Enabled"},
+	}
+	p, s := newTestProcessor(t, &stubS3{getCfg: existing})
+	if _, err := p.CreateAbortMPU(context.Background(), "b", 14, "imgs/", "actor", "ip"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(s.setCalls) != 1 {
+		t.Fatalf("SetBucketLifecycle calls = %d; want 1", len(s.setCalls))
+	}
+	sent := s.setCalls[0].Config.Rules
+	if len(sent) != 2 {
+		t.Fatalf("merged rules = %d; want 2 (pre-existing + new). Got: %#v", len(sent), sent)
+	}
+	if sent[0].ID != "pre-existing-rule" {
+		t.Errorf("pre-existing rule was lost; rules[0].ID = %q", sent[0].ID)
+	}
+}
+
+// TestCreateAbortMPUInvalidDays confirms validation returns a 422 error
+// when days_after_initiation <= 0 and does not call SetBucketLifecycle.
+func TestCreateAbortMPUInvalidDays(t *testing.T) {
+	t.Parallel()
+	p, s := newTestProcessor(t, nil)
+	_, err := p.CreateAbortMPU(context.Background(), "b", 0, "", "actor", "ip")
+	if err == nil {
+		t.Fatal("want error for days_after_initiation=0; got nil")
+	}
+	var ae *apierror.Error
+	if !errors.As(err, &ae) {
+		t.Fatalf("want *apierror.Error; got %T", err)
+	}
+	if ae.HTTPStatus != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d; want 422", ae.HTTPStatus)
+	}
+	if len(s.setCalls) != 0 {
+		t.Errorf("SetBucketLifecycle called %d times; want 0 on validation failure", len(s.setCalls))
+	}
+}

@@ -22,6 +22,22 @@ func TestLoadDefaults(t *testing.T) {
 	require.Equal(t, "proxy", cfg.DownloadProxyMode)
 	require.False(t, cfg.MetricsEnabled)
 	require.True(t, cfg.SessionCookieSecure, "session cookie Secure attribute defaults to true")
+	require.Positive(t, cfg.MetricsPollInterval, "MetricsPollInterval default must be positive")
+	require.Positive(t, cfg.MetricsRetention, "MetricsRetention default must be positive")
+}
+
+func TestLoadRejectsZeroMetricsPollInterval(t *testing.T) {
+	t.Setenv("HARBORMASTER_DATA_DIR", t.TempDir())
+	t.Setenv("HARBORMASTER_METRICS_POLL_INTERVAL", "0")
+	_, err := Load()
+	require.ErrorContains(t, err, "HARBORMASTER_METRICS_POLL_INTERVAL must be positive")
+}
+
+func TestLoadRejectsZeroMetricsRetention(t *testing.T) {
+	t.Setenv("HARBORMASTER_DATA_DIR", t.TempDir())
+	t.Setenv("HARBORMASTER_METRICS_RETENTION", "0")
+	_, err := Load()
+	require.ErrorContains(t, err, "HARBORMASTER_METRICS_RETENTION must be positive")
 }
 
 func TestLoadSessionCookieSecureCanBeDisabled(t *testing.T) {

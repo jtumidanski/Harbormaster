@@ -22,6 +22,7 @@ import (
 	"github.com/jtumidanski/Harbormaster/internal/db"
 	"github.com/jtumidanski/Harbormaster/internal/jobs/bucketempty"
 	"github.com/jtumidanski/Harbormaster/internal/lifecycle"
+	"github.com/jtumidanski/Harbormaster/internal/metrics"
 	hmminio "github.com/jtumidanski/Harbormaster/internal/minio"
 	"github.com/jtumidanski/Harbormaster/internal/objects"
 	"github.com/jtumidanski/Harbormaster/internal/observability/log"
@@ -91,6 +92,14 @@ func runServe(ctx context.Context, _ io.Writer) error {
 	authProc := auth.NewProcessor(gdb).WithAudit(auditProc)
 	limiter := auth.NewLoginRateLimiter(5*time.Minute, 5)
 	pool := hmminio.NewEmpty()
+
+	// --- E10 wiring: metrics store, collector, poller, retention sweeper --
+	// pool is declared above; the poller goroutines exit when ctx is cancelled.
+	metricsStore := metrics.NewStore(gdb)
+	metricsCollector := metrics.NewCollector(newMetricsSourceGetter(pool))
+	metricsProc := metrics.NewProcessor(metricsStore, cfg.MetricsPollInterval)
+	metrics.StartPoller(ctx, metricsCollector, metricsStore, cfg.MetricsPollInterval)
+	metrics.StartRetentionSweeper(ctx, metricsStore, cfg.MetricsRetention, 24*time.Hour)
 	connProc := connection.NewProcessor(gdb, cipher, pool)
 	connProc.Audit = auditProc
 	// The in-memory pool starts empty on every boot. Rebuild it from the
@@ -171,6 +180,9 @@ func runServe(ctx context.Context, _ io.Writer) error {
 	saProc := users.NewServiceAccountProcessor(newSAClientGetter(pool), policyMat).
 		WithLogger(logger).
 		WithAudit(auditProc)
+	policyProc := policies.NewProcessor(newPoliciesClientGetter(pool)).
+		WithLogger(logger).
+		WithAudit(auditProc)
 
 	// --- M5 wiring: dashboard aggregator -----------------------------------
 	// The dashboard fan-out hits madmin.ServerInfo via a PoolGetter adapter
@@ -226,10 +238,16 @@ func runServe(ctx context.Context, _ io.Writer) error {
 			// templates surface in one go; both processors share the
 			// materializer wired above.
 			users.Routes(usersProc, saProc)(g)
+			// C6: policies CRUD (list, get, create, update, delete).
+			// Mounts /policies + /policies/{name} under the same protected
+			// API surface.
+			policies.Routes(policyProc)(g)
 			// M5: dashboard aggregate (action-style /dashboard) and
 			// audit-event query collection (JSON:API /audit-events).
 			dashboard.Routes(dashboardProc)(g)
 			audit.Routes(auditProc)(g)
+			// E10: metrics time-series query endpoint (GET /metrics).
+			metrics.Routes(metricsProc)(g)
 		})
 	}
 

@@ -233,4 +233,163 @@ describe("CreateRuleDialog", () => {
       expect(screen.getByText("Must be positive")).toBeInTheDocument();
     });
   });
+
+  it("non-blocking warning: versioningEnabled=false shows alert but still submits noncurrent-expiration", async () => {
+    const spy = vi.spyOn(api, "createRule").mockResolvedValue({
+      id: "rule-5",
+      managed: true,
+      kind: "noncurrent-expiration",
+      noncurrent_days: 5,
+      newer_noncurrent_versions: 2,
+      prefix: "data/",
+    });
+    const user = userEvent.setup();
+    const qc = makeQueryClient();
+    render(
+      <Wrapper qc={qc}>
+        <CreateRuleDialog
+          open={true}
+          onOpenChange={() => {}}
+          bucket="photos"
+          versioningEnabled={false}
+        />
+      </Wrapper>,
+    );
+
+    // Switch to noncurrent-expiration kind
+    const kindTrigger = screen.getByRole("combobox", { name: /rule kind/i });
+    await user.click(kindTrigger);
+    const option = await screen.findByRole("option", { name: /noncurrent versions/i });
+    await user.click(option);
+
+    // Warning must be visible before submission
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+    });
+
+    // Fill in valid values
+    const noncurrentDaysInput = await screen.findByLabelText(/noncurrent days/i);
+    await user.clear(noncurrentDaysInput);
+    await user.type(noncurrentDaysInput, "5");
+
+    const newerVersionsInput = screen.getByLabelText(/newer noncurrent versions/i);
+    await user.clear(newerVersionsInput);
+    await user.type(newerVersionsInput, "2");
+
+    const prefixInput = screen.getByLabelText(/prefix/i);
+    await user.type(prefixInput, "data/");
+
+    // Submit — the warning must NOT block the call
+    await user.click(screen.getByRole("button", { name: /add rule/i }));
+
+    await waitFor(() => {
+      expect(spy).toHaveBeenCalledWith("photos", {
+        kind: "noncurrent-expiration",
+        noncurrent_days: 5,
+        newer_noncurrent_versions: 2,
+        prefix: "data/",
+      });
+    });
+  });
+
+  it("pointer→field mapping: days_after_initiation maps to abort-mpu field; newer_noncurrent_versions maps to noncurrent field; unmatched pointer falls back to toast", async () => {
+    const { AppError } = await import("@/lib/api/errors");
+
+    // Case 1: /data/attributes/days_after_initiation on abort-incomplete-multipart
+    {
+      const spy = vi.spyOn(api, "createRule").mockRejectedValue(
+        new AppError({
+          status: 422,
+          code: "validation_error",
+          message: "Too large",
+          pointer: "/data/attributes/days_after_initiation",
+        }),
+      );
+      const user = userEvent.setup();
+      const qc = makeQueryClient();
+      const { unmount } = render(
+        <Wrapper qc={qc}>
+          <CreateRuleDialog open={true} onOpenChange={() => {}} bucket="photos" />
+        </Wrapper>,
+      );
+
+      const kindTrigger = screen.getByRole("combobox", { name: /rule kind/i });
+      await user.click(kindTrigger);
+      const option = await screen.findByRole("option", { name: /abort incomplete multipart/i });
+      await user.click(option);
+
+      await user.click(screen.getByRole("button", { name: /add rule/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText("Too large")).toBeInTheDocument();
+      });
+
+      spy.mockRestore();
+      unmount();
+      cleanup();
+    }
+
+    // Case 2: /data/attributes/newer_noncurrent_versions on noncurrent-expiration
+    {
+      const spy = vi.spyOn(api, "createRule").mockRejectedValue(
+        new AppError({
+          status: 422,
+          code: "validation_error",
+          message: "Too many versions",
+          pointer: "/data/attributes/newer_noncurrent_versions",
+        }),
+      );
+      const user = userEvent.setup();
+      const qc = makeQueryClient();
+      const { unmount } = render(
+        <Wrapper qc={qc}>
+          <CreateRuleDialog open={true} onOpenChange={() => {}} bucket="photos" />
+        </Wrapper>,
+      );
+
+      const kindTrigger = screen.getByRole("combobox", { name: /rule kind/i });
+      await user.click(kindTrigger);
+      const option = await screen.findByRole("option", { name: /noncurrent versions/i });
+      await user.click(option);
+
+      await user.click(screen.getByRole("button", { name: /add rule/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText("Too many versions")).toBeInTheDocument();
+      });
+
+      spy.mockRestore();
+      unmount();
+      cleanup();
+    }
+
+    // Case 3: unmatched pointer (e.g. /data/attributes/unknown_field) falls back to toast.
+    // The Toaster is rendered inside a container that the Dialog marks aria-hidden, so we
+    // query with { hidden: true } to find the toast element regardless.
+    {
+      vi.spyOn(api, "createRule").mockRejectedValue(
+        new AppError({
+          status: 422,
+          code: "validation_error",
+          message: "Unknown field error",
+          pointer: "/data/attributes/unknown_field",
+        }),
+      );
+      const user = userEvent.setup();
+      const qc = makeQueryClient();
+      render(
+        <Wrapper qc={qc}>
+          <CreateRuleDialog open={true} onOpenChange={() => {}} bucket="photos" />
+        </Wrapper>,
+      );
+
+      await user.click(screen.getByRole("button", { name: /add rule/i }));
+
+      await waitFor(() => {
+        const statuses = screen.getAllByRole("status", { hidden: true });
+        const text = statuses.map((n) => n.textContent ?? "").join(" ");
+        expect(text).toContain("Unknown field error");
+      });
+    }
+  });
 });

@@ -18,6 +18,18 @@ import (
 	"github.com/jtumidanski/Harbormaster/internal/jsonapi"
 )
 
+// writeActionJSON writes a plain-JSON response with the given HTTP
+// status code. The body is marshalled as-is; no JSON:API envelope is
+// applied. Used by action endpoints that return a success payload
+// (restore, undelete) rather than a 204.
+func writeActionJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(body)
+}
+
 // actorFromRequest pulls the authenticated username and source IP off the
 // session context populated by auth.RequireSession. Falls back to the raw
 // remote address when no session is attached (defence in depth — these
@@ -57,6 +69,10 @@ func Routes(p *Processor) func(chi.Router) {
 		r.Delete("/buckets/{bucket}/objects", h.delete)
 		r.Get("/buckets/{bucket}/objects/download", h.download)
 		r.Post("/buckets/{bucket}/objects/share-links", h.shareLink)
+		r.Get("/buckets/{bucket}/objects/versions", h.listVersions)
+		r.Post("/buckets/{bucket}/objects/restore-version", h.restoreVersion)
+		r.Delete("/buckets/{bucket}/objects/version", h.deleteVersion)
+		r.Post("/buckets/{bucket}/objects/undelete", h.undelete)
 	}
 }
 
@@ -226,13 +242,17 @@ func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
 // DownloadProxyMode. Proxy mode streams through Harbormaster (the
 // network egress goes through us); direct mode hands the browser a
 // presigned URL it loads directly from MinIO.
+//
+// An optional version_id query parameter selects a specific object
+// version; absent or empty fetches the current version.
 func (h *handler) download(w http.ResponseWriter, r *http.Request) {
 	bucket := chi.URLParam(r, "bucket")
 	key := r.URL.Query().Get("key")
+	versionID := r.URL.Query().Get("version_id")
 
 	switch h.p.Config.DownloadProxyMode {
 	case "direct":
-		urlStr, _, err := h.p.PresignedURL(r.Context(), bucket, key, DirectModeDownloadTTL)
+		urlStr, _, err := h.p.PresignedURL(r.Context(), bucket, key, versionID, DirectModeDownloadTTL)
 		if err != nil {
 			apierror.Write(w, apierror.StyleAction, err)
 			return
@@ -245,7 +265,7 @@ func (h *handler) download(w http.ResponseWriter, r *http.Request) {
 	default:
 		// "proxy" (and any unrecognised value as a safe default).
 		actor, ip := actorFromRequest(r)
-		rc, entry, err := h.p.Download(r.Context(), bucket, key, actor, ip)
+		rc, entry, err := h.p.Download(r.Context(), bucket, key, versionID, actor, ip)
 		if err != nil {
 			apierror.Write(w, apierror.StyleAction, err)
 			return
@@ -266,6 +286,116 @@ func (h *handler) download(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.Copy(w, rc)
 	}
+}
+
+// listVersions returns one page of version history for a single object
+// key as a JSON:API collection of object_versions resources.
+//
+// Query parameters:
+//   - key          (required) — the object key
+//   - page[size]   (optional) — max versions per page; clamped to MaxPageSize
+//   - page[token]  (optional) — opaque cursor from a prior response
+func (h *handler) listVersions(w http.ResponseWriter, r *http.Request) {
+	bucket := chi.URLParam(r, "bucket")
+	q := r.URL.Query()
+	key := q.Get("key")
+	pageSize, _ := strconv.Atoi(q.Get("page[size]"))
+	pageToken := q.Get("page[token]")
+
+	res, err := h.p.ListVersions(r.Context(), bucket, key, pageSize, pageToken)
+	if err != nil {
+		apierror.Write(w, apierror.StyleJSONAPI, err)
+		return
+	}
+
+	resources := make([]jsonapi.Resource, 0, len(res.Versions))
+	for _, v := range res.Versions {
+		resources = append(resources, versionResource{ObjectVersion: v})
+	}
+
+	meta := &jsonapi.Meta{Page: &jsonapi.Page{
+		Size:      clampPageSize(pageSize),
+		NextToken: res.NextToken,
+	}}
+	var links *jsonapi.Links
+	if res.NextToken != "" {
+		links = &jsonapi.Links{Next: buildNextURL(r, res.NextToken)}
+	}
+
+	w.Header().Set("Content-Type", "application/vnd.api+json")
+	w.WriteHeader(http.StatusOK)
+	_ = h.enc.Collection(w, resources, meta, links)
+}
+
+// restoreVersion server-side copies a specific version back onto the key,
+// making it the new current version. The request body is plain JSON
+// with key and version_id fields.
+func (h *handler) restoreVersion(w http.ResponseWriter, r *http.Request) {
+	bucket := chi.URLParam(r, "bucket")
+	var body RestoreVersionRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		apierror.Write(w, apierror.StyleAction, apierror.New(
+			http.StatusBadRequest, "bad_request", "invalid JSON body"))
+		return
+	}
+
+	actor, ip := actorFromRequest(r)
+	v, err := h.p.RestoreVersion(r.Context(), bucket, body.Key, body.VersionID, actor, ip)
+	if err != nil {
+		apierror.Write(w, apierror.StyleAction, err)
+		return
+	}
+
+	writeActionJSON(w, http.StatusOK, map[string]any{
+		"key":            v.Key,
+		"version_id":     v.VersionID,
+		"restored_from":  body.VersionID,
+	})
+}
+
+// deleteVersion permanently deletes a single version of an object.
+// The key and version_id are carried in the query string; the body
+// must contain confirm:true to prevent accidental permanent deletes.
+func (h *handler) deleteVersion(w http.ResponseWriter, r *http.Request) {
+	bucket := chi.URLParam(r, "bucket")
+	q := r.URL.Query()
+	key := q.Get("key")
+	versionID := q.Get("version_id")
+
+	var body ConfirmRequest
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	actor, ip := actorFromRequest(r)
+	if err := h.p.DeleteVersion(r.Context(), bucket, key, versionID, body.Confirm, actor, ip); err != nil {
+		apierror.Write(w, apierror.StyleAction, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// undelete removes the latest delete marker from an object, exposing
+// the most-recent non-marker version. The request body is plain JSON
+// with a key field.
+func (h *handler) undelete(w http.ResponseWriter, r *http.Request) {
+	bucket := chi.URLParam(r, "bucket")
+	var body UndeleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		apierror.Write(w, apierror.StyleAction, apierror.New(
+			http.StatusBadRequest, "bad_request", "invalid JSON body"))
+		return
+	}
+
+	actor, ip := actorFromRequest(r)
+	v, err := h.p.Undelete(r.Context(), bucket, body.Key, actor, ip)
+	if err != nil {
+		apierror.Write(w, apierror.StyleAction, err)
+		return
+	}
+
+	writeActionJSON(w, http.StatusOK, map[string]any{
+		"key":        v.Key,
+		"version_id": v.VersionID,
+	})
 }
 
 // shareLink mints an operator-facing share link. The body is a plain

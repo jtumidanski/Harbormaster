@@ -310,10 +310,16 @@ func (p *Processor) Delete(ctx context.Context, bucket, key, actor, sourceIP str
 // headers before writing the body. The caller owns the returned
 // ReadCloser and must Close it.
 //
+// versionID selects a specific version; an empty string fetches the
+// current version.
+//
 // This is the proxy-mode path. The direct-mode path uses PresignedURL
 // instead.
-func (p *Processor) Download(ctx context.Context, bucket, key, actor, sourceIP string) (io.ReadCloser, Entry, error) {
+func (p *Processor) Download(ctx context.Context, bucket, key, versionID, actor, sourceIP string) (io.ReadCloser, Entry, error) {
 	payload := map[string]any{"bucket": bucket, "key": key}
+	if versionID != "" {
+		payload["version_id"] = versionID
+	}
 	failAudit := func(err error) error {
 		p.recordAudit(ctx, audit.Event{
 			Actor:          actor,
@@ -336,11 +342,11 @@ func (p *Processor) Download(ctx context.Context, bucket, key, actor, sourceIP s
 	}
 	// Stat first so an unknown key surfaces as a typed envelope before
 	// we open the (potentially large) body stream.
-	info, err := statObject(ctx, s3, bucket, key)
+	info, err := statObjectVersion(ctx, s3, bucket, key, versionID)
 	if err != nil {
 		return nil, Entry{}, failAudit(mapClientError(err, "failed to stat object"))
 	}
-	rc, err := getObject(ctx, s3, bucket, key)
+	rc, err := getObjectVersion(ctx, s3, bucket, key, versionID)
 	if err != nil {
 		return nil, Entry{}, failAudit(mapClientError(err, "failed to open object stream"))
 	}
@@ -366,10 +372,13 @@ func (p *Processor) Download(ctx context.Context, bucket, key, actor, sourceIP s
 // timestamp is computed locally so the REST layer can echo it back in
 // the response without needing to parse the URL.
 //
+// versionID selects a specific version; an empty string presigns the
+// current version.
+//
 // ttl is NOT clamped by ProcessorConfig.ShareLinkMaxTTL — that ceiling
 // applies only to operator-minted share links, not to the internal
 // 5-minute direct-mode redirect. Callers must pass a sane ttl.
-func (p *Processor) PresignedURL(ctx context.Context, bucket, key string, ttl time.Duration) (string, time.Time, error) {
+func (p *Processor) PresignedURL(ctx context.Context, bucket, key, versionID string, ttl time.Duration) (string, time.Time, error) {
 	if err := ValidateObjectKey(key); err != nil {
 		return "", time.Time{}, apierror.New(http.StatusBadRequest, "object_invalid_key", err.Error())
 	}
@@ -377,7 +386,12 @@ func (p *Processor) PresignedURL(ctx context.Context, bucket, key string, ttl ti
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	u, err := presignedGet(ctx, s3, bucket, key, ttl, nil)
+	var params url.Values
+	if versionID != "" {
+		params = url.Values{}
+		params.Set("versionId", versionID)
+	}
+	u, err := presignedGet(ctx, s3, bucket, key, ttl, params)
 	if err != nil {
 		return "", time.Time{}, mapClientError(err, "failed to mint presigned URL")
 	}

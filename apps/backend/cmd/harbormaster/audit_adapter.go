@@ -123,6 +123,28 @@ func (a objectS3Adapter) GetObject(ctx context.Context, bucket, object string, o
 	return a.Client.GetObject(ctx, bucket, object, opts)
 }
 
+// ListObjectVersions drains the high-level Client.ListObjects channel
+// (WithVersions=true) into a slice, capping at maxScan to bound
+// pathological keys. The bool return is "truncated" — true when the scan
+// hit maxScan before the channel closed.
+func (a objectS3Adapter) ListObjectVersions(ctx context.Context, bucket, key string, maxScan int) ([]miniogo.ObjectInfo, bool, error) {
+	ch := a.ListObjects(ctx, bucket, miniogo.ListObjectsOptions{
+		Prefix:       key,
+		WithVersions: true,
+	})
+	var out []miniogo.ObjectInfo
+	for info := range ch {
+		if info.Err != nil {
+			return nil, false, info.Err
+		}
+		out = append(out, info)
+		if len(out) >= maxScan {
+			return out, true, nil
+		}
+	}
+	return out, false, nil
+}
+
 // newObjectClientGetter returns an objects.ClientGetter bound to the live
 // MinIO pool. Each call resolves the current client, wraps it in
 // objectS3Adapter so ListObjectsV2 routes through miniogo.Core, and hands

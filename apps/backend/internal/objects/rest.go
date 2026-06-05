@@ -86,3 +86,60 @@ type ShareLinkRequest struct {
 	Key            string `json:"key"`
 	ExpiresSeconds int    `json:"expires_seconds"`
 }
+
+// RestoreVersionRequest is the body accepted by POST /restore-version.
+type RestoreVersionRequest struct {
+	Key       string `json:"key"`
+	VersionID string `json:"version_id"`
+}
+
+// ConfirmRequest is the body accepted by DELETE /version. The Confirm
+// field must be true to authorise a permanent version delete.
+type ConfirmRequest struct {
+	Confirm bool `json:"confirm"`
+}
+
+// UndeleteRequest is the body accepted by POST /undelete.
+type UndeleteRequest struct {
+	Key string `json:"key"`
+}
+
+// versionResource is the JSON:API wrapper for an ObjectVersion. The wire
+// type is "object_versions"; the resource ID combines key and version_id
+// so it is unique within a bucket's version history.
+type versionResource struct {
+	ObjectVersion
+}
+
+// ResourceType returns the canonical JSON:API type string.
+func (versionResource) ResourceType() string { return "object_versions" }
+
+// ResourceID returns a composite "<key>@<version_id>" string that is
+// unique within a bucket's version history.
+func (v versionResource) ResourceID() string { return v.Key + "@" + v.VersionID }
+
+// MarshalJSON renders the attributes block. Size is a nullable *int64
+// (nil for delete markers). Fields with zero/empty values that are
+// semantically empty (etag, content_type) use omitempty to keep delete-
+// marker payloads lean.
+func (v versionResource) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Key            string    `json:"key"`
+		VersionID      string    `json:"version_id"`
+		Size           *int64    `json:"size"`
+		LastModified   time.Time `json:"last_modified"`
+		ETag           string    `json:"etag,omitempty"`
+		ContentType    string    `json:"content_type,omitempty"`
+		IsLatest       bool      `json:"is_latest"`
+		IsDeleteMarker bool      `json:"is_delete_marker"`
+	}{
+		Key:            v.Key,
+		VersionID:      v.VersionID,
+		Size:           v.Size,
+		LastModified:   v.LastModified,
+		ETag:           v.ETag,
+		ContentType:    v.ContentType,
+		IsLatest:       v.IsLatest,
+		IsDeleteMarker: v.IsDeleteMarker,
+	})
+}

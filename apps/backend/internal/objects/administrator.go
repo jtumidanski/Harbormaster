@@ -48,28 +48,6 @@ func removeObject(ctx context.Context, s3 s3API, bucket, key string) error {
 	return nil
 }
 
-// statObject reads the object metadata in isolation. The proxy-mode
-// download path uses this to set Content-Length / Content-Type headers
-// before opening the body stream.
-func statObject(ctx context.Context, s3 s3API, bucket, key string) (miniogo.ObjectInfo, error) {
-	info, err := s3.StatObject(ctx, bucket, key, miniogo.StatObjectOptions{})
-	if err != nil {
-		return miniogo.ObjectInfo{}, fmt.Errorf("objects.statObject: %w", err)
-	}
-	return info, nil
-}
-
-// getObject opens a streaming reader against the object body. The
-// caller owns the returned ReadCloser and must Close it. The proxy-mode
-// download handler is the only call site today.
-func getObject(ctx context.Context, s3 s3API, bucket, key string) (io.ReadCloser, error) {
-	rc, err := s3.GetObject(ctx, bucket, key, miniogo.GetObjectOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("objects.getObject: %w", err)
-	}
-	return rc, nil
-}
-
 // presignedGet mints a presigned GET URL valid for ttl. Used by both
 // the direct-mode download handler (5-minute fixed TTL) and the share-
 // link minting endpoint (operator-supplied TTL clamped at the

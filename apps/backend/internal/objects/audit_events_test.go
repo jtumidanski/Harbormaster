@@ -116,7 +116,7 @@ func TestAuditEvent_ObjectDeleteSuccess(t *testing.T) {
 
 func TestAuditEvent_ObjectDownloadProxySuccess(t *testing.T) {
 	p, a, _ := newAuditedProcessor(t)
-	rc, _, err := p.Download(context.Background(), "photos", "cat.jpg", "operator", "10.0.0.3")
+	rc, _, err := p.Download(context.Background(), "photos", "cat.jpg", "", "operator", "10.0.0.3")
 	require.NoError(t, err)
 	_, _ = io.Copy(io.Discard, rc)
 	_ = rc.Close()

@@ -1,0 +1,91 @@
+{
+  "task": "task-002-p0-ui-feature-parity",
+  "scope": "git diff main...HEAD apps/backend/**/*.go",
+  "path": "apps/backend",
+  "date": "2026-06-05",
+  "build": "pass",
+  "vet": "pass",
+  "lint": "pass",
+  "testsRace": "pass",
+  "overallStatus": "pass",
+  "architectureNote": "Service uses chi + internal/jsonapi + internal/apierror, NOT the api2go/server.RegisterHandler template named in the skill. DOM/SUB IDs evaluated by principle (DDD layering, immutability, error->status, audit coverage). Deviation is pre-existing and project-wide, not introduced by this task.",
+  "domains": [
+    {
+      "name": "policies",
+      "type": "domain-new",
+      "checks": [
+        {"id": "layering", "status": "pass", "evidence": "model.go/provider.go/administrator.go/processor.go/resource.go/rest.go"},
+        {"id": "immutable-model", "status": "pass", "evidence": "policies/model.go:16-28"},
+        {"id": "unexported-iface+exported-mirror+NewClientGetter", "status": "pass", "evidence": "administrator.go:87-95; processor.go:22-49"},
+        {"id": "handlers-call-processor-only", "status": "pass", "evidence": "resource.go:52-132"},
+        {"id": "error-status-mapping", "status": "pass", "evidence": "processor.go:142-165,199-324"},
+        {"id": "reserved-name-guard", "status": "pass", "evidence": "processor.go:148-151"},
+        {"id": "read-only-guard", "status": "pass", "evidence": "processor.go:240-243,280-283"},
+        {"id": "in-use-guard", "status": "pass", "evidence": "processor.go:288-307; administrator.go:35-65"},
+        {"id": "audit-mutation-failure+success", "status": "pass", "evidence": "processor.go:200-225,237-266,277-322"},
+        {"id": "audit-no-document", "status": "pass", "evidence": "processor.go:132-135,221-223,261-263,318-320"}
+      ]
+    },
+    {
+      "name": "metrics",
+      "type": "domain-new",
+      "checks": [
+        {"id": "layering", "status": "pass", "evidence": "store.go/collector.go/aggregator.go/processor.go/resource.go/rest.go"},
+        {"id": "endpoint-behind-auth", "status": "pass", "evidence": "serve.go:218-251"},
+        {"id": "poller-ctx-cancellation", "status": "pass", "evidence": "poller.go:29-44,49-70"},
+        {"id": "poller-wired-server-ctx-no-leak", "status": "pass", "evidence": "serve.go:101-102"},
+        {"id": "minio-producer-goroutine-teardown", "status": "pass", "evidence": "cmd/harbormaster/audit_adapter.go:137-157"},
+        {"id": "store-withcontext", "status": "pass", "evidence": "store.go:31,41"}
+      ]
+    },
+    {
+      "name": "objects-versions",
+      "type": "domain-extended",
+      "checks": [
+        {"id": "s3api-split-version-list+copy", "status": "pass", "evidence": "processor.go:53-66,80-93"},
+        {"id": "objectversion-immutable-deletemarker-nil-size", "status": "pass", "evidence": "objects/provider.go versionFromObjectInfo"},
+        {"id": "listversions-opaque-cursor+sibling-filter", "status": "pass", "evidence": "processor.go:565-604; administrator.go:77-89"},
+        {"id": "restore-reject-deletemarker+audit-both", "status": "pass", "evidence": "processor.go:608-649"},
+        {"id": "deleteversion-confirm-gate+audit-both", "status": "pass", "evidence": "processor.go:654-681"},
+        {"id": "undelete-not-delete-marked-guard+audit-both", "status": "pass", "evidence": "processor.go:686-719"}
+      ]
+    },
+    {
+      "name": "users-custom-policy",
+      "type": "domain-extended",
+      "checks": [
+        {"id": "never-detach-builtin-foreign", "status": "pass", "evidence": "processor.go:437-444,477-590,595-607"},
+        {"id": "requested-custom-validated", "status": "pass", "evidence": "processor.go:426-431"},
+        {"id": "per-policy-audit+umbrella-failure", "status": "pass", "evidence": "processor.go:553-588,393-405"},
+        {"id": "secret-not-retained-not-audited", "status": "pass", "evidence": "processor.go:207-281,388-392"}
+      ]
+    },
+    {
+      "name": "lifecycle-kinds",
+      "type": "domain-extended",
+      "checks": [
+        {"id": "kind-discriminated-create", "status": "pass", "evidence": "resource.go:104-117"},
+        {"id": "managed-iff-invariant", "status": "pass", "evidence": "classifier.go isExpirationShaped/isNoncurrentShaped/isAbortMPUShaped"},
+        {"id": "audit-create-delete-both-outcomes", "status": "pass", "evidence": "processor.go:151,179-185,218-224,319-363"}
+      ]
+    }
+  ],
+  "security": [
+    {"id": "SEC-04-sanitize-unconditional", "status": "pass", "evidence": "audit/processor.go:30-44"},
+    {"id": "SEC-04-sensitive-key-regex", "status": "pass", "evidence": "audit/sanitize.go:8"},
+    {"id": "SEC-04-no-secrets-test-all-actions", "status": "pass", "evidence": "audit/no_secrets_test.go:17-62"},
+    {"id": "SEC-04-no-presigned-url-test-all-actions", "status": "pass", "evidence": "audit/no_presigned_test.go:36-103"},
+    {"id": "SEC-no-policy-doc-in-audit", "status": "pass", "evidence": "policies/processor.go payloads {policy:name}"},
+    {"id": "SEC-no-hardcoded-secrets", "status": "pass", "evidence": "grep across changed dirs: none"},
+    {"id": "meta-details-path", "status": "pass", "evidence": "apierror.go:66-69; jsonapi/errors.go:49-51"}
+  ],
+  "blocking": [],
+  "nonBlocking": [
+    "gofmt: 6 task-changed non-test files not gofmt-clean; concrete intro at objects/resource.go:128 ('restored_from' extra space). Not a done-bar failure (.golangci.yml formatters block empty; golangci-lint passes). Run gofmt -w.",
+    "metrics/store.go:60 RetentionSweep omits db.WithContext (background-only; cosmetic vs Insert/Query)."
+  ],
+  "informational": [
+    "objects/administrator.go:82 out:=infos[:0] in-place filter is safe (write index never overtakes read; infos freshly allocated per adapter call).",
+    "json.NewDecoder body parsing in objects/users action handlers matches pre-existing StyleAction convention, not the api2go RegisterInputHandler template."
+  ]
+}

@@ -148,7 +148,34 @@ func (p *Processor) Create(ctx context.Context, bucket string, days int, prefix,
 		"days":    days,
 		"prefix":  prefix,
 	}
-	failAudit := func(err error) error {
+	failAudit := p.lifecycleFailAudit(ctx, actor, sourceIP, bucket, payload)
+	if err := validateDays(days); err != nil {
+		return Rule{}, failAudit(apierror.New(http.StatusUnprocessableEntity,
+			"invalid_lifecycle_rule", err.Error()).WithPointer("/data/attributes/days"))
+	}
+	s3, err := p.clients(ctx)
+	if err != nil {
+		return Rule{}, failAudit(err)
+	}
+	newRule := mlifecycle.Rule{
+		ID:     id,
+		Status: "Enabled",
+		Expiration: mlifecycle.Expiration{
+			Days: mlifecycle.ExpirationDays(days),
+		},
+		RuleFilter: mlifecycle.Filter{
+			Prefix: prefix,
+		},
+	}
+	return p.upsertManaged(ctx, s3, bucket, newRule, actor, sourceIP, payload, failAudit)
+}
+
+// lifecycleFailAudit returns a closure that records a FAILURE audit row
+// and passes the error through. Callers assign the result to a local
+// failAudit variable and call it on every error path so the audit trail
+// is complete without repeating the boilerplate in each method.
+func (p *Processor) lifecycleFailAudit(ctx context.Context, actor, sourceIP, bucket string, payload map[string]any) func(error) error {
+	return func(err error) error {
 		p.recordAudit(ctx, audit.Event{
 			Actor:          actor,
 			SourceIP:       sourceIP,
@@ -161,30 +188,28 @@ func (p *Processor) Create(ctx context.Context, bucket string, days int, prefix,
 		})
 		return err
 	}
-	if err := validateDays(days); err != nil {
-		return Rule{}, failAudit(apierror.New(http.StatusUnprocessableEntity,
-			"invalid_lifecycle_rule", err.Error()).WithPointer("/data/attributes/days"))
-	}
-	s3, err := p.clients(ctx)
-	if err != nil {
-		return Rule{}, failAudit(err)
-	}
+}
+
+// upsertManaged performs the read-modify-write round-trip shared by all
+// Create* methods: it fetches the current lifecycle config (treating
+// NoSuchLifecycleConfiguration as "empty"), merges newRule via upsertRule,
+// writes the result back, and records a SUCCESS audit row. On any error it
+// calls failAudit and returns. The returned Rule is classify(newRule).
+func (p *Processor) upsertManaged(
+	ctx context.Context,
+	s3 s3API,
+	bucket string,
+	newRule mlifecycle.Rule,
+	actor, sourceIP string,
+	payload map[string]any,
+	failAudit func(error) error,
+) (Rule, error) {
 	cfg, err := s3.GetBucketLifecycle(ctx, bucket)
 	if err != nil && !isNoSuchLifecycleConfiguration(err) {
 		return Rule{}, failAudit(mapClientError(err, "failed to load lifecycle configuration"))
 	}
 	if cfg == nil {
 		cfg = mlifecycle.NewConfiguration()
-	}
-	newRule := mlifecycle.Rule{
-		ID:     id,
-		Status: "Enabled",
-		Expiration: mlifecycle.Expiration{
-			Days: mlifecycle.ExpirationDays(days),
-		},
-		RuleFilter: mlifecycle.Filter{
-			Prefix: prefix,
-		},
 	}
 	cfg.Rules = upsertRule(cfg.Rules, newRule)
 	if err := s3.SetBucketLifecycle(ctx, bucket, cfg); err != nil {
@@ -200,6 +225,80 @@ func (p *Processor) Create(ctx context.Context, bucket string, days int, prefix,
 		PayloadSummary: payload,
 	})
 	return classify(newRule), nil
+}
+
+// CreateNoncurrent generates a deterministic-ID noncurrent-version-expiration
+// rule from noncurrentDays/newerNoncurrent/prefix and merges it into the
+// bucket's existing lifecycle configuration via SetBucketLifecycle. If a
+// rule with the same generated ID already exists it is replaced in place
+// (idempotent for the "click create twice" UI case).
+func (p *Processor) CreateNoncurrent(ctx context.Context, bucket string, noncurrentDays, newerNoncurrent int, prefix, actor, sourceIP string) (Rule, error) {
+	id := generateNoncurrentRuleID(noncurrentDays, prefix)
+	payload := map[string]any{
+		"bucket":                    bucket,
+		"rule_id":                   id,
+		"kind":                      KindNoncurrentExpiration,
+		"noncurrent_days":           noncurrentDays,
+		"newer_noncurrent_versions": newerNoncurrent,
+		"prefix":                    prefix,
+	}
+	failAudit := p.lifecycleFailAudit(ctx, actor, sourceIP, bucket, payload)
+	if err := validateNoncurrent(noncurrentDays, newerNoncurrent); err != nil {
+		return Rule{}, failAudit(apierror.New(http.StatusUnprocessableEntity,
+			"invalid_lifecycle_rule", err.Error()).WithPointer("/data/attributes/noncurrent_days"))
+	}
+	s3, err := p.clients(ctx)
+	if err != nil {
+		return Rule{}, failAudit(err)
+	}
+	newRule := mlifecycle.Rule{
+		ID:     id,
+		Status: "Enabled",
+		NoncurrentVersionExpiration: mlifecycle.NoncurrentVersionExpiration{
+			NoncurrentDays:          mlifecycle.ExpirationDays(noncurrentDays),
+			NewerNoncurrentVersions: newerNoncurrent,
+		},
+		RuleFilter: mlifecycle.Filter{
+			Prefix: prefix,
+		},
+	}
+	return p.upsertManaged(ctx, s3, bucket, newRule, actor, sourceIP, payload, failAudit)
+}
+
+// CreateAbortMPU generates a deterministic-ID abort-incomplete-multipart-upload
+// rule from days/prefix and merges it into the bucket's existing lifecycle
+// configuration via SetBucketLifecycle. If a rule with the same generated ID
+// already exists it is replaced in place (idempotent for the "click create
+// twice" UI case).
+func (p *Processor) CreateAbortMPU(ctx context.Context, bucket string, days int, prefix, actor, sourceIP string) (Rule, error) {
+	id := generateAbortMPURuleID(days, prefix)
+	payload := map[string]any{
+		"bucket":                bucket,
+		"rule_id":               id,
+		"kind":                  KindAbortIncompleteMPU,
+		"days_after_initiation": days,
+		"prefix":                prefix,
+	}
+	failAudit := p.lifecycleFailAudit(ctx, actor, sourceIP, bucket, payload)
+	if err := validateDaysAfterInitiation(days); err != nil {
+		return Rule{}, failAudit(apierror.New(http.StatusUnprocessableEntity,
+			"invalid_lifecycle_rule", err.Error()).WithPointer("/data/attributes/days_after_initiation"))
+	}
+	s3, err := p.clients(ctx)
+	if err != nil {
+		return Rule{}, failAudit(err)
+	}
+	newRule := mlifecycle.Rule{
+		ID:     id,
+		Status: "Enabled",
+		AbortIncompleteMultipartUpload: mlifecycle.AbortIncompleteMultipartUpload{
+			DaysAfterInitiation: mlifecycle.ExpirationDays(days),
+		},
+		RuleFilter: mlifecycle.Filter{
+			Prefix: prefix,
+		},
+	}
+	return p.upsertManaged(ctx, s3, bucket, newRule, actor, sourceIP, payload, failAudit)
 }
 
 // Delete removes the rule with id ruleID from bucket's lifecycle

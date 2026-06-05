@@ -718,12 +718,18 @@ func findVersion(infos []miniogo.ObjectInfo, versionID string) (miniogo.ObjectIn
 	return miniogo.ObjectInfo{}, false
 }
 
-// findLatest returns the entry flagged IsLatest, if any.
+// findLatest returns the entry flagged IsLatest, falling back to the
+// first entry when none is explicitly flagged (WithVersions listings
+// are newest-first per S3 semantics so index 0 is effectively the
+// latest). Returns false only when infos is empty.
 func findLatest(infos []miniogo.ObjectInfo) (miniogo.ObjectInfo, bool) {
 	for _, info := range infos {
 		if info.IsLatest {
 			return info, true
 		}
+	}
+	if len(infos) > 0 {
+		return infos[0], true
 	}
 	return miniogo.ObjectInfo{}, false
 }

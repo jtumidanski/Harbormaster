@@ -368,3 +368,18 @@ func TestUndelete_RemovesDeleteMarkerAndReturnsExposed(t *testing.T) {
 	require.Equal(t, []string{"vdm"}, stub.removedVerIDs)
 	require.Equal(t, "v1", v.VersionID)
 }
+
+// TestListVersions_InvalidPageToken asserts that a non-base64url page
+// token ("!!not-base64!!") is rejected with HTTP 400 and code
+// "bad_request". The "!" character is illegal in RawURL base64, so
+// DecodeString returns an error before Atoi is ever attempted.
+func TestListVersions_InvalidPageToken(t *testing.T) {
+	p, _ := newTestProcessor(t, &stubS3{versions: buildVersions()}, ProcessorConfig{})
+
+	_, err := p.ListVersions(context.Background(), "b", "k", 10, "!!not-base64!!")
+	require.Error(t, err)
+	var ae *apierror.Error
+	require.ErrorAs(t, err, &ae)
+	require.Equal(t, 400, ae.HTTPStatus)
+	require.Equal(t, "bad_request", ae.Code)
+}

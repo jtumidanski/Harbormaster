@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import type { UIEvent } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Download, Folder, Link as LinkIcon, Trash2 } from "lucide-react";
+import { Download, Folder, History, Link as LinkIcon, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ObjectListItem } from "./types";
 
@@ -26,6 +26,7 @@ export type VirtualizedObjectListProps = {
   onDelete: (key: string) => void;
   onShare: (key: string) => void;
   onPreview: (key: string, contentType: string, size: number) => void;
+  onVersions: (key: string) => void;
 };
 
 function formatBytes(bytes: number): string {
@@ -61,6 +62,7 @@ export function VirtualizedObjectList({
   onDelete,
   onShare,
   onPreview,
+  onVersions,
 }: VirtualizedObjectListProps) {
   // fetchingRef provides a stricter "one outstanding request" guarantee
   // than `isFetchingNextPage` alone: it flips on the moment we decide to
@@ -178,6 +180,15 @@ export function VirtualizedObjectList({
                       onClick={() => onShare(e.key)}
                     >
                       <LinkIcon className="h-4 w-4" aria-hidden="true" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Versions of ${e.key}`}
+                      onClick={() => onVersions(e.key)}
+                    >
+                      <History className="h-4 w-4" aria-hidden="true" />
                     </Button>
                     <Button
                       type="button"

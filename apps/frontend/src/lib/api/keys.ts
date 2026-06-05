@@ -18,6 +18,7 @@ export const bucketsKeys = {
 
 export const objectsKeys = {
   list: (bucket: string, prefix: string) => ["objects", bucket, prefix] as const,
+  versions: (bucket: string, key: string) => ["objects", bucket, "versions", key] as const,
 };
 
 export const lifecycleKeys = {

@@ -14,6 +14,7 @@ import {
 import { AppError } from "@/lib/api/errors";
 import { objectsKeys } from "@/lib/api/keys";
 import { Breadcrumb } from "./Breadcrumb";
+import { ObjectVersionsSheet } from "./ObjectVersionsSheet";
 import { PreviewPane } from "./PreviewPane";
 import { ShareLinkDialog } from "./ShareLinkDialog";
 import { UploadDialog } from "./UploadDialog";
@@ -54,6 +55,7 @@ export function ObjectBrowserPage({ bucket }: ObjectBrowserPageProps) {
   const [shareKey, setShareKey] = useState<string | null>(null);
   const [deleteKey, setDeleteKey] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewState>(null);
+  const [versionsKey, setVersionsKey] = useState<string | null>(null);
 
   const deleteMutation = useMutation({
     mutationFn: (key: string) => deleteObject(bucket, key),
@@ -110,6 +112,7 @@ export function ObjectBrowserPage({ bucket }: ObjectBrowserPageProps) {
           onDelete={(key) => setDeleteKey(key)}
           onShare={(key) => setShareKey(key)}
           onPreview={(key, contentType, size) => setPreview({ key, contentType, size })}
+          onVersions={(key) => setVersionsKey(key)}
         />
       )}
 
@@ -141,6 +144,18 @@ export function ObjectBrowserPage({ bucket }: ObjectBrowserPageProps) {
           objectKey={preview.key}
           contentType={preview.contentType}
           size={preview.size}
+        />
+      )}
+
+      {versionsKey !== null && (
+        <ObjectVersionsSheet
+          bucket={bucket}
+          objectKey={versionsKey}
+          prefix={prefix}
+          open={versionsKey !== null}
+          onOpenChange={(o) => {
+            if (!o) setVersionsKey(null);
+          }}
         />
       )}
 

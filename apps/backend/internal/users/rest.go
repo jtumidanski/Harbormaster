@@ -30,8 +30,8 @@ func (r UserResource) MarshalJSON() ([]byte, error) {
 		OtherPolicies     []string       `json:"other_policies"`
 	}
 	out := alias{
-		AccessKey:    r.AccessKey,
-		Status:       r.Status,
+		AccessKey:     r.AccessKey,
+		Status:        r.Status,
 		OtherPolicies: r.OtherPolicies,
 	}
 	if out.OtherPolicies == nil {
@@ -110,10 +110,10 @@ func (r CreatedUserResource) MarshalJSON() ([]byte, error) {
 		SecretKey         string         `json:"secret_key"`
 	}
 	out := alias{
-		AccessKey:    r.User.AccessKey,
-		Status:       r.User.Status,
+		AccessKey:     r.User.AccessKey,
+		Status:        r.User.Status,
 		OtherPolicies: r.User.OtherPolicies,
-		SecretKey:    r.SecretKey,
+		SecretKey:     r.SecretKey,
 	}
 	if out.OtherPolicies == nil {
 		out.OtherPolicies = []string{}

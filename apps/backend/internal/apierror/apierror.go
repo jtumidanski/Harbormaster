@@ -18,8 +18,8 @@ import (
 type Style int
 
 const (
-	StyleAction Style = iota // {"error":{"code","message","details?"}}
-	StyleJSONAPI             // {"errors":[{"status","code","title","detail","source"}]}
+	StyleAction  Style = iota // {"error":{"code","message","details?"}}
+	StyleJSONAPI              // {"errors":[{"status","code","title","detail","source"}]}
 )
 
 // Error is the typed error sentinel carried across handlers.
@@ -89,8 +89,12 @@ func contentType(s Style) string {
 }
 
 // Common sentinel constructors. Add additional codes as features land.
-func Unauthenticated() *Error { return New(http.StatusUnauthorized, "unauthenticated", "Authentication required.") }
-func CSRFInvalid() *Error     { return New(http.StatusForbidden, "csrf_token_invalid", "Missing or invalid CSRF token.") }
+func Unauthenticated() *Error {
+	return New(http.StatusUnauthorized, "unauthenticated", "Authentication required.")
+}
+func CSRFInvalid() *Error {
+	return New(http.StatusForbidden, "csrf_token_invalid", "Missing or invalid CSRF token.")
+}
 func NotFound(what string) *Error {
 	return New(http.StatusNotFound, "not_found", what+" not found")
 }

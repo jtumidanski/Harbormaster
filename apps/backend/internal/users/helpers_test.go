@@ -30,8 +30,8 @@ import (
 type stubAdmin struct {
 	mu sync.Mutex
 
-	users  map[string]madmin.UserInfo   // access_key -> info (PolicyName is comma-separated)
-	canned map[string]json.RawMessage   // name -> raw policy doc (for ListCannedPolicies)
+	users  map[string]madmin.UserInfo // access_key -> info (PolicyName is comma-separated)
+	canned map[string]json.RawMessage // name -> raw policy doc (for ListCannedPolicies)
 
 	addUserCalls       []addUserCall
 	addUserErr         error

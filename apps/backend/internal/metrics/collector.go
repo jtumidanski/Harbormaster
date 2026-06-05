@@ -13,11 +13,11 @@ import (
 // cluster/resource subsystems (design §5.1); confirmed in the integration
 // test. Keep this list as the single source of truth for the series.
 var trackedMetrics = map[string]struct{}{
-	"minio_s3_requests_total":            {},
-	"minio_s3_requests_4xx_errors_total": {},
-	"minio_s3_requests_5xx_errors_total": {},
-	"minio_s3_traffic_received_bytes":    {},
-	"minio_s3_traffic_sent_bytes":        {},
+	"minio_s3_requests_total":                   {},
+	"minio_s3_requests_4xx_errors_total":        {},
+	"minio_s3_requests_5xx_errors_total":        {},
+	"minio_s3_traffic_received_bytes":           {},
+	"minio_s3_traffic_sent_bytes":               {},
 	"minio_cluster_capacity_usable_total_bytes": {},
 	"minio_cluster_capacity_usable_free_bytes":  {},
 	"minio_cluster_drive_online_total":          {},

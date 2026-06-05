@@ -46,20 +46,20 @@ type stubS3 struct {
 	removeCalls []removeCall
 
 	// GetObject / StatObject controls.
-	getBody      []byte
-	getErr       error
-	statReturn   miniogo.ObjectInfo
-	statErr      error
-	getCalls     []getCall
-	statCalls    []getCall
+	getBody    []byte
+	getErr     error
+	statReturn miniogo.ObjectInfo
+	statErr    error
+	getCalls   []getCall
+	statCalls  []getCall
 
 	// PresignedGetObject controls.
-	presignErr     error
-	presignReturn  *url.URL
-	presignCalls   []presignCall
+	presignErr    error
+	presignReturn *url.URL
+	presignCalls  []presignCall
 
 	// ListObjectVersions controls.
-	versions     []miniogo.ObjectInfo
+	versions      []miniogo.ObjectInfo
 	versTruncated bool
 
 	// CopyObject controls.

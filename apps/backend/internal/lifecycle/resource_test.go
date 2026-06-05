@@ -178,4 +178,3 @@ func TestCreateHandlerAbortMPUKind(t *testing.T) {
 		t.Fatalf("status: got %d want 201; body=%s", rr.Code, rr.Body.String())
 	}
 }
-

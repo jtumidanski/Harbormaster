@@ -14,29 +14,29 @@ import (
 
 // Config is the resolved Harbormaster configuration. Pass by value.
 type Config struct {
-	ListenAddr                string
-	DataDir                   string
-	DatabasePath              string
-	LogLevel                  string
-	LogFormat                 string
-	SessionTimeout            time.Duration
-	SessionCookieName         string
-	SessionCookieSecure       bool
-	BasePath                  string
-	TrustedProxies            []string
-	UploadMaxBytes            int64
-	ShareLinkMaxTTL           time.Duration
-	DownloadProxyMode         string
-	McConfigPath              string
-	TLSCertFile               string
-	TLSKeyFile                string
-	EncryptionKeyFile         string
-	MetricsEnabled            bool
-	MetricsListenAddr         string
-	OTELExporterOTLPEndpoint  string
-	AuditRetention            time.Duration
-	MetricsPollInterval       time.Duration
-	MetricsRetention          time.Duration
+	ListenAddr               string
+	DataDir                  string
+	DatabasePath             string
+	LogLevel                 string
+	LogFormat                string
+	SessionTimeout           time.Duration
+	SessionCookieName        string
+	SessionCookieSecure      bool
+	BasePath                 string
+	TrustedProxies           []string
+	UploadMaxBytes           int64
+	ShareLinkMaxTTL          time.Duration
+	DownloadProxyMode        string
+	McConfigPath             string
+	TLSCertFile              string
+	TLSKeyFile               string
+	EncryptionKeyFile        string
+	MetricsEnabled           bool
+	MetricsListenAddr        string
+	OTELExporterOTLPEndpoint string
+	AuditRetention           time.Duration
+	MetricsPollInterval      time.Duration
+	MetricsRetention         time.Duration
 }
 
 // Load reads configuration in priority order: env (HARBORMASTER_*) > file > defaults.

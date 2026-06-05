@@ -4,9 +4,9 @@ import "time"
 
 // viewResponse is the plain-JSON shape returned by GET /api/v1/metrics.
 type viewResponse struct {
-	Window      string               `json:"window"`
-	StepSeconds int                  `json:"step_seconds"`
-	Collected   bool                 `json:"collected"`
+	Window      string                 `json:"window"`
+	StepSeconds int                    `json:"step_seconds"`
+	Collected   bool                   `json:"collected"`
 	Series      map[string][]pointWire `json:"series"`
 }
 

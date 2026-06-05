@@ -347,9 +347,9 @@ func (h *handler) restoreVersion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeActionJSON(w, http.StatusOK, map[string]any{
-		"key":            v.Key,
-		"version_id":     v.VersionID,
-		"restored_from":  body.VersionID,
+		"key":           v.Key,
+		"version_id":    v.VersionID,
+		"restored_from": body.VersionID,
 	})
 }
 

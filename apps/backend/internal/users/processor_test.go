@@ -34,8 +34,8 @@ func TestCreateGeneratesSecretAndAttaches(t *testing.T) {
 
 	require.Len(t, adm.attachCalls, 2)
 	wantNames := map[string]struct{}{
-		"harbormaster-read-only":             {},
-		"harbormaster-backup-target-ledger":  {},
+		"harbormaster-read-only":            {},
+		"harbormaster-backup-target-ledger": {},
 	}
 	for _, c := range adm.attachCalls {
 		require.Len(t, c.Policies, 1)
@@ -358,4 +358,3 @@ func TestAuditEvent_UserPoliciesUpdate(t *testing.T) {
 	require.Equal(t, "alice", ev.TargetID)
 	requireNoSecrets(t, payload)
 }
-

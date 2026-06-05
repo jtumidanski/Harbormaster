@@ -122,12 +122,12 @@ func mapClientError(err error, fallback string) *apierror.Error {
 // audit event for the given action and returns err unchanged.
 func (p *Processor) policyFailAudit(ctx context.Context, action, name, actor, sourceIP string, err error) error {
 	p.recordAudit(ctx, audit.Event{
-		Actor:      actor,
-		SourceIP:   sourceIP,
-		Action:     action,
-		TargetType: "policy",
-		TargetID:   name,
-		Outcome:    audit.OutcomeFailure,
+		Actor:        actor,
+		SourceIP:     sourceIP,
+		Action:       action,
+		TargetType:   "policy",
+		TargetID:     name,
+		Outcome:      audit.OutcomeFailure,
 		ErrorMessage: err.Error(),
 		PayloadSummary: map[string]any{
 			"policy": name,

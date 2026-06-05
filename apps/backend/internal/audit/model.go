@@ -98,7 +98,7 @@ const (
 // before persistence — callers must not assume that submitted payloads reach
 // storage unmodified.
 type Event struct {
-	ID             string         // ULID (Crockford base32)
+	ID             string // ULID (Crockford base32)
 	OccurredAt     time.Time
 	Actor          string
 	SourceIP       string

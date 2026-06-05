@@ -146,4 +146,3 @@ func writeSingle(w http.ResponseWriter, enc *jsonapi.Encoder, status int, res js
 	w.WriteHeader(status)
 	_ = enc.Single(w, res, nil)
 }
-

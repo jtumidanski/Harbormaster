@@ -9,6 +9,7 @@ export type User = {
   access_key: string;
   status: UserStatus;
   attached_templates: TemplateRef[];
+  attached_policies: string[];
   other_policies: string[];
 };
 

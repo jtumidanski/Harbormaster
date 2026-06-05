@@ -46,8 +46,10 @@ export async function deleteUser(accessKey: string, confirmAccessKey: string): P
 export async function updateUserPolicies(
   accessKey: string,
   templates: TemplateRef[],
+  policies: string[] = [],
 ): Promise<void> {
   await api.put<void>(`/api/v1/users/${encodeURIComponent(accessKey)}/policies`, {
     templates,
+    policies,
   });
 }

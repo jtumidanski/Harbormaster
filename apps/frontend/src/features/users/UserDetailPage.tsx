@@ -14,6 +14,7 @@ import { getUser, setUserStatus } from "./api";
 import type { TemplateRef, User } from "./types";
 import { DeleteUserDialog } from "./DeleteUserDialog";
 import { EditPoliciesDialog } from "./EditPoliciesDialog";
+import { EditCustomPoliciesDialog } from "./EditCustomPoliciesDialog";
 
 function TemplateChip({ tpl }: { tpl: TemplateRef }) {
   const params =
@@ -35,6 +36,7 @@ export function UserDetailPage() {
   const accessKey = decodeURIComponent(rawAccessKey);
   const qc = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
+  const [editCustomPoliciesOpen, setEditCustomPoliciesOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   const q = useQuery({
@@ -138,6 +140,28 @@ export function UserDetailPage() {
       </Card>
 
       <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-base">Custom policies</CardTitle>
+          <Button variant="outline" size="sm" onClick={() => setEditCustomPoliciesOpen(true)}>
+            Edit custom policies
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {user.attached_policies.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No custom policies attached.</p>
+          ) : (
+            <div className="flex flex-wrap gap-1">
+              {user.attached_policies.map((p) => (
+                <Badge key={p} variant="outline" className="bg-muted/40 font-mono font-normal">
+                  {p}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
         <CardHeader>
           <CardTitle className="text-base">Other policies</CardTitle>
         </CardHeader>
@@ -181,6 +205,12 @@ export function UserDetailPage() {
         onOpenChange={setEditOpen}
         accessKey={user.access_key}
         current={user.attached_templates}
+        currentPolicies={user.attached_policies}
+      />
+      <EditCustomPoliciesDialog
+        open={editCustomPoliciesOpen}
+        onOpenChange={setEditCustomPoliciesOpen}
+        user={user}
       />
       {/* eslint-disable-next-line jsx-a11y/no-access-key */}
       <DeleteUserDialog

@@ -46,6 +46,7 @@ export type EditPoliciesDialogProps = {
   onOpenChange: (open: boolean) => void;
   accessKey: string;
   current: TemplateRef[];
+  currentPolicies?: string[];
 };
 
 export function EditPoliciesDialog({
@@ -53,6 +54,7 @@ export function EditPoliciesDialog({
   onOpenChange,
   accessKey,
   current,
+  currentPolicies = [],
 }: EditPoliciesDialogProps) {
   const qc = useQueryClient();
   const tplQ = useQuery({
@@ -98,7 +100,7 @@ export function EditPoliciesDialog({
           for (const k of required) params[k] = sel?.params[k] ?? "";
           return { name: tpl.name, params };
         });
-      return updateUserPolicies(accessKey, payload);
+      return updateUserPolicies(accessKey, payload, currentPolicies);
     },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: usersKeys.detail(accessKey) });

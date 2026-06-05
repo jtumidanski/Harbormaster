@@ -35,6 +35,9 @@ const (
 	ActionConnectionTest        = "connection.test"
 	ActionAdminPasswordChange   = "admin.password.change"
 	ActionAdminEncryptionReset  = "admin.encryption.reset"
+	ActionObjectVersionRestore  = "object.version.restore"
+	ActionObjectVersionDelete   = "object.version.delete"
+	ActionObjectUndelete        = "object.undelete"
 )
 
 // AllActions returns a slice of every defined action constant.
@@ -68,6 +71,9 @@ func AllActions() []string {
 		ActionConnectionTest,
 		ActionAdminPasswordChange,
 		ActionAdminEncryptionReset,
+		ActionObjectVersionRestore,
+		ActionObjectVersionDelete,
+		ActionObjectUndelete,
 	}
 }
 

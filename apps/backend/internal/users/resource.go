@@ -162,9 +162,7 @@ func (h *handler) updatePolicies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	actor, ip := actorFromRequest(r)
-	// TODO(D4): wire body.Policies into the customPolicies argument once
-	// the UpdatePoliciesRequest carries the policies field from the frontend.
-	if err := h.p.UpdatePolicies(r.Context(), ak, body.ToTemplateRefs(), nil, actor, ip); err != nil {
+	if err := h.p.UpdatePolicies(r.Context(), ak, body.ToTemplateRefs(), body.Policies, actor, ip); err != nil {
 		apierror.Write(w, apierror.StyleAction, err)
 		return
 	}

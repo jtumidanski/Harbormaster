@@ -165,3 +165,51 @@ func TestServiceAccountRevokeRoute(t *testing.T) {
 	newRouter(p, sa).ServeHTTP(rec, req)
 	require.Equal(t, http.StatusNoContent, rec.Code)
 }
+
+// TestUpdatePoliciesAcceptsCustomPolicy — PUT /users/{ak}/policies with
+// policies:["proj-a"] where "proj-a" is a known custom deployment policy
+// returns 204 and the stub records an AttachPolicy call for "proj-a".
+func TestUpdatePoliciesAcceptsCustomPolicy(t *testing.T) {
+	p, adm := newTestProcessor(t)
+	adm.users["alice"] = makeUserInfo("")
+	adm.canned["proj-a"] = json.RawMessage(`{}`) // custom origin (no "harbormaster-" prefix)
+
+	body := bytes.NewBufferString(`{"policies":["proj-a"]}`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/users/alice/policies", body)
+	newRouter(p, nil).ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
+
+	found := false
+	for _, c := range adm.attachCalls {
+		for _, pol := range c.Policies {
+			if pol == "proj-a" {
+				found = true
+			}
+		}
+	}
+	require.True(t, found, "expected AttachPolicy call for proj-a, got: %v", adm.attachCalls)
+}
+
+// TestUpdatePoliciesRejectsUnknownPolicy — PUT /users/{ak}/policies with an
+// unknown custom policy returns 422 with code "unknown_policy".
+func TestUpdatePoliciesRejectsUnknownPolicy(t *testing.T) {
+	p, adm := newTestProcessor(t)
+	adm.users["alice"] = makeUserInfo("")
+	// "nope" is NOT in adm.canned — the deployment doesn't know it.
+
+	body := bytes.NewBufferString(`{"policies":["nope"]}`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/users/alice/policies", body)
+	newRouter(p, nil).ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+	var doc struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&doc))
+	require.Equal(t, "unknown_policy", doc.Error.Code)
+}

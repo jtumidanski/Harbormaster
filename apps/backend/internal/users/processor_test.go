@@ -261,6 +261,43 @@ func TestUpdatePolicies_RejectsUnknownPolicy(t *testing.T) {
 	require.Equal(t, http.StatusUnprocessableEntity, ae.HTTPStatus)
 }
 
+// TestUpdatePolicies_DropsCustomKeepsBuiltin — combined security invariant:
+// a user whose GetUserInfo PolicyName includes BOTH a built-in ("consoleAdmin")
+// AND an owned custom policy ("proj-a", present in the deployment); calling
+// UpdatePolicies with empty templates + empty policies must:
+//   - DetachPolicy("proj-a")   — owned custom IS diffed and removed
+//   - ZERO detach of "consoleAdmin" — built-in preserved under all conditions
+func TestUpdatePolicies_DropsCustomKeepsBuiltin(t *testing.T) {
+	p, adm := newTestProcessor(t)
+	// User has both consoleAdmin (builtin) and proj-a (owned custom) attached.
+	adm.users["alice"] = makeUserInfo("consoleAdmin,proj-a")
+	// proj-a is in the deployment custom set; consoleAdmin is NOT.
+	adm.canned["proj-a"] = json.RawMessage(`{}`)
+
+	err := p.UpdatePolicies(context.Background(), "alice", nil, nil, "", "")
+	require.NoError(t, err)
+
+	// consoleAdmin must never appear in any detach call.
+	for _, c := range adm.detachCalls {
+		for _, pol := range c.Policies {
+			require.NotEqual(t, "consoleAdmin", pol,
+				"consoleAdmin (builtin) was detached — invariant violated; detach calls: %v", adm.detachCalls)
+		}
+	}
+
+	// proj-a (owned custom, not in requested set) must have been detached.
+	detachedProjA := false
+	for _, c := range adm.detachCalls {
+		for _, pol := range c.Policies {
+			if pol == "proj-a" {
+				detachedProjA = true
+			}
+		}
+	}
+	require.True(t, detachedProjA,
+		"proj-a (owned custom) should have been detached; detach calls: %v", adm.detachCalls)
+}
+
 // --- audit invariants ---------------------------------------------------
 
 func TestAuditEvent_UserCreate_NoSecret(t *testing.T) {

@@ -10,7 +10,7 @@ import { BucketDetailPage } from "@/features/buckets/BucketDetailPage";
 import { ConnectionSettingsPage } from "@/features/connection/ConnectionSettingsPage";
 import { UserListPage } from "@/features/users/UserListPage";
 import { UserDetailPage } from "@/features/users/UserDetailPage";
-import { PolicyTemplatesPage } from "@/features/policies/PolicyTemplatesPage";
+import { PoliciesPage } from "@/features/policies/PoliciesPage";
 import { DashboardPage } from "@/features/dashboard/DashboardPage";
 import { ActivityFeedPage } from "@/features/activity/ActivityFeedPage";
 
@@ -43,7 +43,7 @@ export function AppRoutes() {
         <Route path="/buckets/:name" element={<BucketDetailPage />} />
         <Route path="/users" element={<UserListPage />} />
         <Route path="/users/:accessKey" element={<UserDetailPage />} />
-        <Route path="/policies" element={<PolicyTemplatesPage />} />
+        <Route path="/policies" element={<PoliciesPage />} />
         <Route path="/activity" element={<ActivityFeedPage />} />
         <Route path="/settings/account" element={<ChangePasswordPage />} />
         <Route path="/settings/connection" element={<ConnectionSettingsPage />} />

@@ -39,6 +39,12 @@ export const policyTemplatesKeys = {
   list: () => ["policy-templates"] as const,
 };
 
+export const policiesKeys = {
+  all: () => ["policies"] as const,
+  list: () => ["policies", "list"] as const,
+  detail: (name: string) => ["policies", "detail", name] as const,
+};
+
 export const dashboardKeys = {
   view: (window: string) => ["dashboard", "view", window] as const,
   failures: (window: string) => ["dashboard", "failures", window] as const,

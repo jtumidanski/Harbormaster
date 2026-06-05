@@ -2,11 +2,13 @@ package objects
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"time"
 
 	miniogo "github.com/minio/minio-go/v7"
@@ -490,4 +492,259 @@ func mapClientError(err error, fallback string) *apierror.Error {
 		return ae
 	}
 	return apierror.New(http.StatusBadGateway, "minio_error", fallback+": "+err.Error())
+}
+
+// ---------------------------------------------------------------------------
+// Version cursor helpers
+// ---------------------------------------------------------------------------
+
+// encodeVersionToken encodes an integer list offset as an opaque
+// base64url (no-padding) string for use as a version-list page token.
+func encodeVersionToken(offset int) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(strconv.Itoa(offset)))
+}
+
+// decodeVersionToken decodes a page token produced by encodeVersionToken.
+// An empty token is treated as offset 0. Any other invalid token returns
+// an apierror 400.
+func decodeVersionToken(tok string) (int, error) {
+	if tok == "" {
+		return 0, nil
+	}
+	b, err := base64.RawURLEncoding.DecodeString(tok)
+	if err != nil {
+		return 0, apierror.New(http.StatusBadRequest, "bad_request", "invalid page token")
+	}
+	n, err := strconv.Atoi(string(b))
+	if err != nil || n < 0 {
+		return 0, apierror.New(http.StatusBadRequest, "bad_request", "invalid page token")
+	}
+	return n, nil
+}
+
+// ---------------------------------------------------------------------------
+// Version operations
+// ---------------------------------------------------------------------------
+
+// objectFailAudit returns a closure that records a failure audit event
+// for bucket/key operations and passes the error through unchanged.
+func (p *Processor) objectFailAudit(ctx context.Context, action, bucket, key string, payload map[string]any, actor, sourceIP string) func(error) error {
+	return func(err error) error {
+		p.recordAudit(ctx, audit.Event{
+			Actor:          actor,
+			SourceIP:       sourceIP,
+			Action:         action,
+			TargetType:     "object",
+			TargetID:       bucket + "/" + key,
+			Outcome:        audit.OutcomeFailure,
+			ErrorMessage:   err.Error(),
+			PayloadSummary: payload,
+		})
+		return err
+	}
+}
+
+// ListVersions returns one page of the version history for bucket/key.
+// pageSize is clamped to (0, MaxPageSize]; pageToken is the opaque
+// base64 offset cursor from a prior call. Sibling keys are excluded by
+// listObjectVersions before the window is applied.
+func (p *Processor) ListVersions(ctx context.Context, bucket, key string, pageSize int, pageToken string) (VersionListResult, error) {
+	if err := ValidateObjectKey(key); err != nil {
+		return VersionListResult{}, apierror.New(http.StatusBadRequest, "object_invalid_key", err.Error())
+	}
+	pageSize = clampPageSize(pageSize)
+	offset, err := decodeVersionToken(pageToken)
+	if err != nil {
+		return VersionListResult{}, err
+	}
+	s3, err := p.clients(ctx)
+	if err != nil {
+		return VersionListResult{}, err
+	}
+	infos, truncated, err := listObjectVersions(ctx, s3, bucket, key)
+	if err != nil {
+		return VersionListResult{}, mapClientError(err, "failed to list object versions")
+	}
+
+	// Map all filtered versions to domain model.
+	all := make([]ObjectVersion, 0, len(infos))
+	for _, info := range infos {
+		all = append(all, versionFromObjectInfo(info))
+	}
+
+	// Apply page window.
+	end := offset + pageSize
+	if offset >= len(all) {
+		return VersionListResult{Versions: []ObjectVersion{}, Truncated: truncated}, nil
+	}
+	if end > len(all) {
+		end = len(all)
+	}
+	page := all[offset:end]
+
+	nextToken := ""
+	if end < len(all) {
+		nextToken = encodeVersionToken(end)
+	}
+	return VersionListResult{Versions: page, NextToken: nextToken, Truncated: truncated}, nil
+}
+
+// RestoreVersion server-side copies srcVersionID back onto bucket/key,
+// creating a new current version. Delete markers cannot be restored.
+func (p *Processor) RestoreVersion(ctx context.Context, bucket, key, versionID, actor, sourceIP string) (ObjectVersion, error) {
+	payload := map[string]any{"bucket": bucket, "key": key, "version_id": versionID}
+	failAudit := p.objectFailAudit(ctx, audit.ActionObjectVersionRestore, bucket, key, payload, actor, sourceIP)
+
+	if err := ValidateObjectKey(key); err != nil {
+		return ObjectVersion{}, failAudit(apierror.New(http.StatusBadRequest, "object_invalid_key", err.Error()))
+	}
+	s3, err := p.clients(ctx)
+	if err != nil {
+		return ObjectVersion{}, failAudit(err)
+	}
+	infos, _, err := listObjectVersions(ctx, s3, bucket, key)
+	if err != nil {
+		return ObjectVersion{}, failAudit(mapClientError(err, "failed to list object versions"))
+	}
+	target, found := findVersion(infos, versionID)
+	if !found {
+		return ObjectVersion{}, failAudit(apierror.NotFound("version"))
+	}
+	if target.IsDeleteMarker {
+		return ObjectVersion{}, failAudit(apierror.New(http.StatusUnprocessableEntity, "cannot_restore_delete_marker", "cannot restore a delete marker"))
+	}
+	uploadInfo, err := copyObjectVersion(ctx, s3, bucket, key, versionID)
+	if err != nil {
+		return ObjectVersion{}, failAudit(mapClientError(err, "failed to restore version"))
+	}
+	// Re-stat the newly-created version to get full metadata.
+	info, err := statObjectVersion(ctx, s3, bucket, key, uploadInfo.VersionID)
+	if err != nil {
+		return ObjectVersion{}, failAudit(mapClientError(err, "failed to stat restored version"))
+	}
+	p.recordAudit(ctx, audit.Event{
+		Actor:          actor,
+		SourceIP:       sourceIP,
+		Action:         audit.ActionObjectVersionRestore,
+		TargetType:     "object",
+		TargetID:       bucket + "/" + key,
+		Outcome:        audit.OutcomeSuccess,
+		PayloadSummary: payload,
+	})
+	return versionFromObjectInfo(info), nil
+}
+
+// DeleteVersion permanently deletes a single version of bucket/key.
+// confirm must be true; without it the operation is rejected to prevent
+// accidental permanent deletes.
+func (p *Processor) DeleteVersion(ctx context.Context, bucket, key, versionID string, confirm bool, actor, sourceIP string) error {
+	payload := map[string]any{"bucket": bucket, "key": key, "version_id": versionID}
+	failAudit := p.objectFailAudit(ctx, audit.ActionObjectVersionDelete, bucket, key, payload, actor, sourceIP)
+
+	if err := ValidateObjectKey(key); err != nil {
+		return failAudit(apierror.New(http.StatusBadRequest, "object_invalid_key", err.Error()))
+	}
+	if !confirm {
+		return failAudit(apierror.New(http.StatusUnprocessableEntity, "bad_request", "permanent version delete requires confirm:true"))
+	}
+	s3, err := p.clients(ctx)
+	if err != nil {
+		return failAudit(err)
+	}
+	if err := removeObjectVersion(ctx, s3, bucket, key, versionID); err != nil {
+		return failAudit(mapClientError(err, "failed to delete version"))
+	}
+	p.recordAudit(ctx, audit.Event{
+		Actor:          actor,
+		SourceIP:       sourceIP,
+		Action:         audit.ActionObjectVersionDelete,
+		TargetType:     "object",
+		TargetID:       bucket + "/" + key,
+		Outcome:        audit.OutcomeSuccess,
+		PayloadSummary: payload,
+	})
+	return nil
+}
+
+// Undelete removes the latest delete marker from bucket/key, exposing
+// the previously-hidden most-recent non-marker version. The key must
+// currently be delete-marked (i.e. the latest version is a delete marker).
+func (p *Processor) Undelete(ctx context.Context, bucket, key, actor, sourceIP string) (ObjectVersion, error) {
+	payload := map[string]any{"bucket": bucket, "key": key}
+	failAudit := p.objectFailAudit(ctx, audit.ActionObjectUndelete, bucket, key, payload, actor, sourceIP)
+
+	if err := ValidateObjectKey(key); err != nil {
+		return ObjectVersion{}, failAudit(apierror.New(http.StatusBadRequest, "object_invalid_key", err.Error()))
+	}
+	s3, err := p.clients(ctx)
+	if err != nil {
+		return ObjectVersion{}, failAudit(err)
+	}
+	infos, _, err := listObjectVersions(ctx, s3, bucket, key)
+	if err != nil {
+		return ObjectVersion{}, failAudit(mapClientError(err, "failed to list object versions"))
+	}
+	latest, found := findLatest(infos)
+	if !found || !latest.IsDeleteMarker {
+		return ObjectVersion{}, failAudit(apierror.New(http.StatusUnprocessableEntity, "not_delete_marked", "object is not delete-marked"))
+	}
+	if err := removeObjectVersion(ctx, s3, bucket, key, latest.VersionID); err != nil {
+		return ObjectVersion{}, failAudit(mapClientError(err, "failed to remove delete marker"))
+	}
+	exposed := findNextNonMarker(infos, latest.VersionID)
+	p.recordAudit(ctx, audit.Event{
+		Actor:          actor,
+		SourceIP:       sourceIP,
+		Action:         audit.ActionObjectUndelete,
+		TargetType:     "object",
+		TargetID:       bucket + "/" + key,
+		Outcome:        audit.OutcomeSuccess,
+		PayloadSummary: payload,
+	})
+	return exposed, nil
+}
+
+// ---------------------------------------------------------------------------
+// Version operation helpers
+// ---------------------------------------------------------------------------
+
+// findVersion searches infos for the entry with the given versionID.
+func findVersion(infos []miniogo.ObjectInfo, versionID string) (miniogo.ObjectInfo, bool) {
+	for _, info := range infos {
+		if info.VersionID == versionID {
+			return info, true
+		}
+	}
+	return miniogo.ObjectInfo{}, false
+}
+
+// findLatest returns the entry flagged IsLatest, if any.
+func findLatest(infos []miniogo.ObjectInfo) (miniogo.ObjectInfo, bool) {
+	for _, info := range infos {
+		if info.IsLatest {
+			return info, true
+		}
+	}
+	return miniogo.ObjectInfo{}, false
+}
+
+// findNextNonMarker returns the domain ObjectVersion of the first entry
+// in infos that is not the excluded versionID and is not a delete
+// marker. If no such entry exists, a placeholder ObjectVersion with Key
+// set to the key from infos is returned (or an empty one if infos is
+// empty).
+func findNextNonMarker(infos []miniogo.ObjectInfo, excludeVersionID string) ObjectVersion {
+	for _, info := range infos {
+		if info.VersionID == excludeVersionID {
+			continue
+		}
+		if !info.IsDeleteMarker {
+			return versionFromObjectInfo(info)
+		}
+	}
+	// No non-marker version exists — return a placeholder carrying just the key.
+	if len(infos) > 0 {
+		return ObjectVersion{Key: infos[0].Key}
+	}
+	return ObjectVersion{}
 }

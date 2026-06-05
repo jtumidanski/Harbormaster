@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	miniogo "github.com/minio/minio-go/v7"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -143,5 +144,85 @@ func TestAuditEvent_ObjectShareLinkCreate(t *testing.T) {
 	require.Contains(t, payload, "expires_seconds")
 	// Spec: NEVER persist the URL.
 	require.NotContains(t, strings.ToLower(payload), "minio.example")
+	requireNoSecrets(t, payload)
+}
+
+// ---------------------------------------------------------------------------
+// Version operation audit events (B4)
+// ---------------------------------------------------------------------------
+
+// buildAuditVersions returns a pre-staged stub with two versions for
+// "audit-key": a non-marker v2 and a delete-marker vdm (as latest).
+func buildAuditVersions() []miniogo.ObjectInfo {
+	return []miniogo.ObjectInfo{
+		{Key: "audit-key", VersionID: "vdm", IsLatest: true, IsDeleteMarker: true},
+		{Key: "audit-key", VersionID: "v2", Size: 100, ContentType: "text/plain"},
+	}
+}
+
+// newAuditedVersionProcessor extends newAuditedProcessor with a
+// pre-staged versions list.
+func newAuditedVersionProcessor(t *testing.T) (*Processor, *audit.Processor, *stubS3) {
+	t.Helper()
+	p, a, s3 := newAuditedProcessor(t)
+	s3.versions = buildAuditVersions()
+	return p, a, s3
+}
+
+// TestAuditEvent_ObjectVersionRestoreSuccess asserts that a successful
+// RestoreVersion records action=object.version.restore, outcome=success,
+// and a payload containing only bucket/key/version_id (no URLs/bodies).
+func TestAuditEvent_ObjectVersionRestoreSuccess(t *testing.T) {
+	p, a, _ := newAuditedVersionProcessor(t)
+	_, err := p.RestoreVersion(context.Background(), "photos", "audit-key", "v2", "operator", "10.0.0.5")
+	require.NoError(t, err)
+
+	ev, payload := loadLatestPayload(t, a, audit.ActionObjectVersionRestore)
+	require.NotEmpty(t, payload)
+	require.Equal(t, audit.OutcomeSuccess, ev.Outcome)
+	require.Equal(t, "operator", ev.Actor)
+	require.Equal(t, "photos/audit-key", ev.TargetID)
+	require.Contains(t, payload, "bucket")
+	require.Contains(t, payload, "key")
+	require.Contains(t, payload, "version_id")
+	// No URLs, no document bodies.
+	require.NotContains(t, strings.ToLower(payload), "://")
+	requireNoSecrets(t, payload)
+}
+
+// TestAuditEvent_ObjectVersionDeleteSuccess asserts that a successful
+// DeleteVersion records action=object.version.delete, outcome=success,
+// and a payload containing only bucket/key/version_id.
+func TestAuditEvent_ObjectVersionDeleteSuccess(t *testing.T) {
+	p, a, _ := newAuditedVersionProcessor(t)
+	err := p.DeleteVersion(context.Background(), "photos", "audit-key", "v2", true, "operator", "10.0.0.6")
+	require.NoError(t, err)
+
+	ev, payload := loadLatestPayload(t, a, audit.ActionObjectVersionDelete)
+	require.NotEmpty(t, payload)
+	require.Equal(t, audit.OutcomeSuccess, ev.Outcome)
+	require.Equal(t, "photos/audit-key", ev.TargetID)
+	require.Contains(t, payload, "bucket")
+	require.Contains(t, payload, "key")
+	require.Contains(t, payload, "version_id")
+	require.NotContains(t, strings.ToLower(payload), "://")
+	requireNoSecrets(t, payload)
+}
+
+// TestAuditEvent_ObjectUndeleteSuccess asserts that a successful
+// Undelete records action=object.undelete, outcome=success, and a
+// payload containing only bucket/key (no version_id, no URLs).
+func TestAuditEvent_ObjectUndeleteSuccess(t *testing.T) {
+	p, a, _ := newAuditedVersionProcessor(t)
+	_, err := p.Undelete(context.Background(), "photos", "audit-key", "operator", "10.0.0.7")
+	require.NoError(t, err)
+
+	ev, payload := loadLatestPayload(t, a, audit.ActionObjectUndelete)
+	require.NotEmpty(t, payload)
+	require.Equal(t, audit.OutcomeSuccess, ev.Outcome)
+	require.Equal(t, "photos/audit-key", ev.TargetID)
+	require.Contains(t, payload, "bucket")
+	require.Contains(t, payload, "key")
+	require.NotContains(t, strings.ToLower(payload), "://")
 	requireNoSecrets(t, payload)
 }

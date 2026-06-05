@@ -8,6 +8,9 @@ import (
 	"time"
 
 	miniogo "github.com/minio/minio-go/v7"
+	"github.com/stretchr/testify/require"
+
+	"github.com/jtumidanski/Harbormaster/internal/apierror"
 )
 
 // TestList_EmptyBucket asserts the happy path for a bucket that returns
@@ -236,4 +239,132 @@ func TestMintShareLink_ResponseHasContentDisposition(t *testing.T) {
 // TODO(T3.23): unstub once audit.Processor is wired in.
 func TestMintShareLink_AuditPayloadHasNoURL(t *testing.T) {
 	t.Skip("deferred: audit wiring lands in T3.23")
+}
+
+// ---------------------------------------------------------------------------
+// Version operations (B4)
+// ---------------------------------------------------------------------------
+
+// buildVersions creates a slice of ObjectInfo for version tests. The
+// order matches newest-first S3 semantics (index 0 is the latest).
+func buildVersions() []miniogo.ObjectInfo {
+	t0 := time.Unix(1700000000, 0).UTC()
+	return []miniogo.ObjectInfo{
+		// v3: latest delete marker (no size)
+		{Key: "k", VersionID: "vdm", IsLatest: true, IsDeleteMarker: true, LastModified: t0.Add(3 * time.Second)},
+		// v2: regular version
+		{Key: "k", VersionID: "v2", Size: 200, ContentType: "text/plain", LastModified: t0.Add(2 * time.Second)},
+		// v1: regular version
+		{Key: "k", VersionID: "v1", Size: 100, ContentType: "text/plain", LastModified: t0.Add(1 * time.Second)},
+		// sibling key — must be filtered out
+		{Key: "k-other", VersionID: "vs", Size: 10, LastModified: t0},
+	}
+}
+
+// TestListVersions_WindowingAndDeleteMarker stages four entries (3 for
+// "k", 1 sibling), requests page size 2 and asserts:
+//   - page 1 = [vdm, v2]; vdm.IsDeleteMarker && vdm.Size==nil; NextToken non-empty
+//   - page 2 with that token = [v1]; NextToken==""
+func TestListVersions_WindowingAndDeleteMarker(t *testing.T) {
+	p, _ := newTestProcessor(t, &stubS3{versions: buildVersions()}, ProcessorConfig{})
+
+	res1, err := p.ListVersions(context.Background(), "b", "k", 2, "")
+	require.NoError(t, err)
+	require.Len(t, res1.Versions, 2)
+	require.Equal(t, "vdm", res1.Versions[0].VersionID)
+	require.True(t, res1.Versions[0].IsDeleteMarker)
+	require.Nil(t, res1.Versions[0].Size, "delete marker size must be nil")
+	require.Equal(t, "v2", res1.Versions[1].VersionID)
+	require.NotEmpty(t, res1.NextToken)
+
+	res2, err := p.ListVersions(context.Background(), "b", "k", 2, res1.NextToken)
+	require.NoError(t, err)
+	require.Len(t, res2.Versions, 1)
+	require.Equal(t, "v1", res2.Versions[0].VersionID)
+	require.Empty(t, res2.NextToken)
+}
+
+// TestRestoreVersion_RejectsDeleteMarker asserts that calling
+// RestoreVersion with a delete-marker versionID returns a 422 with
+// code cannot_restore_delete_marker and does NOT invoke CopyObject.
+func TestRestoreVersion_RejectsDeleteMarker(t *testing.T) {
+	stub := &stubS3{versions: buildVersions()}
+	p, _ := newTestProcessor(t, stub, ProcessorConfig{})
+
+	_, err := p.RestoreVersion(context.Background(), "b", "k", "vdm", "op", "127.0.0.1")
+	require.Error(t, err)
+	var ae *apierror.Error
+	require.ErrorAs(t, err, &ae)
+	require.Equal(t, "cannot_restore_delete_marker", ae.Code)
+	require.Equal(t, "", stub.copyCalledSrc, "CopyObject must not be called for delete markers")
+}
+
+// TestRestoreVersion_CopiesVersion asserts that RestoreVersion on a
+// regular version calls CopyObject with that versionID and returns the
+// newly-created current version (VersionID == "new-current").
+func TestRestoreVersion_CopiesVersion(t *testing.T) {
+	stub := &stubS3{versions: buildVersions()}
+	p, _ := newTestProcessor(t, stub, ProcessorConfig{})
+
+	v, err := p.RestoreVersion(context.Background(), "b", "k", "v2", "op", "127.0.0.1")
+	require.NoError(t, err)
+	require.Equal(t, "v2", stub.copyCalledSrc)
+	require.Equal(t, "new-current", v.VersionID)
+}
+
+// TestDeleteVersion_RequiresConfirm asserts that calling DeleteVersion
+// without confirm=true returns an error and does not call RemoveObject.
+func TestDeleteVersion_RequiresConfirm(t *testing.T) {
+	stub := &stubS3{versions: buildVersions()}
+	p, _ := newTestProcessor(t, stub, ProcessorConfig{})
+
+	err := p.DeleteVersion(context.Background(), "b", "k", "v1", false, "op", "127.0.0.1")
+	require.Error(t, err)
+	var ae *apierror.Error
+	require.ErrorAs(t, err, &ae)
+	require.Equal(t, 0, len(stub.removedVerIDs), "RemoveObject must not fire without confirm")
+}
+
+// TestDeleteVersion_WithConfirm asserts that confirm=true causes
+// RemoveObject to be called with the supplied versionID.
+func TestDeleteVersion_WithConfirm(t *testing.T) {
+	stub := &stubS3{versions: buildVersions()}
+	p, _ := newTestProcessor(t, stub, ProcessorConfig{})
+
+	err := p.DeleteVersion(context.Background(), "b", "k", "v1", true, "op", "127.0.0.1")
+	require.NoError(t, err)
+	require.Equal(t, []string{"v1"}, stub.removedVerIDs)
+}
+
+// TestUndelete_RejectsNonDeleteMarker asserts that Undelete returns 422
+// not_delete_marked when the latest version is a regular object.
+func TestUndelete_RejectsNonDeleteMarker(t *testing.T) {
+	// Use versions without a delete marker as latest.
+	stub := &stubS3{versions: []miniogo.ObjectInfo{
+		{Key: "k", VersionID: "v1", IsLatest: true, IsDeleteMarker: false, Size: 100},
+	}}
+	p, _ := newTestProcessor(t, stub, ProcessorConfig{})
+
+	_, err := p.Undelete(context.Background(), "b", "k", "op", "127.0.0.1")
+	require.Error(t, err)
+	var ae *apierror.Error
+	require.ErrorAs(t, err, &ae)
+	require.Equal(t, "not_delete_marked", ae.Code)
+}
+
+// TestUndelete_RemovesDeleteMarkerAndReturnsExposed asserts that when
+// the latest version IS a delete marker, Undelete removes it and
+// returns the previously-hidden version.
+func TestUndelete_RemovesDeleteMarkerAndReturnsExposed(t *testing.T) {
+	// versions: latest = delete marker (vdm), then v1.
+	stub := &stubS3{versions: []miniogo.ObjectInfo{
+		{Key: "k", VersionID: "vdm", IsLatest: true, IsDeleteMarker: true},
+		{Key: "k", VersionID: "v1", Size: 100, ContentType: "text/plain"},
+	}}
+	p, _ := newTestProcessor(t, stub, ProcessorConfig{})
+
+	v, err := p.Undelete(context.Background(), "b", "k", "op", "127.0.0.1")
+	require.NoError(t, err)
+	require.Equal(t, []string{"vdm"}, stub.removedVerIDs)
+	require.Equal(t, "v1", v.VersionID)
 }

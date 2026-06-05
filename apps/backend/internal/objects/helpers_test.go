@@ -57,6 +57,16 @@ type stubS3 struct {
 	presignErr     error
 	presignReturn  *url.URL
 	presignCalls   []presignCall
+
+	// ListObjectVersions controls.
+	versions     []miniogo.ObjectInfo
+	versTruncated bool
+
+	// CopyObject controls.
+	copyCalledSrc string
+
+	// removedVerIDs captures VersionIDs passed to RemoveObject via opts.
+	removedVerIDs []string
 }
 
 type listV2Call struct {
@@ -148,11 +158,23 @@ func (s *stubS3) PutObject(_ context.Context, bucket, key string, body io.Reader
 	return s.putReturn, nil
 }
 
-func (s *stubS3) RemoveObject(_ context.Context, bucket, key string, _ miniogo.RemoveObjectOptions) error {
+func (s *stubS3) RemoveObject(_ context.Context, bucket, key string, opts miniogo.RemoveObjectOptions) error {
 	s.mu.Lock()
 	s.removeCalls = append(s.removeCalls, removeCall{Bucket: bucket, Key: key})
+	if opts.VersionID != "" {
+		s.removedVerIDs = append(s.removedVerIDs, opts.VersionID)
+	}
 	s.mu.Unlock()
 	return s.removeErr
+}
+
+func (s *stubS3) ListObjectVersions(_ context.Context, _, _ string, _ int) ([]miniogo.ObjectInfo, bool, error) {
+	return s.versions, s.versTruncated, nil
+}
+
+func (s *stubS3) CopyObject(_ context.Context, _ miniogo.CopyDestOptions, src miniogo.CopySrcOptions) (miniogo.UploadInfo, error) {
+	s.copyCalledSrc = src.VersionID
+	return miniogo.UploadInfo{Key: src.Object, VersionID: "new-current"}, nil
 }
 
 func (s *stubS3) GetObject(_ context.Context, bucket, key string, _ miniogo.GetObjectOptions) (io.ReadCloser, error) {
@@ -165,7 +187,7 @@ func (s *stubS3) GetObject(_ context.Context, bucket, key string, _ miniogo.GetO
 	return io.NopCloser(bytes.NewReader(s.getBody)), nil
 }
 
-func (s *stubS3) StatObject(_ context.Context, bucket, key string, _ miniogo.StatObjectOptions) (miniogo.ObjectInfo, error) {
+func (s *stubS3) StatObject(_ context.Context, bucket, key string, opts miniogo.StatObjectOptions) (miniogo.ObjectInfo, error) {
 	s.mu.Lock()
 	s.statCalls = append(s.statCalls, getCall{Bucket: bucket, Key: key})
 	s.mu.Unlock()
@@ -174,8 +196,15 @@ func (s *stubS3) StatObject(_ context.Context, bucket, key string, _ miniogo.Sta
 	}
 	if s.statReturn.Key == "" {
 		// Reasonable default: a 0-byte octet-stream entry the proxy
-		// download handler can render without crashing.
-		return miniogo.ObjectInfo{Key: key, Size: int64(len(s.getBody)), ContentType: "application/octet-stream"}, nil
+		// download handler can render without crashing. When a specific
+		// VersionID is requested (e.g. post-restore stat), echo it back so
+		// tests can assert on the returned VersionID.
+		return miniogo.ObjectInfo{
+			Key:         key,
+			VersionID:   opts.VersionID,
+			Size:        int64(len(s.getBody)),
+			ContentType: "application/octet-stream",
+		}, nil
 	}
 	return s.statReturn, nil
 }

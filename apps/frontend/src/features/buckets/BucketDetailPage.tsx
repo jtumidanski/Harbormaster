@@ -257,7 +257,7 @@ export function BucketDetailPage() {
         </TabsContent>
 
         <TabsContent value="lifecycle">
-          <LifecycleRulesTab bucket={bucket.name} />
+          <LifecycleRulesTab bucket={bucket.name} versioningEnabled={bucket.versioning_enabled} />
         </TabsContent>
       </Tabs>
 

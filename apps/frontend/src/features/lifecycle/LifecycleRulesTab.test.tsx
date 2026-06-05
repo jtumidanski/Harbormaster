@@ -97,7 +97,13 @@ describe("LifecycleRulesTab", () => {
       expect(screen.getByText("Managed rules")).toBeInTheDocument();
     });
     expect(screen.getByText("managed-1")).toBeInTheDocument();
-    expect(screen.getByText(/expire after 30 day/i)).toBeInTheDocument();
+    // Summary line — text is split across sibling text nodes when a prefix is present,
+    // so we use getAllByText with a function matcher that checks the element's full text content.
+    expect(
+      screen.getAllByText((_, el) =>
+        Boolean(el && /expire.*after.*30.*day/i.test(el.textContent ?? "")),
+      ).length,
+    ).toBeGreaterThan(0);
     expect(screen.getByText("external-xml")).toBeInTheDocument();
     expect(screen.getByText(/external rule \(xml import\)/i)).toBeInTheDocument();
   });

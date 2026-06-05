@@ -4,6 +4,7 @@ import {
   Database,
   KeyRound,
   LayoutDashboard,
+  LineChart,
   LogOut,
   Monitor,
   Moon,
@@ -43,6 +44,7 @@ import { useTheme } from "@/context/ThemeProvider";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/metrics", label: "Metrics", icon: LineChart },
   { to: "/buckets", label: "Buckets", icon: Database },
   { to: "/users", label: "Users", icon: Users },
   { to: "/policies", label: "Policies", icon: Shield },

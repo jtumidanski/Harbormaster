@@ -127,22 +127,31 @@ func (a objectS3Adapter) GetObject(ctx context.Context, bucket, object string, o
 // (WithVersions=true) into a slice, capping at maxScan to bound
 // pathological keys. The bool return is "truncated" — true when the scan
 // hit maxScan before the channel closed.
+//
+// A cancelable context is derived from the caller's ctx and cancelled via
+// defer so the minio-go producer goroutine is torn down on every return
+// path — including early truncation and error returns — preventing the
+// goroutine from blocking on a channel send forever.
 func (a objectS3Adapter) ListObjectVersions(ctx context.Context, bucket, key string, maxScan int) ([]miniogo.ObjectInfo, bool, error) {
-	ch := a.ListObjects(ctx, bucket, miniogo.ListObjectsOptions{
+	cctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	ch := a.ListObjects(cctx, bucket, miniogo.ListObjectsOptions{
 		Prefix:       key,
 		WithVersions: true,
 	})
-	var out []miniogo.ObjectInfo
+	out := make([]miniogo.ObjectInfo, 0, 16)
+	truncated := false
 	for info := range ch {
 		if info.Err != nil {
 			return nil, false, info.Err
 		}
-		out = append(out, info)
 		if len(out) >= maxScan {
-			return out, true, nil
+			truncated = true
+			break
 		}
+		out = append(out, info)
 	}
-	return out, false, nil
+	return out, truncated, nil
 }
 
 // newObjectClientGetter returns an objects.ClientGetter bound to the live

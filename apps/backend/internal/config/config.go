@@ -35,6 +35,8 @@ type Config struct {
 	MetricsListenAddr         string
 	OTELExporterOTLPEndpoint  string
 	AuditRetention            time.Duration
+	MetricsPollInterval       time.Duration
+	MetricsRetention          time.Duration
 }
 
 // Load reads configuration in priority order: env (HARBORMASTER_*) > file > defaults.
@@ -75,6 +77,8 @@ func Load() (Config, error) {
 		MetricsListenAddr:        v.GetString("METRICS_LISTEN_ADDR"),
 		OTELExporterOTLPEndpoint: v.GetString("OTEL_EXPORTER_OTLP_ENDPOINT"),
 		AuditRetention:           v.GetDuration("AUDIT_RETENTION"),
+		MetricsPollInterval:      v.GetDuration("METRICS_POLL_INTERVAL"),
+		MetricsRetention:         v.GetDuration("METRICS_RETENTION"),
 	}
 
 	if cfg.DatabasePath == "" {
@@ -109,6 +113,8 @@ func defaults(v *viper.Viper) {
 	v.SetDefault("METRICS_ENABLED", false)
 	v.SetDefault("METRICS_LISTEN_ADDR", ":9090")
 	v.SetDefault("AUDIT_RETENTION", 90*24*time.Hour)
+	v.SetDefault("METRICS_POLL_INTERVAL", 30*time.Second)
+	v.SetDefault("METRICS_RETENTION", 8*24*time.Hour)
 }
 
 func validate(c Config) error {
@@ -126,6 +132,12 @@ func validate(c Config) error {
 	}
 	if c.UploadMaxBytes <= 0 {
 		return errors.New("HARBORMASTER_UPLOAD_MAX_BYTES must be positive")
+	}
+	if c.MetricsPollInterval <= 0 {
+		return errors.New("HARBORMASTER_METRICS_POLL_INTERVAL must be positive")
+	}
+	if c.MetricsRetention <= 0 {
+		return errors.New("HARBORMASTER_METRICS_RETENTION must be positive")
 	}
 	return nil
 }

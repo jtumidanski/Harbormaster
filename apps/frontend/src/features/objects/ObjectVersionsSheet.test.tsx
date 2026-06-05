@@ -239,6 +239,68 @@ describe("ObjectVersionsSheet", () => {
     });
   });
 
+  it("clicking Delete-version on a non-latest regular version, then confirming, calls deleteVersion", async () => {
+    const fetchSpy = installFetch([
+      {
+        match: (u) => u.includes("/api/v1/buckets/photos/objects/versions"),
+        response: () => jsonapi(twoVersionsResponse()),
+      },
+      {
+        match: (u, init) =>
+          u.includes("/api/v1/buckets/photos/objects/version") &&
+          u.includes("vid-002") &&
+          (init?.method ?? "DELETE") === "DELETE",
+        response: () => new Response(null, { status: 204 }),
+      },
+    ]);
+
+    const user = userEvent.setup();
+    const qc = makeQueryClient();
+    render(
+      <Wrapper qc={qc}>
+        <ObjectVersionsSheet
+          bucket="photos"
+          objectKey="photos/cat.jpg"
+          prefix=""
+          open
+          onOpenChange={() => undefined}
+        />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/vid-002/i)).toBeInTheDocument();
+    });
+
+    // Find all "Delete version" buttons and click the one for vid-002 (non-latest regular version)
+    const deleteButtons = screen.getAllByRole("button", { name: /delete version/i });
+    expect(deleteButtons.length).toBeGreaterThanOrEqual(2);
+    // vid-002 is the second row (index 1)
+    await user.click(deleteButtons[1]);
+
+    // Confirmation dialog should appear
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(screen.getByText(/delete version permanently/i)).toBeInTheDocument();
+    });
+
+    // Confirm the permanent deletion
+    const confirmBtn = screen.getByRole("button", { name: /delete permanently/i });
+    await user.click(confirmBtn);
+
+    // deleteVersion DELETE should have been called for vid-002
+    await waitFor(() => {
+      const deleteCalls = fetchSpy.mock.calls.filter(
+        ([u, init]) =>
+          typeof u === "string" &&
+          u.includes("/objects/version") &&
+          u.includes("vid-002") &&
+          (init as RequestInit)?.method === "DELETE",
+      );
+      expect(deleteCalls.length).toBeGreaterThan(0);
+    });
+  });
+
   it("shows an Undelete button when the latest version is a delete marker", async () => {
     installFetch([
       {

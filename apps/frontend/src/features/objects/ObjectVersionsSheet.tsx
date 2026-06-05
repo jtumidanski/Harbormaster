@@ -166,17 +166,6 @@ export function ObjectVersionsSheet({
     },
   });
 
-  // ── Download helper ──
-  const handleDownload = (versionId: string) => {
-    const a = document.createElement("a");
-    a.href = versionDownloadURL(bucket, objectKey, versionId);
-    a.rel = "noopener";
-    a.download = "";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  };
-
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
@@ -265,26 +254,21 @@ export function ObjectVersionsSheet({
                         <TableCell>
                           <div className="flex items-center justify-end gap-1">
                             {!a.is_delete_marker && (
-                              <a
-                                href={versionDownloadURL(bucket, objectKey, a.version_id)}
-                                rel="noopener"
-                                download
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  handleDownload(a.version_id);
-                                }}
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                asChild
                                 aria-label={`Download version ${a.version_id}`}
                               >
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  tabIndex={-1}
-                                  asChild={false}
+                                <a
+                                  href={versionDownloadURL(bucket, objectKey, a.version_id)}
+                                  rel="noopener"
+                                  download
                                 >
                                   <Download className="h-4 w-4" aria-hidden="true" />
-                                </Button>
-                              </a>
+                                </a>
+                              </Button>
                             )}
                             <Button
                               type="button"

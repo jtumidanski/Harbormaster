@@ -32,3 +32,24 @@ func TestEditableForOnlyCustom(t *testing.T) {
 		t.Error("custom must be editable")
 	}
 }
+
+func TestOriginForIsCaseInsensitive(t *testing.T) {
+	builtinVariants := []string{"ReadOnly", "READONLY", "ConsoleAdmin", "CONSOLEADMIN", "DiagNostics"}
+	for _, n := range builtinVariants {
+		if OriginFor(n) != OriginBuiltin {
+			t.Errorf("OriginFor(%q) = %q, want builtin", n, OriginFor(n))
+		}
+		if EditableFor(n) {
+			t.Errorf("EditableFor(%q) must be false (reserved builtin)", n)
+		}
+	}
+	templateVariants := []string{"Harbormaster-read-only", "HARBORMASTER-foo", "HarborMaster-x"}
+	for _, n := range templateVariants {
+		if OriginFor(n) != OriginTemplate {
+			t.Errorf("OriginFor(%q) = %q, want template", n, OriginFor(n))
+		}
+		if EditableFor(n) {
+			t.Errorf("EditableFor(%q) must be false (reserved template)", n)
+		}
+	}
+}

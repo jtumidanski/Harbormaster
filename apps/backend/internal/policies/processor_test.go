@@ -211,6 +211,13 @@ func TestCreateRejectsReservedName_Template(t *testing.T) {
 	assertAPIError(t, err, 409, "policy_name_reserved")
 }
 
+func TestCreateRejectsReservedNameCaseInsensitive(t *testing.T) {
+	p, adm := newTestProcessor(t)
+	_, err := p.Create(context.Background(), "ConsoleAdmin", validDoc(), "", "")
+	assertAPIError(t, err, 409, "policy_name_reserved")
+	require.Empty(t, adm.addCannedPolicyCalls, "AddCannedPolicy must not be called for reserved name")
+}
+
 func TestCreateAddsCannedPolicy(t *testing.T) {
 	p, adm := newTestProcessor(t)
 	policy, err := p.Create(context.Background(), "my-policy", validDoc(), "operator", "10.0.0.1")
@@ -249,6 +256,13 @@ func TestUpdateRejectsNonCustom_Template(t *testing.T) {
 	assertAPIError(t, err, 403, "policy_read_only")
 }
 
+func TestUpdateRejectsNonCustomCaseInsensitive(t *testing.T) {
+	p, adm := newTestProcessor(t)
+	err := p.Update(context.Background(), "ReadOnly", validDoc(), "", "")
+	assertAPIError(t, err, 403, "policy_read_only")
+	require.Empty(t, adm.addCannedPolicyCalls, "AddCannedPolicy must not be called for read-only policy")
+}
+
 func TestUpdateHappyPath(t *testing.T) {
 	p, adm := newTestProcessor(t)
 	adm.policies["my-policy"] = validDoc()
@@ -284,6 +298,29 @@ func TestDeleteRejectsInUse(t *testing.T) {
 	usersSlice, ok := attachedTo["users"].([]string)
 	require.True(t, ok, "expected users key to be []string")
 	require.Contains(t, usersSlice, "alice")
+}
+
+func TestDeleteRejectsInUseViaGroup(t *testing.T) {
+	p, adm := newTestProcessor(t)
+	adm.policies["my-policy"] = validDoc()
+	// A group has my-policy attached.
+	adm.groups["team-alpha"] = madmin.GroupDesc{
+		Name:   "team-alpha",
+		Policy: "my-policy",
+	}
+
+	err := p.Delete(context.Background(), "my-policy", "", "")
+	assertAPIError(t, err, 409, "policy_in_use")
+
+	// Details must carry attached_to with the group.
+	var ae *apierror.Error
+	require.True(t, errors.As(err, &ae))
+	require.NotNil(t, ae.Details)
+	attachedTo, ok := ae.Details["attached_to"].(map[string]any)
+	require.True(t, ok, "expected attached_to to be map[string]any")
+	groupsSlice, ok := attachedTo["groups"].([]string)
+	require.True(t, ok, "expected groups key to be []string")
+	require.Contains(t, groupsSlice, "team-alpha")
 }
 
 func TestDeleteRemovesUnusedCustom(t *testing.T) {

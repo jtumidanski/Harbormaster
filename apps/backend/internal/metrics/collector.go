@@ -36,7 +36,7 @@ var counterMetrics = map[string]struct{}{
 
 // MetricsSource is the minimal client the collector needs (lets tests stub
 // the madmin MetricsClient).
-type MetricsSource interface {
+type MetricsSource interface { //nolint:revive // stutter intentional: MetricsSource is the stable cross-package name (E4/E6/E10)
 	ClusterMetrics(ctx context.Context) ([]*prom2json.Family, error)
 	ResourceMetrics(ctx context.Context) ([]*prom2json.Family, error)
 }

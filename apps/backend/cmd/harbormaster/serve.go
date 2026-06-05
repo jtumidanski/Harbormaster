@@ -171,6 +171,9 @@ func runServe(ctx context.Context, _ io.Writer) error {
 	saProc := users.NewServiceAccountProcessor(newSAClientGetter(pool), policyMat).
 		WithLogger(logger).
 		WithAudit(auditProc)
+	policyProc := policies.NewProcessor(newPoliciesClientGetter(pool)).
+		WithLogger(logger).
+		WithAudit(auditProc)
 
 	// --- M5 wiring: dashboard aggregator -----------------------------------
 	// The dashboard fan-out hits madmin.ServerInfo via a PoolGetter adapter
@@ -226,6 +229,10 @@ func runServe(ctx context.Context, _ io.Writer) error {
 			// templates surface in one go; both processors share the
 			// materializer wired above.
 			users.Routes(usersProc, saProc)(g)
+			// C6: policies CRUD (list, get, create, update, delete).
+			// Mounts /policies + /policies/{name} under the same protected
+			// API surface.
+			policies.Routes(policyProc)(g)
 			// M5: dashboard aggregate (action-style /dashboard) and
 			// audit-event query collection (JSON:API /audit-events).
 			dashboard.Routes(dashboardProc)(g)

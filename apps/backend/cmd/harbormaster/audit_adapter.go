@@ -15,6 +15,7 @@ import (
 	"github.com/jtumidanski/Harbormaster/internal/lifecycle"
 	hmminio "github.com/jtumidanski/Harbormaster/internal/minio"
 	"github.com/jtumidanski/Harbormaster/internal/objects"
+	"github.com/jtumidanski/Harbormaster/internal/policies"
 	"github.com/jtumidanski/Harbormaster/internal/users"
 )
 
@@ -239,13 +240,27 @@ func newSAClientGetter(pool *hmminio.Pool) users.SAClientGetter {
 	})
 }
 
+// newPoliciesClientGetter returns a policies.ClientGetter bound to the live
+// MinIO pool. The live *madmin.AdminClient satisfies policies.AdminClient by
+// structural typing, so no per-method adapter is needed.
+func newPoliciesClientGetter(pool *hmminio.Pool) policies.ClientGetter {
+	return policies.NewClientGetter(func(ctx context.Context) (policies.AdminClient, error) {
+		madm, _, err := pool.Get(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return madm, nil
+	})
+}
+
 // Compile-time anchors keeping the adapter types in sync with their
 // destination interfaces; a future signature drift fails the build here.
 var (
-	_ objects.S3Client          = objectS3Adapter{}
-	_ lifecycle.S3Client        = lifecycleS3Adapter{}
-	_ buckets.LifecycleCreator  = bucketLifecycleAdapter{}
-	_ dashboard.PoolGetter      = dashboardPoolAdapter{}
+	_ objects.S3Client         = objectS3Adapter{}
+	_ lifecycle.S3Client       = lifecycleS3Adapter{}
+	_ buckets.LifecycleCreator = bucketLifecycleAdapter{}
+	_ dashboard.PoolGetter     = dashboardPoolAdapter{}
+	_ policies.AdminClient     = (*madmin.AdminClient)(nil)
 )
 
 // dashboardPoolAdapter satisfies dashboard.PoolGetter by translating the

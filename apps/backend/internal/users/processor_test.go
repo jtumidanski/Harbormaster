@@ -2,6 +2,7 @@ package users
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -123,7 +124,7 @@ func TestUpdatePoliciesDiff(t *testing.T) {
 		{Name: "read-write"}, // unchanged
 		{Name: "backup-target", Params: map[string]string{"bucket": "ledger"}}, // new
 	}
-	require.NoError(t, p.UpdatePolicies(context.Background(), "alice", requested, "", ""))
+	require.NoError(t, p.UpdatePolicies(context.Background(), "alice", requested, nil, "", ""))
 
 	require.Len(t, adm.detachCalls, 1)
 	require.Equal(t, []string{"harbormaster-read-only"}, adm.detachCalls[0].Policies)
@@ -140,7 +141,7 @@ func TestUpdatePoliciesIdempotent(t *testing.T) {
 	adm.users["alice"] = makeUserInfo("harbormaster-read-only")
 
 	require.NoError(t, p.UpdatePolicies(context.Background(), "alice",
-		[]TemplateRef{{Name: "read-only"}}, "", ""))
+		[]TemplateRef{{Name: "read-only"}}, nil, "", ""))
 	require.Empty(t, adm.detachCalls)
 	require.Empty(t, adm.attachCalls)
 }
@@ -168,6 +169,96 @@ func TestListClassifiesPolicies(t *testing.T) {
 	require.Equal(t, "backup-target", us[1].AttachedTemplates[0].Name)
 	require.Equal(t, "ledger", us[1].AttachedTemplates[0].Params["bucket"])
 	require.Empty(t, us[1].OtherPolicies)
+}
+
+// --- custom-policy attach/detach tests ----------------------------------
+
+// TestUpdatePolicies_AttachesCustom — deployment has "proj-a" (custom);
+// request policies:["proj-a"] → stub records an AttachPolicy call for "proj-a".
+func TestUpdatePolicies_AttachesCustom(t *testing.T) {
+	p, adm := newTestProcessor(t)
+	adm.users["alice"] = makeUserInfo("")
+	adm.canned["proj-a"] = json.RawMessage(`{}`) // custom origin (no "harbormaster-" prefix)
+
+	err := p.UpdatePolicies(context.Background(), "alice", nil, []string{"proj-a"}, "", "")
+	require.NoError(t, err)
+
+	// Find an AttachPolicy call for "proj-a" specifically.
+	found := false
+	for _, c := range adm.attachCalls {
+		for _, pol := range c.Policies {
+			if pol == "proj-a" {
+				found = true
+			}
+		}
+	}
+	require.True(t, found, "expected AttachPolicy call for proj-a, got calls: %v", adm.attachCalls)
+}
+
+// TestUpdatePolicies_DetachesRemovedCustom — user currently has "proj-a"
+// (custom, in deployment); request empty policies → DetachPolicy("proj-a").
+func TestUpdatePolicies_DetachesRemovedCustom(t *testing.T) {
+	p, adm := newTestProcessor(t)
+	adm.users["alice"] = makeUserInfo("proj-a")
+	adm.canned["proj-a"] = json.RawMessage(`{}`)
+
+	err := p.UpdatePolicies(context.Background(), "alice", nil, nil, "", "")
+	require.NoError(t, err)
+
+	found := false
+	for _, c := range adm.detachCalls {
+		for _, pol := range c.Policies {
+			if pol == "proj-a" {
+				found = true
+			}
+		}
+	}
+	require.True(t, found, "expected DetachPolicy call for proj-a, got calls: %v", adm.detachCalls)
+}
+
+// TestUpdatePolicies_NeverDetachesBuiltin — GetUserInfo returns PolicyName
+// "consoleAdmin"; update with empty templates+policies → ZERO DetachPolicy calls.
+// consoleAdmin is a MinIO built-in and must never be detached.
+func TestUpdatePolicies_NeverDetachesBuiltin(t *testing.T) {
+	p, adm := newTestProcessor(t)
+	adm.users["alice"] = makeUserInfo("consoleAdmin")
+	// consoleAdmin is NOT in the custom deployment set — it's a built-in.
+
+	err := p.UpdatePolicies(context.Background(), "alice", nil, nil, "", "")
+	require.NoError(t, err)
+
+	require.Empty(t, adm.detachCalls,
+		"consoleAdmin must never be detached; got detach calls: %v", adm.detachCalls)
+}
+
+// TestUpdatePolicies_NeverDetachesForeign — user has "some-foreign" NOT in
+// deployment custom set; empty request → never detached.
+func TestUpdatePolicies_NeverDetachesForeign(t *testing.T) {
+	p, adm := newTestProcessor(t)
+	adm.users["alice"] = makeUserInfo("some-foreign")
+	// "some-foreign" is not in adm.canned → not in deploymentCustom.
+
+	err := p.UpdatePolicies(context.Background(), "alice", nil, nil, "", "")
+	require.NoError(t, err)
+
+	require.Empty(t, adm.detachCalls,
+		"some-foreign must never be detached (not in deployment); got: %v", adm.detachCalls)
+}
+
+// TestUpdatePolicies_RejectsUnknownPolicy — requesting a custom policy not
+// present in the deployment returns 422 with code "unknown_policy".
+func TestUpdatePolicies_RejectsUnknownPolicy(t *testing.T) {
+	p, adm := newTestProcessor(t)
+	adm.users["alice"] = makeUserInfo("")
+	// "nope" is not in adm.canned.
+
+	err := p.UpdatePolicies(context.Background(), "alice", nil, []string{"nope"}, "", "")
+	require.Error(t, err)
+
+	var ae *apierror.Error
+	require.True(t, errors.As(err, &ae))
+	require.Equal(t, "unknown_policy", ae.Code)
+	require.Equal(t, http.StatusUnprocessableEntity, ae.HTTPStatus)
 }
 
 // --- audit invariants ---------------------------------------------------
@@ -223,7 +314,7 @@ func TestAuditEvent_UserPoliciesUpdate(t *testing.T) {
 	p, _, a, adm := newAuditedProcessor(t)
 	adm.users["alice"] = makeUserInfo("harbormaster-read-only")
 	require.NoError(t, p.UpdatePolicies(context.Background(), "alice",
-		[]TemplateRef{{Name: "read-write"}}, "operator", "10.0.0.4"))
+		[]TemplateRef{{Name: "read-write"}}, nil, "operator", "10.0.0.4"))
 
 	ev, payload := loadLatestPayload(t, a, audit.ActionUserPoliciesUpdate)
 	require.Equal(t, audit.OutcomeSuccess, ev.Outcome)

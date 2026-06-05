@@ -1,6 +1,10 @@
 package users
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/jtumidanski/Harbormaster/internal/policies"
+)
 
 // templatePrefix is the canonical prefix every Harbormaster-materialised
 // policy carries. The reverse-mapper uses it to discriminate
@@ -71,19 +75,6 @@ func splitPolicyList(s string) []string {
 	return out
 }
 
-// classifyPolicies partitions a flat list of MinIO policy names into the
-// (managed, other) pair the User read model surfaces.
-func classifyPolicies(names []string) (managed []TemplateRef, other []string) {
-	for _, n := range names {
-		if ref, ok := parsePolicyName(n); ok {
-			managed = append(managed, ref)
-			continue
-		}
-		other = append(other, n)
-	}
-	return managed, other
-}
-
 // templateKey produces a stable key for a TemplateRef so the diff in
 // UpdatePolicies can compare current vs requested without slice ordering
 // noise. The format intentionally matches MaterializedName's output so a
@@ -95,4 +86,28 @@ func templateKey(ref TemplateRef) string {
 	default:
 		return "harbormaster-" + ref.Name
 	}
+}
+
+// classifyAttachments partitions a flat list of MinIO policy names into three
+// buckets:
+//   - templates: names that parse as a Harbormaster template ref (harbormaster-* prefix)
+//   - customOwned: names that are custom-origin AND present in deploymentCustom
+//     (i.e. Harbormaster owns the attachment and may diff it)
+//   - other: everything else (built-ins like consoleAdmin, foreign custom policies
+//     not in the deployment set) — never touched by Harbormaster
+func classifyAttachments(names []string, deploymentCustom map[string]struct{}) (templates []TemplateRef, customOwned, other []string) {
+	for _, n := range names {
+		if ref, ok := parsePolicyName(n); ok {
+			templates = append(templates, ref)
+			continue
+		}
+		if policies.OriginFor(n) == policies.OriginCustom {
+			if _, inDeployment := deploymentCustom[n]; inDeployment {
+				customOwned = append(customOwned, n)
+				continue
+			}
+		}
+		other = append(other, n)
+	}
+	return templates, customOwned, other
 }

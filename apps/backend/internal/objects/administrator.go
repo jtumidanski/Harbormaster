@@ -85,3 +85,66 @@ func presignedGet(ctx context.Context, s3 s3API, bucket, key string, ttl time.Du
 	}
 	return u, nil
 }
+
+// maxVersionScan caps how many version entries listObjectVersions will
+// drain from the channel for a single key. The version browser is scoped
+// to one key whose cardinality is normally tens; the cap bounds a
+// pathological key and flips VersionListResult.Truncated when hit.
+const maxVersionScan = 10_000
+
+// listObjectVersions returns all versions+delete-markers for exactly key
+// (the SDK's prefix listing can match siblings, so the caller filters to
+// exact-key matches). The bool return is "truncated" — true when the scan
+// stopped at maxVersionScan before the channel closed.
+func listObjectVersions(ctx context.Context, s3 s3API, bucket, key string) ([]miniogo.ObjectInfo, bool, error) {
+	infos, truncated, err := s3.ListObjectVersions(ctx, bucket, key, maxVersionScan)
+	if err != nil {
+		return nil, false, fmt.Errorf("objects.listObjectVersions: %w", err)
+	}
+	out := infos[:0]
+	for _, info := range infos {
+		if info.Key == key {
+			out = append(out, info)
+		}
+	}
+	return out, truncated, nil
+}
+
+// copyObjectVersion server-side copies srcVersionID of bucket/key back onto
+// the same bucket/key, creating a new current version (the restore op).
+func copyObjectVersion(ctx context.Context, s3 s3API, bucket, key, srcVersionID string) (miniogo.UploadInfo, error) {
+	info, err := s3.CopyObject(ctx,
+		miniogo.CopyDestOptions{Bucket: bucket, Object: key},
+		miniogo.CopySrcOptions{Bucket: bucket, Object: key, VersionID: srcVersionID},
+	)
+	if err != nil {
+		return miniogo.UploadInfo{}, fmt.Errorf("objects.copyObjectVersion: %w", err)
+	}
+	return info, nil
+}
+
+// removeObjectVersion permanently deletes a single version id of bucket/key.
+func removeObjectVersion(ctx context.Context, s3 s3API, bucket, key, versionID string) error {
+	if err := s3.RemoveObject(ctx, bucket, key, miniogo.RemoveObjectOptions{VersionID: versionID}); err != nil {
+		return fmt.Errorf("objects.removeObjectVersion: %w", err)
+	}
+	return nil
+}
+
+// statObjectVersion stats a specific version.
+func statObjectVersion(ctx context.Context, s3 s3API, bucket, key, versionID string) (miniogo.ObjectInfo, error) {
+	info, err := s3.StatObject(ctx, bucket, key, miniogo.StatObjectOptions{VersionID: versionID})
+	if err != nil {
+		return miniogo.ObjectInfo{}, fmt.Errorf("objects.statObjectVersion: %w", err)
+	}
+	return info, nil
+}
+
+// getObjectVersion opens a reader against a specific version body.
+func getObjectVersion(ctx context.Context, s3 s3API, bucket, key, versionID string) (io.ReadCloser, error) {
+	rc, err := s3.GetObject(ctx, bucket, key, miniogo.GetObjectOptions{VersionID: versionID})
+	if err != nil {
+		return nil, fmt.Errorf("objects.getObjectVersion: %w", err)
+	}
+	return rc, nil
+}

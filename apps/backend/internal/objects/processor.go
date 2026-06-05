@@ -50,6 +50,12 @@ const (
 // continuation-token plumbing the paginated UI needs.
 type s3API interface {
 	ListObjectsV2(bucketName, objectPrefix, startAfter, continuationToken, delimiter string, maxkeys int) (miniogo.ListBucketV2Result, error)
+	// ListObjectVersions drains the high-level WithVersions channel for a
+	// single key into a slice (newest-first per S3 semantics). Implemented
+	// in the wiring adapter via *miniogo.Client.ListObjects.
+	ListObjectVersions(ctx context.Context, bucket, key string, maxScan int) ([]miniogo.ObjectInfo, bool, error)
+	// CopyObject performs a server-side copy (used by restore).
+	CopyObject(ctx context.Context, dst miniogo.CopyDestOptions, src miniogo.CopySrcOptions) (miniogo.UploadInfo, error)
 	PutObject(ctx context.Context, bucket, object string, reader io.Reader, objectSize int64, opts miniogo.PutObjectOptions) (miniogo.UploadInfo, error)
 	RemoveObject(ctx context.Context, bucket, object string, opts miniogo.RemoveObjectOptions) error
 	GetObject(ctx context.Context, bucket, object string, opts miniogo.GetObjectOptions) (io.ReadCloser, error)
@@ -71,6 +77,12 @@ type ClientGetter func(ctx context.Context) (s3API, error)
 // the adapter at the wiring site wraps both into one shape.
 type S3Client interface {
 	ListObjectsV2(bucketName, objectPrefix, startAfter, continuationToken, delimiter string, maxkeys int) (miniogo.ListBucketV2Result, error)
+	// ListObjectVersions drains the high-level WithVersions channel for a
+	// single key into a slice (newest-first per S3 semantics). Implemented
+	// in the wiring adapter via *miniogo.Client.ListObjects.
+	ListObjectVersions(ctx context.Context, bucket, key string, maxScan int) ([]miniogo.ObjectInfo, bool, error)
+	// CopyObject performs a server-side copy (used by restore).
+	CopyObject(ctx context.Context, dst miniogo.CopyDestOptions, src miniogo.CopySrcOptions) (miniogo.UploadInfo, error)
 	PutObject(ctx context.Context, bucket, object string, reader io.Reader, objectSize int64, opts miniogo.PutObjectOptions) (miniogo.UploadInfo, error)
 	RemoveObject(ctx context.Context, bucket, object string, opts miniogo.RemoveObjectOptions) error
 	GetObject(ctx context.Context, bucket, object string, opts miniogo.GetObjectOptions) (io.ReadCloser, error)

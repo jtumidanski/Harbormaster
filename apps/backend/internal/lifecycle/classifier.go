@@ -55,6 +55,9 @@ func isExpirationShaped(r mlifecycle.Rule) bool {
 		r.AbortIncompleteMultipartUpload.IsDaysNull() &&
 		r.DelMarkerExpiration.IsNull() &&
 		!r.Expiration.IsDaysNull() && int(r.Expiration.Days) > 0 &&
+		r.Expiration.IsDateNull() &&
+		!r.Expiration.IsDeleteMarkerExpirationEnabled() &&
+		!r.Expiration.DeleteAll.IsEnabled() &&
 		hasNoTagFilters(r)
 }
 
@@ -64,7 +67,7 @@ func isExpirationShaped(r mlifecycle.Rule) bool {
 func isNoncurrentShaped(r mlifecycle.Rule) bool {
 	return r.Transition.IsNull() &&
 		r.NoncurrentVersionTransition.StorageClass == "" &&
-		r.Expiration.IsDaysNull() &&
+		r.Expiration.IsNull() &&
 		r.AbortIncompleteMultipartUpload.IsDaysNull() &&
 		r.DelMarkerExpiration.IsNull() &&
 		!r.NoncurrentVersionExpiration.IsDaysNull() &&
@@ -78,11 +81,11 @@ func isNoncurrentShaped(r mlifecycle.Rule) bool {
 func isAbortMPUShaped(r mlifecycle.Rule) bool {
 	return r.Transition.IsNull() &&
 		r.NoncurrentVersionTransition.StorageClass == "" &&
-		r.Expiration.IsDaysNull() &&
+		r.Expiration.IsNull() &&
 		r.NoncurrentVersionExpiration.IsDaysNull() &&
 		r.NoncurrentVersionExpiration.NewerNoncurrentVersions == 0 &&
 		r.DelMarkerExpiration.IsNull() &&
-		!r.AbortIncompleteMultipartUpload.IsDaysNull() &&
+		int(r.AbortIncompleteMultipartUpload.DaysAfterInitiation) > 0 &&
 		hasNoTagFilters(r)
 }
 

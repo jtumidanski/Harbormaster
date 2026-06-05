@@ -229,6 +229,7 @@ func TestGenerateRuleIDFormat(t *testing.T) {
 }
 
 func TestClassifyNoncurrentManaged(t *testing.T) {
+	t.Parallel()
 	r := mlifecycle.Rule{
 		ID:     "harbormaster-noncurrent-uploads-30d",
 		Status: "Enabled",
@@ -248,6 +249,7 @@ func TestClassifyNoncurrentManaged(t *testing.T) {
 }
 
 func TestClassifyAbortMPUManaged(t *testing.T) {
+	t.Parallel()
 	r := mlifecycle.Rule{
 		ID:     "harbormaster-abortmpu-all-7d",
 		Status: "Enabled",
@@ -262,6 +264,7 @@ func TestClassifyAbortMPUManaged(t *testing.T) {
 }
 
 func TestClassifyNoncurrentWithForeignActionIsUnmanaged(t *testing.T) {
+	t.Parallel()
 	// A noncurrent-ID rule that ALSO carries an expiration action is foreign-shaped.
 	r := mlifecycle.Rule{
 		ID:                          "harbormaster-noncurrent-all-30d",
@@ -271,5 +274,68 @@ func TestClassifyNoncurrentWithForeignActionIsUnmanaged(t *testing.T) {
 	}
 	if got := classify(r); got.Managed {
 		t.Fatalf("expected unmanaged, got %+v", got)
+	}
+}
+
+// TestClassifyNoncurrentWithDeleteMarkerIsUnmanaged is a regression test for
+// the escape path where Days==0 but DeleteMarker is enabled: IsDaysNull() was
+// true so the old guard passed. IsNull() closes the gap.
+func TestClassifyNoncurrentWithDeleteMarkerIsUnmanaged(t *testing.T) {
+	t.Parallel()
+	r := mlifecycle.Rule{
+		ID:     "harbormaster-noncurrent-all-30d",
+		Status: "Enabled",
+		NoncurrentVersionExpiration: mlifecycle.NoncurrentVersionExpiration{
+			NoncurrentDays: mlifecycle.ExpirationDays(30),
+		},
+		// Days==0 but DeleteMarker enabled — the old IsDaysNull() guard let this through.
+		Expiration: mlifecycle.Expiration{
+			DeleteMarker: mlifecycle.ExpireDeleteMarker(true),
+		},
+	}
+	got := classify(r)
+	if got.Managed {
+		t.Fatalf("noncurrent rule with foreign Expiration{DeleteMarker:true} → Managed=true; want false. Rule: %+v", got)
+	}
+}
+
+// TestClassifyAbortMPUWithDeleteMarkerIsUnmanaged is a regression test for the
+// same escape path in the abort-MPU shape helper.
+func TestClassifyAbortMPUWithDeleteMarkerIsUnmanaged(t *testing.T) {
+	t.Parallel()
+	r := mlifecycle.Rule{
+		ID:     "harbormaster-abortmpu-all-7d",
+		Status: "Enabled",
+		AbortIncompleteMultipartUpload: mlifecycle.AbortIncompleteMultipartUpload{
+			DaysAfterInitiation: mlifecycle.ExpirationDays(7),
+		},
+		// Days==0 but DeleteMarker enabled — the old IsDaysNull() guard let this through.
+		Expiration: mlifecycle.Expiration{
+			DeleteMarker: mlifecycle.ExpireDeleteMarker(true),
+		},
+	}
+	got := classify(r)
+	if got.Managed {
+		t.Fatalf("abortmpu rule with foreign Expiration{DeleteMarker:true} → Managed=true; want false. Rule: %+v", got)
+	}
+}
+
+// TestClassifyExpirationWithDeleteMarkerIsUnmanaged ensures that an expiration
+// rule carrying BOTH Days and DeleteMarker is rejected — the delete-marker
+// sub-action is foreign to a pure days-expiration managed rule.
+func TestClassifyExpirationWithDeleteMarkerIsUnmanaged(t *testing.T) {
+	t.Parallel()
+	r := mlifecycle.Rule{
+		ID:     "harbormaster-expire-30d-uploads",
+		Status: "Enabled",
+		Expiration: mlifecycle.Expiration{
+			Days:         mlifecycle.ExpirationDays(30),
+			DeleteMarker: mlifecycle.ExpireDeleteMarker(true),
+		},
+		RuleFilter: mlifecycle.Filter{Prefix: "uploads/"},
+	}
+	got := classify(r)
+	if got.Managed {
+		t.Fatalf("expire rule with Expiration{Days:30, DeleteMarker:true} → Managed=true; want false. Rule: %+v", got)
 	}
 }

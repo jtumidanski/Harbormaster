@@ -50,6 +50,10 @@ export const dashboardKeys = {
   failures: (window: string) => ["dashboard", "failures", window] as const,
 };
 
+export const metricsKeys = {
+  view: (window: string) => ["metrics", "view", window] as const,
+};
+
 export type AuditFilterKey = {
   action?: string;
   target_type?: string;

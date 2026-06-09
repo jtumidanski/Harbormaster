@@ -61,7 +61,7 @@ func TestObjects_RoundTrip(t *testing.T) {
 		t.Fatalf("uploaded object %q not present in List output (%d entries)", key, len(listRes.Entries))
 	}
 
-	rc, dlEntry, err := env.Objects.Download(ctx, bucketName, key, actor, sourceIP)
+	rc, dlEntry, err := env.Objects.Download(ctx, bucketName, key, "", actor, sourceIP)
 	if err != nil {
 		t.Fatalf("Download: %v", err)
 	}

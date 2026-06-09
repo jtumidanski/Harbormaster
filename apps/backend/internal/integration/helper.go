@@ -330,6 +330,33 @@ func (a integrationObjectS3) GetObject(ctx context.Context, bucket, object strin
 	return a.Client.GetObject(ctx, bucket, object, opts)
 }
 
+// ListObjectVersions mirrors cmd/harbormaster.objectS3Adapter, draining the
+// high-level Client.ListObjects channel (WithVersions=true) into a slice,
+// capping at maxScan. The bool return is "truncated". A cancelable context is
+// derived and cancelled via defer so the minio-go producer goroutine is torn
+// down on every return path.
+func (a integrationObjectS3) ListObjectVersions(ctx context.Context, bucket, key string, maxScan int) ([]miniogo.ObjectInfo, bool, error) {
+	cctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	ch := a.ListObjects(cctx, bucket, miniogo.ListObjectsOptions{
+		Prefix:       key,
+		WithVersions: true,
+	})
+	out := make([]miniogo.ObjectInfo, 0, 16)
+	truncated := false
+	for info := range ch {
+		if info.Err != nil {
+			return nil, false, info.Err
+		}
+		if len(out) >= maxScan {
+			truncated = true
+			break
+		}
+		out = append(out, info)
+	}
+	return out, truncated, nil
+}
+
 // newObjectClientGetter mirrors cmd/harbormaster.newObjectClientGetter.
 func newObjectClientGetter(pool *hmminio.Pool) objects.ClientGetter {
 	return objects.NewClientGetter(func(ctx context.Context) (objects.S3Client, error) {

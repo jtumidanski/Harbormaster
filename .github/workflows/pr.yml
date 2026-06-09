@@ -66,6 +66,22 @@ jobs:
         with: { go-version-file: apps/backend/go.mod }
       - run: CGO_ENABLED=0 go build ./...
 
+  # Compile-only guard for the //go:build integration code. The regular
+  # backend-* jobs never see these files (the tag is off by default), so
+  # signature drift between production and the integration tests stays green
+  # on PRs and only surfaces in the nightly integration run. `go vet`
+  # type-checks the tagged non-test files AND the _test.go files (plain
+  # `go build` skips test files), but never executes a test body or TestMain,
+  # so no Docker/MinIO is required.
+  backend-integration-build:
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: apps/backend } }
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
+        with: { go-version-file: apps/backend/go.mod }
+      - run: go vet -tags=integration ./...
+
   gitleaks:
     runs-on: ubuntu-24.04
     steps:

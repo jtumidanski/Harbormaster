@@ -144,7 +144,7 @@ func TestUsersIntegration_UpdatePolicies(t *testing.T) {
 	}
 
 	if err := env.Users.UpdatePolicies(ctx, accessKey,
-		[]users.TemplateRef{{Name: "read-write"}}, actor, sourceIP); err != nil {
+		[]users.TemplateRef{{Name: "read-write"}}, nil, actor, sourceIP); err != nil {
 		t.Fatalf("Users.UpdatePolicies: %v", err)
 	}
 

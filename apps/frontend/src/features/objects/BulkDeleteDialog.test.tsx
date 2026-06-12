@@ -63,7 +63,7 @@ describe("BulkDeleteDialog", () => {
   });
 
   it("reports a partial-failure toast and calls onDeleted", async () => {
-    const fetchSpy = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const fetchSpy = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
       const isDelete =
         typeof init?.body === "string" && init.body.includes('"dry_run":false');
       if (isDelete) {

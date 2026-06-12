@@ -780,3 +780,80 @@ func findNextNonMarker(infos []miniogo.ObjectInfo, excludeVersionID string) Obje
 	}
 	return ObjectVersion{}
 }
+
+// BulkDelete deletes (dryRun=false) or counts (dryRun=true) the union of
+// the explicit keys and every key under each prefix.
+//
+// Validation runs before any MinIO call and records NO audit event on a
+// pure reject: empty request -> 400 bad_request; invalid key -> 400
+// object_invalid_key; empty or "/" prefix -> 400 bad_request (the
+// whole-bucket-wipe guard, since an empty prefix matches every object).
+//
+// On dryRun the count is exact up to a 10,000 ceiling, beyond which
+// ObjectCount is reported as 10000 and Truncated is set; nothing is
+// deleted and no audit event is recorded. On a real delete, keys are
+// issued without a version ID (delete marker on a versioned bucket,
+// permanent removal otherwise), per-key failures are aggregated into
+// Failures[] without aborting, a listing/transport error aborts with a
+// 502 minio_error envelope, and exactly one audit event is recorded.
+func (p *Processor) BulkDelete(ctx context.Context, bucket string, keys, prefixes []string, dryRun bool, actor, sourceIP string) (BulkDeleteResult, error) {
+	if len(keys) == 0 && len(prefixes) == 0 {
+		return BulkDeleteResult{}, apierror.New(http.StatusBadRequest, "bad_request",
+			"at least one of keys or prefixes is required")
+	}
+	for _, k := range keys {
+		if err := ValidateObjectKey(k); err != nil {
+			return BulkDeleteResult{}, apierror.New(http.StatusBadRequest, "object_invalid_key", err.Error())
+		}
+	}
+	for _, prefix := range prefixes {
+		if prefix == "" || prefix == "/" {
+			return BulkDeleteResult{}, apierror.New(http.StatusBadRequest, "bad_request", "prefix must not be empty")
+		}
+	}
+
+	s3, err := p.clients(ctx)
+	if err != nil {
+		return BulkDeleteResult{}, err
+	}
+
+	if dryRun {
+		count, truncated, cerr := countExpansion(ctx, s3, bucket, keys, prefixes)
+		if cerr != nil {
+			return BulkDeleteResult{}, mapClientError(cerr, "failed to count objects")
+		}
+		return BulkDeleteResult{ObjectCount: count, Truncated: truncated}, nil
+	}
+
+	deleted, failures, derr := deleteExpansion(ctx, s3, bucket, keys, prefixes)
+	if derr != nil {
+		return BulkDeleteResult{}, mapClientError(derr, "failed to bulk delete objects")
+	}
+
+	// One audit event per real delete operation. A single-prefix folder
+	// delete (exactly one prefix, no explicit keys) is individually
+	// traceable via bucket/prefix; everything else targets the bucket.
+	targetID := bucket
+	if len(prefixes) == 1 && len(keys) == 0 {
+		targetID = bucket + "/" + prefixes[0]
+	}
+	outcome := audit.OutcomeSuccess
+	if len(failures) > 0 {
+		outcome = audit.OutcomeFailure
+	}
+	p.recordAudit(ctx, audit.Event{
+		Actor:      actor,
+		SourceIP:   sourceIP,
+		Action:     audit.ActionObjectBulkDelete,
+		TargetType: "object",
+		TargetID:   targetID,
+		Outcome:    outcome,
+		PayloadSummary: map[string]any{
+			"key_count":     len(keys),
+			"prefixes":      prefixes,
+			"deleted_count": deleted,
+			"failure_count": len(failures),
+		},
+	})
+	return BulkDeleteResult{DeletedCount: deleted, Failures: failures}, nil
+}

@@ -18,13 +18,13 @@ import (
 	"github.com/jtumidanski/Harbormaster/internal/jsonapi"
 )
 
-// writeActionJSON writes a plain-JSON response with the given HTTP
-// status code. The body is marshalled as-is; no JSON:API envelope is
-// applied. Used by action endpoints that return a success payload
-// (restore, undelete) rather than a 204.
-func writeActionJSON(w http.ResponseWriter, status int, body any) {
+// writeActionJSON writes a 200 plain-JSON response. The body is marshalled
+// as-is; no JSON:API envelope is applied. Used by action endpoints that
+// return a success payload (restore, undelete, bulk-delete) rather than a
+// 204.
+func writeActionJSON(w http.ResponseWriter, body any) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
+	w.WriteHeader(http.StatusOK)
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
 	_ = enc.Encode(body)
@@ -347,7 +347,7 @@ func (h *handler) restoreVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeActionJSON(w, http.StatusOK, map[string]any{
+	writeActionJSON(w, map[string]any{
 		"key":           v.Key,
 		"version_id":    v.VersionID,
 		"restored_from": body.VersionID,
@@ -393,7 +393,7 @@ func (h *handler) undelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeActionJSON(w, http.StatusOK, map[string]any{
+	writeActionJSON(w, map[string]any{
 		"key":        v.Key,
 		"version_id": v.VersionID,
 	})
@@ -445,7 +445,7 @@ func (h *handler) bulkDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if body.DryRun {
-		writeActionJSON(w, http.StatusOK, map[string]any{
+		writeActionJSON(w, map[string]any{
 			"object_count": res.ObjectCount,
 			"truncated":    res.Truncated,
 		})
@@ -456,7 +456,7 @@ func (h *handler) bulkDelete(w http.ResponseWriter, r *http.Request) {
 	for _, f := range res.Failures {
 		failures = append(failures, map[string]any{"key": f.Key, "error": f.Error})
 	}
-	writeActionJSON(w, http.StatusOK, map[string]any{
+	writeActionJSON(w, map[string]any{
 		"deleted_count": res.DeletedCount,
 		"failures":      failures,
 	})

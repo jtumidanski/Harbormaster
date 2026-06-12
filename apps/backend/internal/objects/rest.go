@@ -104,6 +104,15 @@ type UndeleteRequest struct {
 	Key string `json:"key"`
 }
 
+// BulkDeleteRequest is the body accepted by POST /objects/bulk-delete.
+// At least one of Keys or Prefixes must be non-empty; DryRun selects the
+// count-only preview vs. the real delete.
+type BulkDeleteRequest struct {
+	Keys     []string `json:"keys"`
+	Prefixes []string `json:"prefixes"`
+	DryRun   bool     `json:"dry_run"`
+}
+
 // versionResource is the JSON:API wrapper for an ObjectVersion. The wire
 // type is "object_versions"; the resource ID combines key and version_id
 // so it is unique within a bucket's version history.

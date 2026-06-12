@@ -276,10 +276,6 @@ func newTestProcessor(t *testing.T, s3 *stubS3, cfg ProcessorConfig) (*Processor
 // errFailing is a generic error sentinel used in negative-path tests.
 var errFailing = errors.New("stubS3 forced failure")
 
-// _ = errFailing keeps the symbol live even when no negative tests use
-// it; it's a convenient hook for future tests.
-var _ = errFailing
-
 func (s *stubS3) ListObjects(ctx context.Context, _ string, opts miniogo.ListObjectsOptions) <-chan miniogo.ObjectInfo {
 	ch := make(chan miniogo.ObjectInfo)
 	keys := s.bulkListing[opts.Prefix]

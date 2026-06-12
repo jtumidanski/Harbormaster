@@ -49,7 +49,7 @@ export function BulkDeleteDialog({
 
   const preview = useQuery({
     queryKey: ["objects", bucket, "bulk-delete-preview", sortedKeys, sortedPrefixes],
-    queryFn: () => previewBulkDelete(bucket, { keys, prefixes }),
+    queryFn: () => previewBulkDelete(bucket, { keys: sortedKeys, prefixes: sortedPrefixes }),
     enabled: open,
   });
 

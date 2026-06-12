@@ -43,6 +43,7 @@ const (
 	ActionObjectVersionRestore  = "object.version.restore"
 	ActionObjectVersionDelete   = "object.version.delete"
 	ActionObjectUndelete        = "object.undelete"
+	ActionObjectBulkDelete      = "object.bulk_delete"
 )
 
 // AllActions returns a slice of every defined action constant.
@@ -84,6 +85,7 @@ func AllActions() []string {
 		ActionObjectVersionRestore,
 		ActionObjectVersionDelete,
 		ActionObjectUndelete,
+		ActionObjectBulkDelete,
 	}
 }
 

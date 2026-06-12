@@ -38,9 +38,7 @@ export function ObjectBrowserPage({ bucket }: ObjectBrowserPageProps) {
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [selectedPrefixes, setSelectedPrefixes] = useState<Set<string>>(new Set());
   // bulkTarget holds the keys/prefixes the dialog is acting on; null = closed.
-  const [bulkTarget, setBulkTarget] = useState<{ keys: string[]; prefixes: string[] } | null>(
-    null,
-  );
+  const [bulkTarget, setBulkTarget] = useState<{ keys: string[]; prefixes: string[] } | null>(null);
 
   const clearSelection = () => {
     setSelectedKeys(new Set());

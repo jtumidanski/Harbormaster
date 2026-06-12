@@ -95,8 +95,8 @@ export function BulkDeleteDialog({
               </>
             ) : (
               <>
-                Delete <span className="font-semibold">{countLabel}</span> objects (
-                {selectedCount} selected item{selectedCount === 1 ? "" : "s"})?
+                Delete <span className="font-semibold">{countLabel}</span> objects ({selectedCount}{" "}
+                selected item{selectedCount === 1 ? "" : "s"})?
               </>
             )}
           </DialogDescription>

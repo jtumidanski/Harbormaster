@@ -1,0 +1,81 @@
+{
+  "service": "harbormaster-backend",
+  "path": "apps/backend/internal/objects (+ internal/audit)",
+  "scope": "818f5ed..HEAD changed Go packages",
+  "date": "2026-06-12",
+  "build": "pass",
+  "vet": "pass",
+  "lint": "pass",
+  "testsPassed": -1,
+  "testsFailed": 0,
+  "testRace": "pass",
+  "overallStatus": "pass",
+  "architectureNote": "objects is a stateless MinIO proxy domain with no local persistence (model.go:8-9); GORM/DDD-specific checks (Make/ToEntity/provider/administrator/api2go Transform/RegisterInputHandler) are N/A by design, consistent with buckets/audit packages. Bulk-delete folds into the existing Processor as a method per anti-patterns.md:156.",
+  "domains": [
+    {
+      "name": "internal/objects",
+      "type": "domain (stateless proxy)",
+      "checks": [
+        {"id": "DOM-01", "name": "builder.go / validated construction", "status": "na", "evidence": "no domain model; builder.go:15 ValidateObjectKey is the edge validator used at processor.go:805"},
+        {"id": "DOM-02", "name": "ToEntity()", "status": "na", "evidence": "no GORM entity (model.go:8-9)"},
+        {"id": "DOM-03", "name": "Make(Entity)", "status": "na", "evidence": "domain types built from miniogo.ObjectInfo"},
+        {"id": "DOM-04", "name": "Transform", "status": "na", "evidence": "hand-rolled jsonapi.Encoder resource wrappers rest.go:12-59"},
+        {"id": "DOM-05", "name": "TransformSlice / no inline loops", "status": "na", "evidence": "Encoder.Collection consumes resource slices resource.go:106-126"},
+        {"id": "DOM-06", "name": "Processor accepts FieldLogger", "status": "na", "evidence": "zerolog variant; Processor.Logger zerolog.Nop default processor.go:159,168"},
+        {"id": "DOM-07", "name": "Handlers pass d.Logger()", "status": "na", "evidence": "no logrus.StandardLogger; WithLogger injection processor.go:172"},
+        {"id": "DOM-08", "name": "POST typed input handler", "status": "na", "evidence": "chi handler + flat BulkDeleteRequest rest.go:110-114, resource.go:433-438"},
+        {"id": "DOM-09", "name": "Transform errors handled", "status": "pass", "evidence": "every return checked processor.go:816,822,829; resource.go:442-445"},
+        {"id": "DOM-10", "name": "Lazy providers", "status": "na", "evidence": "no provider layer"},
+        {"id": "DOM-11", "name": "No os.Getenv in handlers", "status": "pass", "evidence": "zero matches; config via Processor.Config resource.go:144,254"},
+        {"id": "DOM-12", "name": "No cross-domain logic in handlers", "status": "pass", "evidence": "bulkDelete handler calls only h.p.BulkDelete resource.go:431-463"},
+        {"id": "DOM-13", "name": "Handlers don't call providers directly", "status": "pass", "evidence": "handler to processor only resource.go:441"},
+        {"id": "DOM-14", "name": "No direct entity creation in handlers", "status": "pass", "evidence": "no db.Create/Save/Delete anywhere"},
+        {"id": "DOM-15", "name": "administrator.go for writes", "status": "na", "evidence": "no DB; MinIO writes in processor + bulkdelete.go helpers"},
+        {"id": "DOM-16", "name": "Domain error to HTTP status mapping", "status": "pass", "evidence": "400/400/502 processor.go:801,806,520,823,830; tests bulkdelete_test.go:107,113,119,125,165"},
+        {"id": "DOM-17", "name": "JSON:API interface on REST models", "status": "na", "evidence": "hand-rolled ResourceType/ResourceID/MarshalJSON rest.go:17-21; action-shape plain JSON by design"},
+        {"id": "DOM-18", "name": "Flat request models", "status": "pass", "evidence": "BulkDeleteRequest flat rest.go:110-114"},
+        {"id": "DOM-19", "name": "Behavioral / table tests", "status": "pass", "evidence": "bulkdelete_test.go; resource_test.go:493-576"}
+      ]
+    },
+    {
+      "name": "internal/objects bulk-delete sub-action",
+      "type": "sub-domain (folded into parent processor)",
+      "checks": [
+        {"id": "SUB-01", "name": "Business logic not in handler", "status": "pass", "evidence": "processor.go:799 + bulkdelete.go; handler thin resource.go:431-463"},
+        {"id": "SUB-02", "name": "Writes not in handler", "status": "pass", "evidence": "deleteExpansion bulkdelete.go:80 invoked by processor"},
+        {"id": "SUB-03", "name": "Typed POST input", "status": "pass", "evidence": "flat BulkDeleteRequest decoded resource.go:433-438"},
+        {"id": "SUB-04", "name": "No manual JSON:API envelope parsing", "status": "partial", "evidence": "json.NewDecoder.Decode flat body resource.go:434 — package-wide action convention, no envelope hand-rolling (I3)"}
+      ]
+    }
+  ],
+  "security": [
+    {"id": "SEC-route", "name": "Inherits session auth", "status": "pass", "evidence": "objects.Routes mounted in RequireSession+RequireCSRF group serve.go:219-231; route resource.go:76"},
+    {"id": "SEC-wipe", "name": "Whole-bucket-wipe guard", "status": "pass", "evidence": "empty/'/' prefix and empty request -> 400 before MinIO call processor.go:800-813; tests bulkdelete_test.go:110-126"},
+    {"id": "SEC-key", "name": "Object-key validation", "status": "pass", "evidence": "ValidateObjectKey per key processor.go:804-808; builder.go:15-29; test bulkdelete_test.go:122-126"},
+    {"id": "SEC-ver", "name": "No version ID on delete (delete-marker parity)", "status": "pass", "evidence": "miniogo.ObjectInfo{Key} + RemoveObjectsOptions{} bulkdelete.go:91,80; mirrors single Delete processor.go:304"},
+    {"id": "SEC-502", "name": "Transport error -> 502 minio_error", "status": "pass", "evidence": "mapClientError bulkdelete.go:43,104 -> processor.go:520,823,830; test bulkdelete_test.go:161-166"},
+    {"id": "SEC-audit", "name": "One audit per delete, correct target-id, none on dry-run/reject", "status": "pass", "evidence": "single recordAudit processor.go:844-857; dry-run/rejects return earlier processor.go:800-826; target-id rule processor.go:836-839; outcome flip processor.go:840-843"},
+    {"id": "SEC-leak", "name": "Audit payload cannot leak secrets/URLs", "status": "pass", "evidence": "Record calls Sanitize unconditionally processor.go:30,38; regex sanitize.go:8; payload only counts/prefixes processor.go:851-856; no_secrets_test covers object.bulk_delete model.go:46"},
+    {"id": "SEC-04", "name": "No hardcoded secrets", "status": "pass", "evidence": "none in changed files"}
+  ],
+  "goroutineReview": [
+    {"concern": "countExpansion teardown", "status": "pass", "evidence": "defer cancel bulkdelete.go:31-32; early-ceiling break bulkdelete.go:46; stub honours ctx.Done helpers_test.go:297-303"},
+    {"concern": "deleteExpansion teardown", "status": "pass", "evidence": "defer cancel bulkdelete.go:64-65; listing-error return bulkdelete.go:104; worker honours ctx.Done helpers_test.go:320-322"},
+    {"concern": "RemoveObjects channel drained", "status": "pass", "evidence": "flush drains errCh bulkdelete.go:81-85"},
+    {"concern": "race detector", "status": "pass", "evidence": "go test -race clean"}
+  ],
+  "interfaceLockstep": [
+    {"concern": "s3API vs S3Client parity", "status": "pass", "evidence": "identical ListObjects/RemoveObjects processor.go:68,101,71,104; build passes"},
+    {"concern": "stub implements new methods", "status": "pass", "evidence": "helpers_test.go:283,309"}
+  ],
+  "blocking": [],
+  "nonBlocking": [
+    "I5: stale `var _ = errFailing` keep-alive + misleading comment now dead since three tests use errFailing (helpers_test.go:279-281; bulkdelete_test.go:52,97,162)"
+  ],
+  "infoFindings": [
+    "I1: BulkDeleteResult overloads dry-run vs delete fields in one struct; documented (model.go:76-84)",
+    "I2: count over-reports on overlapping prefixes; intentional best-effort per PRD (bulkdelete.go:23-25)",
+    "I3: json.NewDecoder.Decode for flat action body — package convention, not JSON:API envelope hand-rolling (resource.go:434)",
+    "I4: deleteExpansion discards partial count on listing error but processor returns empty result + 502, so no misleading count surfaces (bulkdelete.go:104, processor.go:829)"
+  ]
+}

@@ -275,3 +275,101 @@ describe("ObjectBrowserPage virtualized list", () => {
     expect(calls.list).toBe(2);
   });
 });
+
+// Helper: build a list response body containing a single folder prefix entry
+// and no regular object entries. Mirrors how `entries()` builds list bodies.
+function folderListBody(prefix: string): unknown {
+  return {
+    data: [
+      {
+        type: "object_prefixes",
+        id: prefix,
+        attributes: { prefix },
+      },
+    ],
+    meta: { page: { size: 100 } },
+  };
+}
+
+describe("ObjectBrowserPage bulk delete", () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    document.cookie = "harbormaster_csrf=test-token; Path=/";
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("shows the selection toolbar after checking a folder and opens the dialog", async () => {
+    // Bulk-delete matcher must come FIRST — the list URL also contains
+    // "/objects" so a broad list matcher would shadow it otherwise.
+    installFetch([
+      {
+        match: (u, init) =>
+          u.includes("/objects/bulk-delete") &&
+          typeof init?.body === "string" &&
+          init.body.includes('"dry_run":true'),
+        response: () =>
+          new Response(JSON.stringify({ object_count: 5, truncated: false }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+      },
+      {
+        match: (u, init) =>
+          u.includes("/api/v1/buckets/photos/objects") && (init?.method ?? "GET") === "GET",
+        response: () => jsonapi(folderListBody("photos/")),
+      },
+    ]);
+
+    const qc = makeQueryClient();
+    render(
+      <Wrapper qc={qc}>
+        <ObjectBrowserPage bucket="photos" />
+      </Wrapper>,
+    );
+
+    const checkbox = await screen.findByLabelText(/select folder photos/i);
+    await userEvent.click(checkbox);
+
+    expect(await screen.findByTestId("selection-toolbar")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /delete selected/i }));
+
+    expect(await screen.findByText(/5/)).toBeInTheDocument();
+  });
+
+  it("opens the dialog from a folder row trash button", async () => {
+    installFetch([
+      {
+        match: (u, init) =>
+          u.includes("/objects/bulk-delete") &&
+          typeof init?.body === "string" &&
+          init.body.includes('"dry_run":true'),
+        response: () =>
+          new Response(JSON.stringify({ object_count: 7, truncated: false }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+      },
+      {
+        match: (u, init) =>
+          u.includes("/api/v1/buckets/photos/objects") && (init?.method ?? "GET") === "GET",
+        response: () => jsonapi(folderListBody("logs/")),
+      },
+    ]);
+
+    const qc = makeQueryClient();
+    render(
+      <Wrapper qc={qc}>
+        <ObjectBrowserPage bucket="photos" />
+      </Wrapper>,
+    );
+
+    const trash = await screen.findByLabelText(/delete folder logs/i);
+    await userEvent.click(trash);
+
+    expect(await screen.findByText(/7/)).toBeInTheDocument();
+  });
+});

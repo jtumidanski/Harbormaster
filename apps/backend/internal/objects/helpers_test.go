@@ -67,6 +67,19 @@ type stubS3 struct {
 
 	// removedVerIDs captures VersionIDs passed to RemoveObject via opts.
 	removedVerIDs []string
+
+	// Bulk-delete controls.
+	// bulkListing maps a prefix to the object keys ListObjects emits for it.
+	bulkListing map[string][]string
+	// bulkListErr, when set, makes ListObjects emit a single ObjectInfo
+	// with Err set (simulating a transport/listing failure).
+	bulkListErr error
+	// removeFailKeys maps a key to the error message RemoveObjects emits
+	// for it; keys absent from the map "succeed" (silence on the channel).
+	removeFailKeys map[string]string
+	// removeSubmitted captures every key handed to RemoveObjects across
+	// all batches, in submission order.
+	removeSubmitted []string
 }
 
 type listV2Call struct {
@@ -263,6 +276,48 @@ func newTestProcessor(t *testing.T, s3 *stubS3, cfg ProcessorConfig) (*Processor
 // errFailing is a generic error sentinel used in negative-path tests.
 var errFailing = errors.New("stubS3 forced failure")
 
-// _ = errFailing keeps the symbol live even when no negative tests use
-// it; it's a convenient hook for future tests.
-var _ = errFailing
+func (s *stubS3) ListObjects(ctx context.Context, _ string, opts miniogo.ListObjectsOptions) <-chan miniogo.ObjectInfo {
+	ch := make(chan miniogo.ObjectInfo)
+	keys := s.bulkListing[opts.Prefix]
+	listErr := s.bulkListErr
+	go func() {
+		defer close(ch)
+		if listErr != nil {
+			select {
+			case ch <- miniogo.ObjectInfo{Err: listErr}:
+			case <-ctx.Done():
+			}
+			return
+		}
+		for _, k := range keys {
+			select {
+			case ch <- miniogo.ObjectInfo{Key: k}:
+			case <-ctx.Done():
+				// Consumer broke early (e.g. dry-run ceiling); stop so the
+				// producer goroutine doesn't block forever on a send.
+				return
+			}
+		}
+	}()
+	return ch
+}
+
+func (s *stubS3) RemoveObjects(ctx context.Context, _ string, objectsCh <-chan miniogo.ObjectInfo, _ miniogo.RemoveObjectsOptions) <-chan miniogo.RemoveObjectError {
+	errCh := make(chan miniogo.RemoveObjectError)
+	go func() {
+		defer close(errCh)
+		for obj := range objectsCh {
+			s.mu.Lock()
+			s.removeSubmitted = append(s.removeSubmitted, obj.Key)
+			s.mu.Unlock()
+			if msg, ok := s.removeFailKeys[obj.Key]; ok {
+				select {
+				case errCh <- miniogo.RemoveObjectError{ObjectName: obj.Key, Err: errors.New(msg)}:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+	return errCh
+}

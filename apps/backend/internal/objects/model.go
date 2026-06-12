@@ -68,3 +68,25 @@ type VersionListResult struct {
 	NextToken string
 	Truncated bool
 }
+
+// BulkDeleteResult is the single result type for both bulk-delete modes.
+// The REST layer renders the dry-run subset (ObjectCount, Truncated) or
+// the delete subset (DeletedCount, Failures) depending on the request's
+// DryRun flag.
+type BulkDeleteResult struct {
+	// Dry-run fields.
+	ObjectCount int  // explicit keys + expanded prefix keys, exact up to the ceiling
+	Truncated   bool // count hit the 10,000 ceiling
+
+	// Delete fields.
+	DeletedCount int
+	Failures     []BulkDeleteFailure
+}
+
+// BulkDeleteFailure is a single per-key delete failure surfaced on the
+// RemoveObjects error channel. Error is the SDK error message; it never
+// aborts the remaining deletes.
+type BulkDeleteFailure struct {
+	Key   string
+	Error string
+}

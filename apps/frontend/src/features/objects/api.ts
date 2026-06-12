@@ -125,3 +125,44 @@ export async function undeleteObject(bucket: string, key: string): Promise<Undel
     { key },
   );
 }
+
+// Bulk-delete wire types. The endpoint is POST .../objects/bulk-delete
+// with a `dry_run` flag selecting the count preview vs. the real delete.
+export type BulkDeletePreview = {
+  object_count: number;
+  truncated: boolean;
+};
+
+export type BulkDeleteFailure = {
+  key: string;
+  error: string;
+};
+
+export type BulkDeleteResult = {
+  deleted_count: number;
+  failures: BulkDeleteFailure[];
+};
+
+// previewBulkDelete returns the dry-run object count (exact up to 10,000,
+// then truncated) for the given keys + prefixes WITHOUT deleting anything.
+export async function previewBulkDelete(
+  bucket: string,
+  args: { keys: string[]; prefixes: string[] },
+): Promise<BulkDeletePreview> {
+  return api.post<BulkDeletePreview>(
+    `/api/v1/buckets/${encodeURIComponent(bucket)}/objects/bulk-delete`,
+    { keys: args.keys, prefixes: args.prefixes, dry_run: true },
+  );
+}
+
+// bulkDelete performs the real delete of the explicit keys plus every key
+// under each prefix, returning the deleted count and per-key failures.
+export async function bulkDelete(
+  bucket: string,
+  args: { keys: string[]; prefixes: string[] },
+): Promise<BulkDeleteResult> {
+  return api.post<BulkDeleteResult>(
+    `/api/v1/buckets/${encodeURIComponent(bucket)}/objects/bulk-delete`,
+    { keys: args.keys, prefixes: args.prefixes, dry_run: false },
+  );
+}

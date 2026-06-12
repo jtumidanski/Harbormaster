@@ -18,6 +18,7 @@ import { ObjectVersionsSheet } from "./ObjectVersionsSheet";
 import { PreviewPane } from "./PreviewPane";
 import { ShareLinkDialog } from "./ShareLinkDialog";
 import { UploadDialog } from "./UploadDialog";
+import { BulkDeleteDialog } from "./BulkDeleteDialog";
 import { VirtualizedObjectList } from "./VirtualizedObjectList";
 import { deleteObject, downloadURL } from "./api";
 import { useInfiniteObjects } from "./useInfiniteObjects";
@@ -34,11 +35,42 @@ export function ObjectBrowserPage({ bucket }: ObjectBrowserPageProps) {
   const prefix = searchParams.get("prefix") ?? "";
   const qc = useQueryClient();
 
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [selectedPrefixes, setSelectedPrefixes] = useState<Set<string>>(new Set());
+  // bulkTarget holds the keys/prefixes the dialog is acting on; null = closed.
+  const [bulkTarget, setBulkTarget] = useState<{ keys: string[]; prefixes: string[] } | null>(null);
+
+  const clearSelection = () => {
+    setSelectedKeys(new Set());
+    setSelectedPrefixes(new Set());
+  };
+
+  const toggleKey = (key: string) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const togglePrefix = (prefix: string) => {
+    setSelectedPrefixes((prev) => {
+      const next = new Set(prev);
+      if (next.has(prefix)) next.delete(prefix);
+      else next.add(prefix);
+      return next;
+    });
+  };
+
+  const selectionCount = selectedKeys.size + selectedPrefixes.size;
+
   const setPrefix = (next: string) => {
     const sp = new URLSearchParams(searchParams);
     if (next) sp.set("prefix", next);
     else sp.delete("prefix");
     setSearchParams(sp, { replace: false });
+    clearSelection();
   };
 
   const query = useInfiniteObjects(bucket, prefix);
@@ -91,6 +123,33 @@ export function ObjectBrowserPage({ bucket }: ObjectBrowserPageProps) {
         </Button>
       </div>
 
+      {selectionCount > 0 && (
+        <div
+          className="flex items-center justify-between rounded border bg-accent/30 px-3 py-2 text-sm"
+          data-testid="selection-toolbar"
+        >
+          <span>{selectionCount} selected</span>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={() =>
+                setBulkTarget({
+                  keys: Array.from(selectedKeys),
+                  prefixes: Array.from(selectedPrefixes),
+                })
+              }
+            >
+              Delete selected
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={clearSelection}>
+              Clear
+            </Button>
+          </div>
+        </div>
+      )}
+
       {query.isLoading ? (
         <div className="rounded border bg-background p-6 text-sm text-muted-foreground">
           Loading…
@@ -113,6 +172,11 @@ export function ObjectBrowserPage({ bucket }: ObjectBrowserPageProps) {
           onShare={(key) => setShareKey(key)}
           onPreview={(key, contentType, size) => setPreview({ key, contentType, size })}
           onVersions={(key) => setVersionsKey(key)}
+          selectedKeys={selectedKeys}
+          selectedPrefixes={selectedPrefixes}
+          onToggleKey={toggleKey}
+          onTogglePrefix={togglePrefix}
+          onDeletePrefix={(prefix) => setBulkTarget({ keys: [], prefixes: [prefix] })}
         />
       )}
 
@@ -155,6 +219,23 @@ export function ObjectBrowserPage({ bucket }: ObjectBrowserPageProps) {
           open={versionsKey !== null}
           onOpenChange={(o) => {
             if (!o) setVersionsKey(null);
+          }}
+        />
+      )}
+
+      {bulkTarget !== null && (
+        <BulkDeleteDialog
+          open={bulkTarget !== null}
+          onOpenChange={(o) => {
+            if (!o) setBulkTarget(null);
+          }}
+          bucket={bucket}
+          listPrefix={prefix}
+          keys={bulkTarget.keys}
+          prefixes={bulkTarget.prefixes}
+          onDeleted={() => {
+            clearSelection();
+            setBulkTarget(null);
           }}
         />
       )}

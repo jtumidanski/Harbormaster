@@ -3,6 +3,7 @@ import type { UIEvent } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Download, Folder, History, Link as LinkIcon, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { ObjectListItem } from "./types";
 
 // Row layout constants. ESTIMATED_ROW_HEIGHT keeps the virtualizer
@@ -27,6 +28,11 @@ export type VirtualizedObjectListProps = {
   onShare: (key: string) => void;
   onPreview: (key: string, contentType: string, size: number) => void;
   onVersions: (key: string) => void;
+  selectedKeys: Set<string>;
+  selectedPrefixes: Set<string>;
+  onToggleKey: (key: string) => void;
+  onTogglePrefix: (prefix: string) => void;
+  onDeletePrefix: (prefix: string) => void;
 };
 
 function formatBytes(bytes: number): string {
@@ -63,6 +69,11 @@ export function VirtualizedObjectList({
   onShare,
   onPreview,
   onVersions,
+  selectedKeys,
+  selectedPrefixes,
+  onToggleKey,
+  onTogglePrefix,
+  onDeletePrefix,
 }: VirtualizedObjectListProps) {
   // fetchingRef provides a stricter "one outstanding request" guarantee
   // than `isFetchingNextPage` alone: it flips on the moment we decide to
@@ -132,6 +143,11 @@ export function VirtualizedObjectList({
                     className="absolute left-0 right-0 flex items-center gap-3 border-b px-3 text-sm hover:bg-accent/40"
                     style={rowStyle}
                   >
+                    <Checkbox
+                      aria-label={`Select folder ${lastSegment(p.prefix)}`}
+                      checked={selectedPrefixes.has(p.prefix)}
+                      onChange={() => onTogglePrefix(p.prefix)}
+                    />
                     <button
                       type="button"
                       className="flex flex-1 items-center gap-2 truncate text-left text-primary hover:underline"
@@ -140,6 +156,17 @@ export function VirtualizedObjectList({
                       <Folder className="h-4 w-4 shrink-0" aria-hidden="true" />
                       <span className="truncate">{lastSegment(p.prefix)}/</span>
                     </button>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        aria-label={`Delete folder ${lastSegment(p.prefix)}`}
+                        onClick={() => onDeletePrefix(p.prefix)}
+                      >
+                        <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      </Button>
+                    </div>
                   </div>
                 );
               }
@@ -151,6 +178,11 @@ export function VirtualizedObjectList({
                   className="absolute left-0 right-0 flex items-center gap-3 border-b px-3 text-sm hover:bg-accent/40"
                   style={rowStyle}
                 >
+                  <Checkbox
+                    aria-label={`Select ${e.key}`}
+                    checked={selectedKeys.has(e.key)}
+                    onChange={() => onToggleKey(e.key)}
+                  />
                   <button
                     type="button"
                     className="flex flex-1 items-center gap-2 truncate text-left hover:underline"

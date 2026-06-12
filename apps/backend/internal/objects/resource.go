@@ -73,6 +73,7 @@ func Routes(p *Processor) func(chi.Router) {
 		r.Post("/buckets/{bucket}/objects/restore-version", h.restoreVersion)
 		r.Delete("/buckets/{bucket}/objects/version", h.deleteVersion)
 		r.Post("/buckets/{bucket}/objects/undelete", h.undelete)
+		r.Post("/buckets/{bucket}/objects/bulk-delete", h.bulkDelete)
 	}
 }
 
@@ -420,6 +421,45 @@ func (h *handler) shareLink(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/vnd.api+json")
 	w.WriteHeader(http.StatusCreated)
 	_ = h.enc.Single(w, shareLinkResource{ShareLink: sl}, nil)
+}
+
+// bulkDelete deletes a mix of explicit object keys and recursive folder
+// prefixes in one operation, or (dry_run:true) counts what such a delete
+// would affect without deleting anything. The body is plain JSON,
+// mirroring restoreVersion/undelete; success and errors render
+// action-style so the SPA reads error.code directly.
+func (h *handler) bulkDelete(w http.ResponseWriter, r *http.Request) {
+	bucket := chi.URLParam(r, "bucket")
+	var body BulkDeleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		apierror.Write(w, apierror.StyleAction, apierror.New(
+			http.StatusBadRequest, "bad_request", "invalid JSON body"))
+		return
+	}
+
+	actor, ip := actorFromRequest(r)
+	res, err := h.p.BulkDelete(r.Context(), bucket, body.Keys, body.Prefixes, body.DryRun, actor, ip)
+	if err != nil {
+		apierror.Write(w, apierror.StyleAction, err)
+		return
+	}
+
+	if body.DryRun {
+		writeActionJSON(w, http.StatusOK, map[string]any{
+			"object_count": res.ObjectCount,
+			"truncated":    res.Truncated,
+		})
+		return
+	}
+
+	failures := make([]map[string]any, 0, len(res.Failures))
+	for _, f := range res.Failures {
+		failures = append(failures, map[string]any{"key": f.Key, "error": f.Error})
+	}
+	writeActionJSON(w, http.StatusOK, map[string]any{
+		"deleted_count": res.DeletedCount,
+		"failures":      failures,
+	})
 }
 
 // isMaxBytesError returns true when err originated from

@@ -487,5 +487,93 @@ func TestDownload_VersionID_DirectMode(t *testing.T) {
 	}
 }
 
+// TestBulkDelete_HTTP_DryRunShape posts a dry-run bulk-delete request with a
+// prefix and asserts the 200 response contains object_count=2 and
+// truncated=false.
+func TestBulkDelete_HTTP_DryRunShape(t *testing.T) {
+	stub := &stubS3{bulkListing: map[string][]string{"photos/": {"photos/a", "photos/b"}}}
+	r, _ := newTestRouter(t, ProcessorConfig{}, stub)
+
+	body := strings.NewReader(`{"prefixes":["photos/"],"dry_run":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/buckets/b/objects/bulk-delete", body)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body.String())
+	}
+	var got struct {
+		ObjectCount int  `json:"object_count"`
+		Truncated   bool `json:"truncated"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.ObjectCount != 2 || got.Truncated {
+		t.Fatalf("got %+v, want object_count=2 truncated=false", got)
+	}
+}
+
+// TestBulkDelete_HTTP_DeleteShape posts a live bulk-delete request and asserts
+// the 200 response contains deleted_count=1 and one failure for the bad key.
+func TestBulkDelete_HTTP_DeleteShape(t *testing.T) {
+	stub := &stubS3{
+		bulkListing:    map[string][]string{"logs/": {"logs/ok", "logs/bad"}},
+		removeFailKeys: map[string]string{"logs/bad": "boom"},
+	}
+	r, _ := newTestRouter(t, ProcessorConfig{}, stub)
+
+	body := strings.NewReader(`{"prefixes":["logs/"],"dry_run":false}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/buckets/b/objects/bulk-delete", body)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body.String())
+	}
+	var got struct {
+		DeletedCount int `json:"deleted_count"`
+		Failures     []struct {
+			Key   string `json:"key"`
+			Error string `json:"error"`
+		} `json:"failures"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.DeletedCount != 1 {
+		t.Fatalf("deleted_count = %d, want 1", got.DeletedCount)
+	}
+	if len(got.Failures) != 1 || got.Failures[0].Key != "logs/bad" {
+		t.Fatalf("failures = %+v, want one for logs/bad", got.Failures)
+	}
+}
+
+// TestBulkDelete_HTTP_EmptyRequest_400 posts a body with neither keys nor
+// prefixes and asserts the response is 400 with error.code = "bad_request".
+// The action-style envelope from apierror.StyleAction is: {"error":{"code":"...","message":"..."}}.
+func TestBulkDelete_HTTP_EmptyRequest_400(t *testing.T) {
+	r, _ := newTestRouter(t, ProcessorConfig{}, &stubS3{})
+	body := strings.NewReader(`{"dry_run":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/buckets/b/objects/bulk-delete", body)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body=%s", rr.Code, rr.Body.String())
+	}
+	var got struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Error.Code != "bad_request" {
+		t.Fatalf("error.code = %q, want bad_request", got.Error.Code)
+	}
+}
+
 // Compile-time sanity: ensure newTestProcessor and Routes interoperate.
 var _ = context.Background

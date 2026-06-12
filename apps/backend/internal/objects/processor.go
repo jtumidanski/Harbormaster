@@ -63,6 +63,12 @@ type s3API interface {
 	GetObject(ctx context.Context, bucket, object string, opts miniogo.GetObjectOptions) (io.ReadCloser, error)
 	StatObject(ctx context.Context, bucket, object string, opts miniogo.StatObjectOptions) (miniogo.ObjectInfo, error)
 	PresignedGetObject(ctx context.Context, bucket, object string, expires time.Duration, reqParams url.Values) (*url.URL, error)
+	// ListObjects streams a recursive (delimiter-less) listing of every
+	// key under opts.Prefix. Used by the bulk-delete prefix expansion.
+	ListObjects(ctx context.Context, bucket string, opts miniogo.ListObjectsOptions) <-chan miniogo.ObjectInfo
+	// RemoveObjects batch-deletes the keys fed on objectsCh, signalling
+	// per-key failures (and only failures) on the returned channel.
+	RemoveObjects(ctx context.Context, bucket string, objectsCh <-chan miniogo.ObjectInfo, opts miniogo.RemoveObjectsOptions) <-chan miniogo.RemoveObjectError
 }
 
 // ClientGetter is the concrete dependency the Processor pulls from on
@@ -90,6 +96,12 @@ type S3Client interface {
 	GetObject(ctx context.Context, bucket, object string, opts miniogo.GetObjectOptions) (io.ReadCloser, error)
 	StatObject(ctx context.Context, bucket, object string, opts miniogo.StatObjectOptions) (miniogo.ObjectInfo, error)
 	PresignedGetObject(ctx context.Context, bucket, object string, expires time.Duration, reqParams url.Values) (*url.URL, error)
+	// ListObjects streams a recursive (delimiter-less) listing of every
+	// key under opts.Prefix. Used by the bulk-delete prefix expansion.
+	ListObjects(ctx context.Context, bucket string, opts miniogo.ListObjectsOptions) <-chan miniogo.ObjectInfo
+	// RemoveObjects batch-deletes the keys fed on objectsCh, signalling
+	// per-key failures (and only failures) on the returned channel.
+	RemoveObjects(ctx context.Context, bucket string, objectsCh <-chan miniogo.ObjectInfo, opts miniogo.RemoveObjectsOptions) <-chan miniogo.RemoveObjectError
 }
 
 // NewClientGetter adapts a resolver that yields the public S3Client into

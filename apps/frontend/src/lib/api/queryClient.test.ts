@@ -49,6 +49,17 @@ describe("createQueryClient session-expiry handling", () => {
     );
   });
 
+  it("preserves the setup-status query so the route gate doesn't flash loading", async () => {
+    const qc = createQueryClient();
+    qc.setQueryData(authKeys.me(), alice);
+    qc.setQueryData(authKeys.setupStatus(), { initialized: true });
+
+    await failQuery(qc, sessionExpired());
+
+    expect(qc.getQueryData(authKeys.me())).toBeNull();
+    expect(qc.getQueryData(authKeys.setupStatus())).toEqual({ initialized: true });
+  });
+
   it("nulls auth.me when a mutation fails with 401 unauthenticated", async () => {
     const qc = createQueryClient();
     qc.setQueryData(authKeys.me(), alice);

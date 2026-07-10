@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import type { PropsWithChildren } from "react";
 import { Toaster } from "sonner";
+import { authKeys } from "@/lib/api/keys";
 import { UploadDialog } from "./UploadDialog";
 
 function makeQueryClient(): QueryClient {
@@ -135,6 +136,44 @@ describe("UploadDialog", () => {
 
     await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
     expect(screen.getByRole("alert").textContent ?? "").toMatch(/200 MiB/);
+  });
+
+  it("401 unauthenticated hands off to the session-expiry flow, no inline error", async () => {
+    const user = userEvent.setup();
+    // Default gcTime here: with gcTime 0 the observer-less seeded auth.me
+    // query is garbage-collected before the upload completes.
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 0 } },
+    });
+    qc.setQueryData(authKeys.me(), {
+      username: "alice",
+      session_expires_at: "2030-01-01T00:00:00Z",
+    });
+    render(
+      <Wrapper qc={qc}>
+        <UploadDialog open onOpenChange={() => undefined} bucket="photos" prefix="" />
+      </Wrapper>,
+    );
+
+    const input = screen.getByLabelText(/choose a file/i);
+    const file = new File(["small payload"], "ok.txt", { type: "text/plain" });
+    await user.upload(input, file);
+    await waitFor(() => expect(screen.getByText(/ok\.txt/)).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: /^upload$/i }));
+    await waitFor(() => expect(XhrStub.instances.length).toBe(1));
+
+    XhrStub.instances[0].complete(
+      401,
+      JSON.stringify({
+        errors: [{ code: "unauthenticated", detail: "Authentication required." }],
+      }),
+    );
+
+    // The global handler nulls auth.me (route gate flips to /login) instead
+    // of the dialog rendering an inline "Authentication required." error.
+    await waitFor(() => expect(qc.getQueryData(authKeys.me())).toBeNull());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("selecting a file over the cap rejects client-side without POST", async () => {

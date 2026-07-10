@@ -165,7 +165,9 @@ describe("LoginPage", () => {
     expect(screen.queryByText(/buckets screen/i)).not.toBeInTheDocument();
   });
 
-  it("on 204 success, invalidates auth.me and navigates to /buckets", async () => {
+  // Post-login navigation is owned by the route gate (see routes.test.tsx);
+  // LoginPage's job ends at refreshing the auth.me query.
+  it("on 204 success, invalidates auth.me", async () => {
     installFetch([
       unauthenticatedMeStub(),
       {
@@ -185,9 +187,8 @@ describe("LoginPage", () => {
     await fillAndSubmit(user);
 
     await waitFor(() => {
-      expect(screen.getByText(/buckets screen/i)).toBeInTheDocument();
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: authKeys.me() });
     });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: authKeys.me() });
   });
 
   it("shows field-level errors when username and password are empty", async () => {

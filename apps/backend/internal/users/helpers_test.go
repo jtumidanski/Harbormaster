@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	madmin "github.com/minio/madmin-go/v3"
+	madmin "github.com/minio/madmin-go/v4"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -213,14 +213,14 @@ func (s *stubAdmin) ListCannedPolicies(_ context.Context) (map[string]json.RawMe
 	return out, nil
 }
 
-func (s *stubAdmin) InfoCannedPolicy(_ context.Context, name string) ([]byte, error) {
+func (s *stubAdmin) InfoCannedPolicy(_ context.Context, name string) (*madmin.PolicyInfo, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	doc, ok := s.canned[name]
 	if !ok {
 		return nil, nil
 	}
-	return []byte(doc), nil
+	return &madmin.PolicyInfo{PolicyName: name, Policy: json.RawMessage(doc)}, nil
 }
 
 func (s *stubAdmin) ListServiceAccounts(_ context.Context, _ string) (madmin.ListServiceAccountsResp, error) {

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	madmin "github.com/minio/madmin-go/v3"
+	madmin "github.com/minio/madmin-go/v4"
 	"github.com/stretchr/testify/require"
 
 	"github.com/jtumidanski/Harbormaster/internal/audit"

@@ -100,10 +100,11 @@ func TestServiceAccountsIntegration_TemplateOverride(t *testing.T) {
 	// The materializer ensures the canonical policy exists on MinIO
 	// even when its body is also delivered inline on AddServiceAccount.
 	wantName := policies.MaterializedName("backup-target", override.Params)
-	body, err := env.Adm.InfoCannedPolicy(ctx, wantName)
+	polInfo, err := env.Adm.InfoCannedPolicy(ctx, wantName)
 	if err != nil {
 		t.Fatalf("InfoCannedPolicy(%s): %v", wantName, err)
 	}
+	body := polInfo.Policy
 	if !strings.Contains(string(body), bucket) {
 		t.Errorf("materialised backup-target policy missing bucket %q in body: %s",
 			bucket, string(body))

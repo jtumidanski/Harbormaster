@@ -22,8 +22,7 @@ if (typeof window.matchMedia !== "function") {
 // install a minimal in-memory shim so consumers of window.localStorage work.
 function installStorageShim(key: "localStorage" | "sessionStorage") {
   const existing = (window as unknown as Record<string, unknown>)[key] as
-    | { getItem?: unknown }
-    | undefined;
+    { getItem?: unknown } | undefined;
   if (existing && typeof existing.getItem === "function") return;
   const store = new Map<string, string>();
   const shim: Storage = {

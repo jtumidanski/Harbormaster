@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router";
 import { useAuth } from "@/context/AuthContext";
 import { useSetupStatus } from "@/lib/hooks/api/useSetupStatus";
 import { AppShell } from "@/components/AppShell";

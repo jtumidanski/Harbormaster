@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ---- Stage 1: frontend build ----
-FROM node:20.20.2-alpine AS frontend
+FROM node:24.19.0-alpine AS frontend
 WORKDIR /src
 COPY apps/frontend/package.json apps/frontend/package-lock.json ./
 RUN npm ci

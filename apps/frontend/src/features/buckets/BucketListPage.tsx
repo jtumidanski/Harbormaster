@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -121,7 +121,7 @@ export function BucketListPage() {
                 <TableRow
                   key={b.name}
                   className="cursor-pointer"
-                  onClick={() => navigate(`/buckets/${encodeURIComponent(b.name)}`)}
+                  onClick={() => void navigate(`/buckets/${encodeURIComponent(b.name)}`)}
                 >
                   <TableCell className="font-medium">
                     <button
@@ -129,7 +129,7 @@ export function BucketListPage() {
                       className="text-primary hover:underline"
                       onClick={(e) => {
                         e.stopPropagation();
-                        navigate(`/buckets/${encodeURIComponent(b.name)}`);
+                        void navigate(`/buckets/${encodeURIComponent(b.name)}`);
                       }}
                     >
                       {b.name}

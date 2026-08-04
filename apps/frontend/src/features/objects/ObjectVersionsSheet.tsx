@@ -92,7 +92,7 @@ export function ObjectVersionsSheet({
 
   const query = useInfiniteQuery({
     queryKey: objectsKeys.versions(bucket, objectKey),
-    initialPageParam: "" as string,
+    initialPageParam: "",
     queryFn: ({ pageParam }: { pageParam: string }): Promise<ObjectVersionListResponse> =>
       listVersions(bucket, objectKey, pageParam || undefined),
     getNextPageParam: (last: ObjectVersionListResponse): string | undefined => {

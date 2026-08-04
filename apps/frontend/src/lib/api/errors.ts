@@ -25,6 +25,14 @@ export class AppError extends Error {
   }
 }
 
+// JSON:API error members are untyped, so coerce them to a display string
+// without letting a stray object stringify to "[object Object]".
+function errorText(value: unknown, fallback: string): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return fallback;
+}
+
 export async function parseErrorResponse(res: Response): Promise<AppError> {
   let body: unknown = {};
   try {
@@ -41,8 +49,8 @@ export async function parseErrorResponse(res: Response): Promise<AppError> {
     const details = e.meta as AppErrorDetails | undefined;
     return new AppError({
       status: res.status,
-      code: String(e.code ?? "unknown"),
-      message: String(e.detail ?? e.title ?? res.statusText),
+      code: errorText(e.code, "unknown"),
+      message: errorText(e.detail, errorText(e.title, res.statusText)),
       ...(pointer !== undefined ? { pointer } : {}),
       ...(details !== undefined ? { details } : {}),
     });
@@ -52,8 +60,8 @@ export async function parseErrorResponse(res: Response): Promise<AppError> {
     const details = e.details as AppErrorDetails | undefined;
     return new AppError({
       status: res.status,
-      code: String(e.code ?? "unknown"),
-      message: String(e.message ?? res.statusText),
+      code: errorText(e.code, "unknown"),
+      message: errorText(e.message, res.statusText),
       ...(details !== undefined ? { details } : {}),
     });
   }

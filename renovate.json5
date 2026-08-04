@@ -34,6 +34,17 @@
       matchUpdateTypes: ["major"],
       dependencyDashboardApproval: true,
     },
+    // Hold TypeScript on 6.x: typescript-eslint peers on `typescript <6.1.0`
+    // and hard-throws at startup on TS >= 7, so `npm run lint` cannot run at
+    // all. Upstream support is blocked on ESLint gaining async parser support
+    // and is not expected for another 1-2 majors. Drop this rule once
+    // typescript-eslint ships TS 7 support.
+    // https://github.com/typescript-eslint/typescript-eslint/issues/10940
+    {
+      matchManagers: ["npm"],
+      matchPackageNames: ["typescript"],
+      allowedVersions: "<7",
+    },
     // Never auto-merge runtime / security / auth libs even on patch
     {
       matchPackageNames: [

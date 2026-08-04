@@ -2,13 +2,13 @@ package auth
 
 import (
 	"encoding/json"
-	"net"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/jtumidanski/Harbormaster/internal/apierror"
+	"github.com/jtumidanski/Harbormaster/internal/httpx"
 )
 
 // HandlerDeps wires the auth handlers with a processor, rate limiter, cookie
@@ -75,7 +75,7 @@ func (d HandlerDeps) login(w http.ResponseWriter, r *http.Request) {
 			"bad_request", "Invalid JSON body"))
 		return
 	}
-	ip := remoteIP(r)
+	ip := httpx.ClientIP(r)
 	now := time.Now().UTC()
 	if !d.RateLimiter.Allow(ip, now) {
 		apierror.Write(w, apierror.StyleAction, apierror.New(http.StatusTooManyRequests,
@@ -230,16 +230,6 @@ func (d HandlerDeps) clearCookie(w http.ResponseWriter, name string) {
 		Secure:   d.Secure,
 		SameSite: http.SameSiteLaxMode,
 	})
-}
-
-// remoteIP returns the host portion of r.RemoteAddr, falling back to the
-// raw value if it cannot be split (e.g. tests that set a bare IP).
-func remoteIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
 }
 
 func (d HandlerDeps) cookiePath() string {

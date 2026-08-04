@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/jtumidanski/Harbormaster/internal/apierror"
+	"github.com/jtumidanski/Harbormaster/internal/httpx"
 )
 
 // Routes returns a chi sub-router function that mounts the three setup
@@ -50,7 +51,7 @@ func (p *Processor) handleSubmit(w http.ResponseWriter, r *http.Request) {
 			"bad_request", "Invalid JSON body"))
 		return
 	}
-	sourceIP := r.RemoteAddr
+	sourceIP := httpx.ClientIP(r)
 	if err := p.Submit(r.Context(), body, sourceIP); err != nil {
 		writeError(w, err)
 		return

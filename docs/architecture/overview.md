@@ -81,7 +81,7 @@ Browser
   │  POST /api/v1/buckets  Content-Type: application/vnd.api+json
   ▼
 chi router (internal/server)
-  │  - chi/middleware: RequestID, RealIP, Recoverer, Timeout
+  │  - chi/middleware: RequestID, Recoverer, ClientIPFrom*, Timeout
   │  - in-house: Logger (zerolog ctx), AuditTagger (per-request actor)
   ▼
 Session middleware (internal/auth/middleware.go)

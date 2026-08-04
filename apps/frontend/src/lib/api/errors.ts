@@ -44,8 +44,7 @@ export async function parseErrorResponse(res: Response): Promise<AppError> {
   if (Array.isArray(b.errors) && b.errors.length > 0) {
     const e = b.errors[0] as Record<string, unknown>;
     const pointer = (e.source as Record<string, unknown> | undefined)?.pointer as
-      | string
-      | undefined;
+      string | undefined;
     const details = e.meta as AppErrorDetails | undefined;
     return new AppError({
       status: res.status,

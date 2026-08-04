@@ -38,7 +38,7 @@ jobs:
         # arch-independent here (distroless base + static CGO_ENABLED=0 Go
         # binary), and the push step below rebuilds multi-arch from cache.
         name: Build image for scanning (single-arch, no push)
-        uses: docker/build-push-action@5cd11c3a4ced054e52742c5fd54dca954e0edd85 # v6.7.0
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: deploy/docker/Dockerfile
@@ -59,7 +59,7 @@ jobs:
           trivyignores: ".trivyignore"
       - id: push
         name: Push image
-        uses: docker/build-push-action@5cd11c3a4ced054e52742c5fd54dca954e0edd85 # v6.7.0
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: deploy/docker/Dockerfile

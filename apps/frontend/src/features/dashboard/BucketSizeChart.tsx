@@ -98,7 +98,7 @@ export function BucketSizeChart() {
                 }
               />
               <Pie data={slices} dataKey="bytes" nameKey="key" />
-              <ChartLegend content={<ChartLegendContent nameKey="key" />} className="flex-wrap" />
+              <ChartLegend content={<ChartLegendContent nameKey="key" className="flex-wrap" />} />
             </PieChart>
           </ChartContainer>
         )}

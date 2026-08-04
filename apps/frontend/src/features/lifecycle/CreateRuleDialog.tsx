@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/select";
 import { AppError } from "@/lib/api/errors";
 import { lifecycleKeys } from "@/lib/api/keys";
-import { createRule, type CreateRuleAttrs } from "./api";
+import { createRule } from "./api";
 
 // ---------------------------------------------------------------------------
 // Zod discriminated-union schema — one branch per backend lifecycle kind.
@@ -43,7 +43,7 @@ const ruleSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("expiration"),
     days: z.coerce
-      .number({ invalid_type_error: "Enter a whole number." })
+      .number({ error: "Enter a whole number." })
       .int("Days must be a whole number.")
       .min(1, "Days must be at least 1.")
       .max(10_000, "Days must be at most 10000."),
@@ -52,12 +52,12 @@ const ruleSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("noncurrent-expiration"),
     noncurrent_days: z.coerce
-      .number({ invalid_type_error: "Enter a whole number." })
+      .number({ error: "Enter a whole number." })
       .int("Must be a whole number.")
       .min(1, "Must be at least 1.")
       .max(10_000, "Must be at most 10000."),
     newer_noncurrent_versions: z.coerce
-      .number({ invalid_type_error: "Enter a whole number." })
+      .number({ error: "Enter a whole number." })
       .int("Must be a whole number.")
       .min(0, "Must be at least 0.")
       .max(1000, "Must be at most 1000."),
@@ -66,7 +66,7 @@ const ruleSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("abort-incomplete-multipart"),
     days_after_initiation: z.coerce
-      .number({ invalid_type_error: "Enter a whole number." })
+      .number({ error: "Enter a whole number." })
       .int("Must be a whole number.")
       .min(1, "Must be at least 1.")
       .max(10_000, "Must be at most 10000."),
@@ -133,14 +133,14 @@ export function CreateRuleDialog({
     mode: "onSubmit",
   });
 
-  const kind = useWatch({ control: form.control, name: "kind" }) as FormValues["kind"];
+  const kind = useWatch({ control: form.control, name: "kind" });
 
   useEffect(() => {
     if (!open) form.reset(DEFAULT_VALUES);
   }, [open, form]);
 
   const mutation = useMutation({
-    mutationFn: (values: FormValues) => createRule(bucket, values as CreateRuleAttrs),
+    mutationFn: (values: FormValues) => createRule(bucket, values),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: lifecycleKeys.list(bucket) });
       toast.success("Lifecycle rule created.");
@@ -149,7 +149,7 @@ export function CreateRuleDialog({
     onError: (err: unknown) => {
       if (err instanceof AppError) {
         if (err.status === 422) {
-          const currentKind = form.getValues("kind") as FormValues["kind"];
+          const currentKind = form.getValues("kind");
           const field = pointerToField(err.pointer, currentKind);
           if (field) {
             form.setError(field, { type: "server", message: err.message });
@@ -175,7 +175,7 @@ export function CreateRuleDialog({
         <Form {...form}>
           <form
             onSubmit={(e) => {
-              void form.handleSubmit((values) => mutation.mutate(values as FormValues))(e);
+              void form.handleSubmit((values) => mutation.mutate(values))(e);
             }}
             className="space-y-4"
             noValidate
@@ -188,7 +188,7 @@ export function CreateRuleDialog({
                 <FormItem>
                   <FormLabel>Rule kind</FormLabel>
                   <Select
-                    value={field.value as string}
+                    value={field.value}
                     onValueChange={(v) => {
                       field.onChange(v);
                       form.clearErrors();

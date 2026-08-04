@@ -1,4 +1,4 @@
-import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Link, Outlet, useLocation, useNavigate } from "react-router";
 import {
   Activity,
   Database,
@@ -94,7 +94,7 @@ function UserMenu() {
       <DropdownMenuContent align="end" className="min-w-44">
         <DropdownMenuLabel className="truncate">{me?.username ?? "Account"}</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => navigate("/settings/account")}>
+        <DropdownMenuItem onSelect={() => void navigate("/settings/account")}>
           <KeyRound aria-hidden="true" className="mr-2 size-4" /> Change password
         </DropdownMenuItem>
         <DropdownMenuItem

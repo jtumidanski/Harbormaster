@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -47,7 +47,7 @@ export function DeleteBucketDialog({
       await qc.invalidateQueries({ queryKey: bucketsKeys.all() });
       toast.success("Bucket deleted.");
       onOpenChange(false);
-      navigate("/buckets");
+      await navigate("/buckets");
     },
     onError: (err: unknown) => {
       if (err instanceof AppError) {

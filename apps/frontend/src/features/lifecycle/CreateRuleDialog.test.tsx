@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import type { PropsWithChildren } from "react";
 import { Toaster } from "sonner";
 import { CreateRuleDialog } from "./CreateRuleDialog";
@@ -386,7 +386,7 @@ describe("CreateRuleDialog", () => {
       await user.click(screen.getByRole("button", { name: /add rule/i }));
 
       await waitFor(() => {
-        const statuses = screen.getAllByRole("status", { hidden: true });
+        const statuses = Array.from(document.querySelectorAll("[data-sonner-toast]"));
         const text = statuses.map((n) => n.textContent ?? "").join(" ");
         expect(text).toContain("Unknown field error");
       });

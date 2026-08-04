@@ -1,7 +1,7 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,7 +33,7 @@ export function LoginPage() {
       login({ username: values.username, password: values.password }),
     onSuccess: async () => {
       await refresh();
-      navigate("/buckets");
+      await navigate("/buckets");
     },
     onError: (err: unknown) => {
       if (err instanceof AppError) {

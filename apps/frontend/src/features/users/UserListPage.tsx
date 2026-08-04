@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -103,7 +103,7 @@ export function UserListPage() {
                 <TableRow
                   key={u.access_key}
                   className="cursor-pointer"
-                  onClick={() => navigate(`/users/${encodeURIComponent(u.access_key)}`)}
+                  onClick={() => void navigate(`/users/${encodeURIComponent(u.access_key)}`)}
                 >
                   <TableCell className="font-medium">
                     <button
@@ -111,7 +111,7 @@ export function UserListPage() {
                       className="text-primary hover:underline"
                       onClick={(e) => {
                         e.stopPropagation();
-                        navigate(`/users/${encodeURIComponent(u.access_key)}`);
+                        void navigate(`/users/${encodeURIComponent(u.access_key)}`);
                       }}
                     >
                       {u.access_key}

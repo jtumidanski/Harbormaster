@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.25
 
 # ---- Stage 1: frontend build ----
 FROM node:24.19.0-alpine AS frontend
@@ -9,7 +9,7 @@ COPY apps/frontend/ ./
 RUN npm run build
 
 # ---- Stage 2: backend build ----
-FROM golang:1.25-alpine AS backend
+FROM golang:1.26-alpine AS backend
 WORKDIR /src
 COPY apps/backend/go.mod apps/backend/go.sum ./
 RUN go mod download

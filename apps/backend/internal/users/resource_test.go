@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	madmin "github.com/minio/madmin-go/v3"
+	madmin "github.com/minio/madmin-go/v4"
 	"github.com/stretchr/testify/require"
 )
 

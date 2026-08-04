@@ -6,7 +6,6 @@ require (
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/golang-migrate/migrate/v4 v4.19.1
-	github.com/minio/madmin-go/v3 v3.0.110
 	github.com/minio/madmin-go/v4 v4.10.1
 	github.com/minio/minio-go/v7 v7.2.1
 	github.com/oklog/ulid/v2 v2.1.2
@@ -63,6 +62,8 @@ require (
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
+	github.com/minio/minlz v1.2.0 // indirect
+	github.com/minio/pkg/v3 v3.4.0 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/go-archive v0.2.0 // indirect
 	github.com/moby/moby/api v1.54.2 // indirect
@@ -88,9 +89,7 @@ require (
 	github.com/safchain/ethtool v0.6.1 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
 	github.com/secure-io/sio-go v0.3.1 // indirect
-	github.com/shirou/gopsutil/v3 v3.24.5 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.5 // indirect
-	github.com/shoenig/go-m1cpu v0.1.6 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
 	github.com/spf13/afero v1.15.0 // indirect

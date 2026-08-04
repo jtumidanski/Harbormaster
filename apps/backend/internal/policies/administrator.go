@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	madmin "github.com/minio/madmin-go/v3"
+	madmin "github.com/minio/madmin-go/v4"
 )
 
 // listCanned retrieves all canned policies from MinIO and converts them
@@ -86,7 +86,7 @@ func containsPolicy(csv, name string) bool {
 // structural typing.
 type adminAPI interface {
 	ListCannedPolicies(ctx context.Context) (map[string]json.RawMessage, error)
-	InfoCannedPolicy(ctx context.Context, policyName string) ([]byte, error)
+	InfoCannedPolicy(ctx context.Context, policyName string) (*madmin.PolicyInfo, error)
 	AddCannedPolicy(ctx context.Context, policyName string, policy []byte) error
 	RemoveCannedPolicy(ctx context.Context, policyName string) error
 	ListUsers(ctx context.Context) (map[string]madmin.UserInfo, error)

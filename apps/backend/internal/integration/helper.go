@@ -35,7 +35,7 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
-	madmin "github.com/minio/madmin-go/v3"
+	madmin "github.com/minio/madmin-go/v4"
 	miniogo "github.com/minio/minio-go/v7"
 	tcminio "github.com/testcontainers/testcontainers-go/modules/minio"
 	"gorm.io/gorm"

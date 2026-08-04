@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"sort"
 
-	madmin "github.com/minio/madmin-go/v3"
+	madmin "github.com/minio/madmin-go/v4"
 	"github.com/rs/zerolog"
 
 	"github.com/jtumidanski/Harbormaster/internal/apierror"
@@ -21,7 +21,7 @@ import (
 // satisfies this shape directly.
 type AdminClient interface {
 	ListCannedPolicies(ctx context.Context) (map[string]json.RawMessage, error)
-	InfoCannedPolicy(ctx context.Context, policyName string) ([]byte, error)
+	InfoCannedPolicy(ctx context.Context, policyName string) (*madmin.PolicyInfo, error)
 	AddCannedPolicy(ctx context.Context, policyName string, policy []byte) error
 	RemoveCannedPolicy(ctx context.Context, policyName string) error
 	ListUsers(ctx context.Context) (map[string]madmin.UserInfo, error)
@@ -179,9 +179,16 @@ func (p *Processor) Get(ctx context.Context, name string) (PolicyDetail, error) 
 	if err != nil {
 		return PolicyDetail{}, err
 	}
-	raw, err := adm.InfoCannedPolicy(ctx, name)
+	info, err := adm.InfoCannedPolicy(ctx, name)
 	if err != nil {
 		return PolicyDetail{}, mapClientError(err, "failed to get policy")
+	}
+	// madmin v4 folded the old InfoCannedPolicyV2 into InfoCannedPolicy, so
+	// the policy document now arrives as PolicyInfo.Policy rather than as the
+	// raw response body.
+	var raw []byte
+	if info != nil {
+		raw = info.Policy
 	}
 	pol := policyFromEntry(name, raw)
 	return PolicyDetail{Policy: pol, Document: raw}, nil

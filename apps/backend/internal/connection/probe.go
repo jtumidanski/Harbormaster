@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	madmin "github.com/minio/madmin-go/v3"
+	madmin "github.com/minio/madmin-go/v4"
 	miniogo "github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
@@ -129,15 +129,15 @@ func Probe(ctx context.Context, in SubmitInput) (TestResult, *apierror.Error) {
 	out.ListBuckets = "ok"
 
 	madm, err := madmin.NewWithOptions(host, &madmin.Options{
-		Creds:  credentials.NewStaticV4(in.AccessKey, in.SecretKey, ""),
-		Secure: useTLS,
+		Creds:     credentials.NewStaticV4(in.AccessKey, in.SecretKey, ""),
+		Secure:    useTLS,
+		Transport: tr,
 	})
 	if err != nil {
 		return out, apierror.New(http.StatusUnprocessableEntity, "minio_unreachable",
 			"admin client init failed").
 			WithDetails(map[string]any{"underlying": err.Error()})
 	}
-	madm.SetCustomTransport(tr)
 	info, err := madm.ServerInfo(ctx)
 	if err != nil {
 		msg := err.Error()

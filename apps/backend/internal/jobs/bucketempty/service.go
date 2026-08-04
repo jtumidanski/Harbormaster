@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	madmin "github.com/minio/madmin-go/v3"
+	madmin "github.com/minio/madmin-go/v4"
 	miniogo "github.com/minio/minio-go/v7"
 	"gorm.io/gorm"
 )

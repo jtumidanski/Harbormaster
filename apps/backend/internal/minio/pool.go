@@ -13,7 +13,7 @@ import (
 	"net/url"
 	"sync"
 
-	madmin "github.com/minio/madmin-go/v3"
+	madmin "github.com/minio/madmin-go/v4"
 	miniogo "github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
@@ -119,13 +119,13 @@ func build(c Credentials) (*miniogo.Client, *madmin.AdminClient, error) {
 		return nil, nil, err
 	}
 	madm, err := madmin.NewWithOptions(host, &madmin.Options{
-		Creds:  credentials.NewStaticV4(c.AccessKey, c.SecretKey, ""),
-		Secure: useTLS,
+		Creds:     credentials.NewStaticV4(c.AccessKey, c.SecretKey, ""),
+		Secure:    useTLS,
+		Transport: tr,
 	})
 	if err != nil {
 		return nil, nil, err
 	}
-	madm.SetCustomTransport(tr)
 	_ = parsed
 	return mc, madm, nil
 }

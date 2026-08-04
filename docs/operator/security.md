@@ -20,7 +20,7 @@ VPN. It is **not** a public-internet SaaS.
 | Destructive ops via stolen session | Typed-confirmation modals (`empty bucket` / `delete user`); audit event regardless of outcome.           |
 | Audit-event leakage of secrets     | Payload summaries are bounded structured maps; secrets (S3 access keys, passwords) never appear.         |
 | Supply-chain compromise            | PR Trivy scan, main-build Trivy scan, cosign keyless sign, license allowlist, Renovate min-release-age.  |
-| Reverse-proxy header spoofing      | `HARBORMASTER_TRUSTED_PROXIES` defaults empty — only configured CIDRs may set `X-Forwarded-*` headers.   |
+| Reverse-proxy header spoofing      | `HARBORMASTER_TRUSTED_PROXIES` defaults empty — with no CIDRs configured, `X-Forwarded-For` is ignored and the TCP peer address is the client IP. |
 
 Out-of-scope for v1: SaaS deployments, multi-tenancy, SSO/OIDC, MFA,
 WebAuthn. See PRD §2 non-goals.

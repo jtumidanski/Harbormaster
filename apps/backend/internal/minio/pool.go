@@ -90,11 +90,14 @@ func (p *Pool) NewMetricsClient(ctx context.Context) (*madmin.MetricsClient, err
 	if err != nil {
 		return nil, err
 	}
-	mcl, err := madmin.NewMetricsClient(host, cred.AccessKey, cred.SecretKey, useTLS)
+	mcl, err := madmin.NewMetricsClientWithOptions(host, &madmin.Options{
+		Creds:     credentials.NewStaticV4(cred.AccessKey, cred.SecretKey, ""),
+		Secure:    useTLS,
+		Transport: tr,
+	})
 	if err != nil {
 		return nil, err
 	}
-	mcl.SetCustomTransport(tr)
 	return mcl, nil
 }
 

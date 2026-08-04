@@ -90,3 +90,18 @@ func TestLoadRejectsTLSPartial(t *testing.T) {
 	_, err := Load()
 	require.ErrorContains(t, err, "TLS_CERT_FILE and HARBORMASTER_TLS_KEY_FILE must both be set or both be empty")
 }
+
+func TestLoadRejectsInvalidTrustedProxies(t *testing.T) {
+	t.Setenv("HARBORMASTER_DATA_DIR", t.TempDir())
+	t.Setenv("HARBORMASTER_TRUSTED_PROXIES", "10.0.0.0/8,not-a-cidr")
+	_, err := Load()
+	require.ErrorContains(t, err, `HARBORMASTER_TRUSTED_PROXIES entry "not-a-cidr"`)
+}
+
+func TestLoadAcceptsTrustedProxies(t *testing.T) {
+	t.Setenv("HARBORMASTER_DATA_DIR", t.TempDir())
+	t.Setenv("HARBORMASTER_TRUSTED_PROXIES", "10.0.0.0/8, 2001:db8::/32")
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, []string{"10.0.0.0/8", "2001:db8::/32"}, cfg.TrustedProxies)
+}

@@ -3,13 +3,13 @@ package connection
 import (
 	"encoding/json"
 	"errors"
-	"net"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/jtumidanski/Harbormaster/internal/apierror"
 	"github.com/jtumidanski/Harbormaster/internal/auth"
+	"github.com/jtumidanski/Harbormaster/internal/httpx"
 )
 
 // Routes returns a chi sub-router function that mounts /connection,
@@ -78,11 +78,7 @@ func actorFromRequest(r *http.Request) (string, string) {
 	if si, ok := auth.FromContext(r.Context()); ok {
 		return si.Username, si.SourceIP
 	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	return "", host
+	return "", httpx.ClientIP(r)
 }
 
 // writeError renders any error through the action-style apierror envelope.

@@ -101,7 +101,7 @@ Sources, highest priority first:
 | `HARBORMASTER_SESSION_TIMEOUT`            | `8h`                             | Session inactivity timeout. Go duration string.                                               |
 | `HARBORMASTER_SESSION_COOKIE_NAME`        | `harbormaster_session`           | Session cookie name.                                                                          |
 | `HARBORMASTER_BASE_PATH`                  | `/`                              | URL prefix when reverse-proxied at a subpath (e.g. `/harbormaster`). Must start with `/`.     |
-| `HARBORMASTER_TRUSTED_PROXIES`            | (empty)                          | CSV of CIDRs; controls client-IP derivation behind a proxy.                                   |
+| `HARBORMASTER_TRUSTED_PROXIES`            | (empty)                          | CSV of CIDRs. Set to your reverse proxy's networks to derive client IPs from `X-Forwarded-For`; empty means forwarding headers are ignored. |
 | `HARBORMASTER_UPLOAD_MAX_BYTES`           | `104857600` (100 MiB)            | Hard cap on per-request upload size.                                                          |
 | `HARBORMASTER_SHARE_LINK_MAX_TTL`         | `168h` (7 days)                  | Upper bound an operator may pick for object share-link expiry.                                |
 | `HARBORMASTER_DOWNLOAD_PROXY_MODE`        | `proxy`                          | `proxy` streams via Harbormaster; `direct` returns a presigned MinIO URL (MinIO must be reachable from the browser). |

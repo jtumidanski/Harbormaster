@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/jtumidanski/Harbormaster/internal/apierror"
 	"github.com/jtumidanski/Harbormaster/internal/auth"
+	"github.com/jtumidanski/Harbormaster/internal/httpx"
 	"github.com/jtumidanski/Harbormaster/internal/jsonapi"
 )
 
@@ -39,11 +39,7 @@ func actorFromRequest(r *http.Request) (string, string) {
 	if si, ok := auth.FromContext(r.Context()); ok {
 		return si.Username, si.SourceIP
 	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	return "", host
+	return "", httpx.ClientIP(r)
 }
 
 // Routes returns a chi sub-router function that mounts the object

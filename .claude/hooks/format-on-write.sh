@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# PostToolUse hook — format the file a Write/Edit just touched (task-171).
+# PostToolUse hook — format the file a Write/Edit just touched.
 #
-# DELIBERATELY FAIL-OPEN (design.md §3.6): a local convenience hook must never
-# block an edit. Missing toolchain, missing cached binary, unparseable input,
-# tool error — all exit 0 silently. CI (lint-go / lint-ui) is the enforcement
+# DELIBERATELY FAIL-OPEN: a local convenience hook must never block an edit.
+# Missing toolchain, missing cached binary, unparseable input, tool error —
+# all exit 0 silently. CI (backend-lint / frontend-lint) is the enforcement
 # point. To avoid a multi-minute stall on first Write, the hook never
 # bootstraps golangci-lint itself; it uses the binary only if
 # tools/verify.sh has already cached it.

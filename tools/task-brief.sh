@@ -4,7 +4,10 @@
 #
 # Why this lives in the repo
 # --------------------------
-# `.claude/commands/execute-task.md` Step 4b instructs the controller to run
+# `.claude/commands/execute-task.md` Step 4 ("Invoke subagent-driven-
+# development") instructs the controller to extract each task's brief with
+# `tools/task-brief.sh` rather than handing the full plan.md to the
+# implementer. Before this script existed, that step pointed at
 # `scripts/task-brief`. That path does not exist here — the script it means is
 # the superpowers plugin's, at:
 #

@@ -66,7 +66,7 @@ allow 'journalctl -u harbormaster --since "5 min ago" | tail -50'
 echo "== allowed: ordinary work =="
 allow 'go build ./...'
 allow 'git status --short'
-allow 'tools/verify.sh --facts --quick'
+allow 'tools/verify.sh --no-docker --quick'
 allow 'grep -rn "sleep" tools/ | head'
 # `sleep` as CONTENT of a file being written is not a poll.
 allow 'cat > /tmp/x.sh <<EOF

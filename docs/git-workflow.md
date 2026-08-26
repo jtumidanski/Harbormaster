@@ -1,7 +1,8 @@
 # Git Workflow
 
-This document owns the mechanics of branch safety, pushing after history
-rewrites, what triggers a PR build, and `gh` authentication in this repo.
+This document owns the mechanics of branch safety, staging discipline,
+pushing after history rewrites, what triggers a PR build, and `gh`
+authentication in this repo.
 
 ## Branch safety
 
@@ -20,6 +21,17 @@ Recovery from a stray `main` commit: preserve the content on a branch
 ```sh
 git fetch origin main && git reset --hard origin/main
 ```
+
+## Staging discipline
+
+- Never `git add -A` or `git add .` — stage the paths you actually changed,
+  by name, so an unrelated dirty file never rides along into a commit.
+- Never a bare `git stash` or `git stash pop` — the stash is shared across
+  all worktrees of this repo, so a stash created in one worktree can be
+  popped (and lost track of) from another. Use a temporary WIP commit
+  instead, or `git stash push -u -m "<tag>"` paired with
+  `git stash apply <sha>` (never plain `pop`) so the entry is identifiable
+  and left in place until you're sure it's no longer needed.
 
 ## Pushing and history rewrites
 

@@ -178,12 +178,14 @@ MinIO's own Prometheus endpoint and stores the result locally.** Harbormaster
 does not expose a Prometheus scrape endpoint of its own, and does not
 instrument itself.
 
-The pipeline is five files, in order: `poller.go` ticks every
+The pipeline is six files, in order: `poller.go` ticks every
 `HARBORMASTER_METRICS_POLL_INTERVAL` (default 30s) → `collector.go` calls the
 MinIO admin client's cluster and resource metrics and flattens the result →
 `store.go` writes one row per `(metric, value)` per poll into SQLite →
-`aggregator.go` downsamples on read → `resource.go` serves
-`GET /api/v1/metrics?window=<1h|6h|24h|7d>`. A second goroutine
+`processor.go` is the read path, joining `store.Query` to `aggregator.go`'s
+`Aggregate` and computing data freshness → `aggregator.go` downsamples on
+read → `resource.go` serves `GET /api/v1/metrics?window=<1h|6h|24h|7d>`. A
+second goroutine
 (`StartRetentionSweeper`) deletes samples older than
 `HARBORMASTER_METRICS_RETENTION` (default 8 days) once a day.
 

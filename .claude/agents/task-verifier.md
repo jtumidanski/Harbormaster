@@ -45,7 +45,8 @@ measurement instrument, not a repair crew.
 2. Run the command you were given. Give it a generous timeout (10 minutes);
    `--quick` takes a couple of minutes; a flagless run including the
    two-platform container build takes considerably longer.
-3. Read the exit status. That is the verdict — not your reading of the log.
+3. Read the terminal `VERIFY:` line. That is the verdict — not the exit
+   code, and not your reading of the log.
 
 **You do not fix anything.** No `Edit`, no `Write`, no `git` mutation, no
 `go mod tidy`, no formatting. If the gate fails, that is the answer the

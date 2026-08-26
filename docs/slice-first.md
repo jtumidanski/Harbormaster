@@ -27,8 +27,9 @@ Two concrete cases from this task's own artifacts:
 | `docs/tasks/task-004-process-parity-harness/plan.md` | 122,650 | `tools/task-brief.sh` extract for Task 9 | 4,969 | ~24.7× |
 
 The plan case is the sharper illustration: a controller that reads the whole
-291-line-per-task plan once per task, instead of extracting the one task it
-needs, pays that 24.7× multiplier on every one of the plan's tasks, at
+~190-line-per-task plan (2,849 lines across 15 tasks) once per task, instead
+of extracting the one task it needs, pays that 24.7× multiplier on every one
+of the plan's tasks, at
 whichever turn each task starts — nearly always long before the plan is
 otherwise needed in full.
 

@@ -58,7 +58,7 @@ Mechanical repository facts have deterministic sources. Use them:
 
 | Question | Ask |
 |---|---|
-| Is local lint drifting from CI's toolchain | `tools/verify.sh` gate `toolchain drift` — compares `tools/toolchain.versions` against `.github/workflows/pr.yml`'s pinned actions and fails loudly if they disagree, rather than a reviewer noticing a version mismatch by eye |
+| Is local lint drifting from CI's toolchain | `tools/verify.sh` gate `toolchain drift` — compares `tools/toolchain.versions`' `GOLANGCI_LINT_VERSION` against the `golangci-lint-action` version pinned in `.github/workflows/pr.yml` and fails loudly if they disagree, rather than a reviewer noticing a version mismatch by eye |
 | The next unused `task-NNN` number, or whether one collides | `tools/task-numbers.sh next` / `tools/task-numbers.sh check` |
 | Which worktree/branch a task lives on, what artifacts it has | `git worktree list`, then `ls docs/tasks/<task>/` in the matching worktree — there is no `task-facts.sh` in this repo; these two commands are the manual equivalent |
 | What gates a plain `tools/verify.sh` run will execute | `tools/verify.sh --list` — prints the gate list and runs none. There is no `--base`/`--facts` change-detection mode; `verify.sh` always runs the full selected gate set |
@@ -68,9 +68,13 @@ Mechanical repository facts have deterministic sources. Use them:
 
 Do not probe for toolchain availability (`command -v`, `--version`, `which`)
 when a script already reports it — e.g. `tools/verify.sh`'s toolchain-drift
-gate prints the pinned `GO_VERSION`, `NODE_VERSION`, and
-`GOLANGCI_LINT_VERSION` from `tools/toolchain.versions` on every run; that is
-the environment stating the fact rather than a probe rediscovering it.
+gate prints a single line, `golangci-lint <pin> matches
+.github/workflows/pr.yml`, confirming the pinned `GOLANGCI_LINT_VERSION`
+matches the `golangci-lint-action` version in CI (the only value the gate
+asserts; `GO_VERSION` is load-bearing too, but as the `GOTOOLCHAIN` every Go
+gate runs under, not as something compared against CI, and `NODE_VERSION` is
+recorded for reference only and is not asserted at all) — that is the
+environment stating the fact rather than a probe rediscovering it.
 
 **A deterministic tool defeated by a wrapper is a net loss.** When a
 token-optimizing shell wrapper swallows a script's stdout, the saved bytes

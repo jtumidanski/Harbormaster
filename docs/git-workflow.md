@@ -37,8 +37,12 @@ guard, `gitleaks`, dependency scan, license allowlist). Do not merge
 plain push already reruns the checks.
 
 The one exception: when the branch conflicts with `main`, resolve it —
-merge `origin/main`, fix the conflicts, push the merge commit. The merge is
-the conflict resolution, not the trigger.
+merge `origin/main`, fix the conflicts, push the merge commit. `pr.yml`
+triggers `on: pull_request`, so GitHub runs it against `refs/pull/<N>/merge`,
+the synthetic merge ref GitHub maintains for the PR; while the branch
+conflicts with `main`, that ref cannot be computed, so the PR build simply
+does not run until the conflict is resolved. The merge is the conflict
+resolution, not the trigger.
 
 ## `gh` authentication
 

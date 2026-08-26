@@ -38,3 +38,6 @@ encryption.key
 # Test artifacts
 apps/frontend/playwright-report/
 apps/frontend/test-results/
+
+# Locally bootstrapped tool binaries (tools/verify.sh caches golangci-lint here)
+.cache/

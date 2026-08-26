@@ -2,15 +2,20 @@
 # KEY=value. Read by tools/verify.sh (the drift check and the golangci-lint
 # bootstrap) and by .claude/hooks/format-on-write.sh.
 #
-# Only GOLANGCI_LINT_VERSION is load-bearing: verify.sh gate 0 asserts it matches
+# GOLANGCI_LINT_VERSION is load-bearing: verify.sh gate 0 asserts it matches
 # the `golangci-lint-action` version in .github/workflows/pr.yml, because local
 # and CI lint disagreeing silently is exactly the failure that check exists to
 # catch. Bump here and in pr.yml together; the gate will tell you if you forgot.
 #
-# NODE_VERSION and GO_VERSION are recorded for reference and are NOT asserted.
-# Node's pin appears at three separate `setup-node` sites in pr.yml and Go's is
-# derived by CI from apps/backend/go.mod via `go-version-file`; grepping for
-# either would be brittle for no gain.
+# GO_VERSION is also load-bearing: verify.sh exports GOTOOLCHAIN=go${GO_VERSION}
+# for every Go gate (test/vet/build), the golangci-lint gate, and its `go
+# install` bootstrap, so all of them run under the same toolchain CI lints
+# under (CI derives its Go version from apps/backend/go.mod via
+# `go-version-file`) rather than whatever `go` happens to resolve to on PATH.
+#
+# NODE_VERSION is recorded for reference and is NOT asserted. Its pin appears
+# at three separate `setup-node` sites in pr.yml; grepping for it would be
+# brittle for no gain.
 GO_VERSION=1.25.12
 NODE_VERSION=24.19.0
 GOLANGCI_LINT_VERSION=v2.12.2

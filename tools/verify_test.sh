@@ -103,6 +103,13 @@ assert_eq "that one place is inside skip()" "1" \
 assert_eq "no writing formatter or linter variants" "0" \
   "$(grep -cE 'prettier --write|eslint --fix|--max-warnings|gofmt -w|go mod tidy' "$VERIFY")"
 
+# A future refactor that drops the GOTOOLCHAIN pin would silently go back to
+# lint under whatever `go` is first on PATH, reintroducing the golangci-lint
+# v2.12.2 / go1.27 stdlib panic that CI never hits. Assert the export exists
+# and is derived from GO_VERSION, not hardcoded.
+assert_eq "verify.sh exports GOTOOLCHAIN derived from GO_VERSION" "1" \
+  "$(grep -cE 'export GOTOOLCHAIN=.*GO_VERSION' "$VERIFY")"
+
 # FR-13 / AC-11: a passing run cannot prove a command did NOT run, so assert it
 # textually. Both strings are permitted in comments and in the usage heredoc —
 # --help must mention them — and nowhere else.

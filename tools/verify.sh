@@ -37,6 +37,26 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# Pin every Go invocation below (the four `go`/`go test`/`go vet`/`go build`
+# gates, the golangci-lint gate itself, AND the `go install` bootstrap inside
+# gate_golangci) to the toolchain CI actually lints under. golangci-lint
+# v2.12.2's bundled honnef.co/go/tools panics building IR for the go1.27
+# standard library; a bare `go` on PATH can resolve to 1.27 while
+# apps/backend/go.mod pins 1.25.12. CI never hits this because
+# .github/workflows/pr.yml's lint job uses actions/setup-go with
+# `go-version-file: apps/backend/go.mod` (line ~48), i.e. Go 1.25.12, with the
+# same golangci-lint version. Exporting GOTOOLCHAIN here — once, before any
+# gate runs — is what makes this script actually reproduce CI instead of
+# whatever Go happens to be first on PATH. Set at the top, not per-gate, so no
+# future gate can be added without it.
+# shellcheck source=./toolchain.versions
+. "$ROOT/tools/toolchain.versions"
+if [ -z "${GO_VERSION:-}" ]; then
+    echo "tools/toolchain.versions: GO_VERSION is unset" >&2
+    exit 1
+fi
+export GOTOOLCHAIN="go${GO_VERSION}"
+
 QUICK=0
 NO_DOCKER=0
 LIST=0

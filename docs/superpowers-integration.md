@@ -58,7 +58,7 @@ themselves, and so should you when working outside one:
 1. `tools/task-numbers.sh list` prints `NNN <task-id> <source>` for every
    assignment it can see, deduplicated, including task branches that exist but
    are not checked out. Start here — it answers "which numbers exist" without
-   touching the filesystem tree.
+   expanding the (tasks × worktrees) glob by hand.
 2. Match your identifier against those task IDs — exact name, bare number
    (`4` / `004` / `task-4` / `task-004`), or slug fragment.
 3. Resolve to the folder: `docs/tasks/<task-id>/` in the main repo, or
@@ -252,6 +252,7 @@ Neither exemption waives the gate or the review before a PR.
 |---|---|
 | PRD, design, plan, context | `docs/tasks/task-NNN-slug/` |
 | Pre-PR audits (plan adherence, backend, frontend) | `docs/tasks/task-NNN-slug/audit.md` |
+| Backend guideline audit, machine-readable | `docs/tasks/task-NNN-slug/audit.json` (`backend-guidelines-reviewer` only) |
 | Per-unit reviews | `docs/tasks/task-NNN-slug/reviews/<unit>.md` |
 | Phase 5 bug diagnoses | `docs/tasks/task-NNN-slug/bug-<slug>.md` |
 | Generated task briefs and per-task reports | `.superpowers/sdd/<plan>/` |

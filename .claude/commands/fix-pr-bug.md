@@ -62,8 +62,9 @@ Brief: the bug file path. Add only what the file cannot carry — the worktree
 absolute path, and any ruling you made after writing it. Do not restate the
 file, and do not restate the agent's own contracts.
 
-On `PARTIAL`, follow `/execute-task` Step 4d: continuation brief, fresh agent,
-same report file.
+On `PARTIAL`, follow the continuation rule in
+[`docs/post-implementation.md`](../../docs/post-implementation.md) §3:
+continuation brief, fresh agent, same report file.
 
 ## Step 5 — Verify in a clean context
 

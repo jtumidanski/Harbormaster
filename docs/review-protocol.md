@@ -34,13 +34,18 @@ said", which is where the most common real finding lives.
 | Reviewer | Artifact |
 |---|---|
 | `task-reviewer` (per unit, per fix round) | `docs/tasks/<task>/reviews/<unit>.md` |
-| `plan-adherence-reviewer`, `backend-guidelines-reviewer`, `frontend-guidelines-reviewer` | `docs/tasks/<task>/audit.md` |
+| `plan-adherence-reviewer`, `backend-guidelines-reviewer`, `frontend-guidelines-reviewer` | `docs/tasks/<task>/audit.md` (`backend-guidelines-reviewer` also appends `docs/tasks/<task>/audit.json`) |
 
 **A per-unit review must never write `audit.md`.** The three pre-PR reviewers
 share that file and a per-unit review landing there would overwrite work it did
 not do. Conversely a pre-PR audit does not scatter itself into `reviews/` —
-`superpowers:requesting-code-review` dispatches those three in parallel and they
-append to one file on purpose, so the pre-PR verdict is readable in one place.
+`superpowers:requesting-code-review` dispatches those three in parallel so the
+pre-PR verdict is readable in one place, but they do not all treat the shared
+file the same way: `backend-guidelines-reviewer` and `frontend-guidelines-reviewer`
+append to `audit.md`, while `plan-adherence-reviewer` **overwrites** it. Running
+`plan-adherence-reviewer` after the guideline reviewers destroys their appended
+output — order matters, or the guideline audits must be captured (e.g. copied
+aside) before `plan-adherence-reviewer` runs.
 
 If a dispatch does not name an artifact path, derive it from this table. If the
 unit name would collide with an existing file under `reviews/`, suffix the fix
@@ -182,7 +187,7 @@ to the artifact. The return is:
 ```text
 verdict: APPROVED
 artifact: docs/tasks/task-004-process-parity-harness/reviews/task-11-owner-docs.md
-scope_confirmed: 4 new files under docs/, commit 8c3736a..bcb5cf5
+scope_confirmed: 4 new files under docs/, commit <example-sha-1>..<example-sha-2>
 blocking: 0
 non_blocking: 0
 not_evaluable: 0
@@ -196,7 +201,7 @@ and the controller's next action — mark the unit done — is unchanged.
 ```text
 verdict: CHANGES_REQUIRED
 artifact: docs/tasks/task-004-process-parity-harness/audit.md
-scope_confirmed: 9 changed packages under apps/backend and apps/frontend, commits 8c3736a..bcb5cf5
+scope_confirmed: 9 changed packages under apps/backend and apps/frontend, commits <example-sha-1>..<example-sha-2>
 blocking: 2
   - apps/backend/internal/buckets/handler.go:212 — the retention-policy attribute the plan requires is never emitted; the branch that should set it returns early when the bucket has no lock configuration.
   - apps/frontend/src/features/policies/api.ts:88 — the response type still declares the pre-change attribute set, so a policy without `version` deserializes to undefined rather than failing loudly.

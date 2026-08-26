@@ -161,9 +161,12 @@ Two parts of the floor are ours, not the harness's:
 
 - **The agent roster.** The custom-agent listing is delivered to every dispatch
   as an "Available agent types for the Agent tool" reminder and costs several
-  thousand tokens before the agent has read anything. Whether denying the tool
-  also suppresses the listing is **inferred, not measured** — the emitting code
-  has no named gate. Leaf agents should deny it regardless, because it enforces
+  thousand tokens before the agent has read anything. That figure is unmeasured
+  in this repo — running `/context` here would give the current number; treat
+  "several thousand" as a placeholder to replace, not a permanent hedge. Whether
+  denying the tool also suppresses the listing is **inferred, not measured** —
+  the emitting code has no named gate. Leaf agents should deny it regardless,
+  because it enforces
   the no-fan-out rule structurally. Prefer a `tools:` allowlist that simply
   omits `Agent` — which is what `task-reviewer` (`tools: Read, Grep, Glob, Bash,
   Write`) and `task-implementer` (`tools: Read, Write, Edit, Bash, Grep, Glob`)

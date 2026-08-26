@@ -21,9 +21,10 @@ also exit 0; they say so on their verdict line. Never claim verified from a
 subset.
 
 The script mirrors what `.github/workflows/pr.yml` runs, plus a toolchain drift
-check. **CI is the authority; the script is the bug.** If the two disagree, fix
-`tools/verify.sh` to match CI — never loosen CI to match the script. The four
-places CI deliberately runs more than the script are enumerated under
+check and an untagged `go vet ./...`. **CI is the authority; the script is the
+bug.** If the two disagree, fix `tools/verify.sh` to match CI — never loosen CI
+to match the script. The four places CI deliberately runs more than the script
+are enumerated under
 [Known drift between this gate and CI](#known-drift-between-this-gate-and-ci),
 so they are a recorded gap rather than a rediscovery.
 
@@ -80,9 +81,9 @@ deriving it."
 `tools/verify.sh` walks eleven gates in registry order and **exits at the first
 one that fails**, naming it on stderr. It does not continue and summarise.
 
-It also has **no change detection of any kind**, and no flag for scoping a run
-to the diff against some base revision. That was an explicit design rejection,
-not an omission. Do not add one, and do not read
+It also has **no change detection of any kind**, and no `--base`-style flag for
+scoping a run to a diff; like any unrecognised flag, one would exit 2. That was
+an explicit design rejection, not an omission. Do not add one, and do not read
 its absence as an incomplete port of a sibling repository's gate.
 
 Both choices are deliberate, and both differ from the atlas gate that this
@@ -159,10 +160,14 @@ real problem goes first, and the build is last because a tree that vets and
 lints clean almost always builds.
 
 `go vet` is run separately from `golangci-lint` even though the linter bundles a
-`govet` analyzer, because the two are configured independently and CI runs them
-as two separate jobs (`backend-test`/`backend-build` under `setup-go`, and
-`backend-lint` under `golangci-lint-action`). Mirroring CI's decomposition is
-what lets a local failure be matched to a CI job by name.
+`govet` analyzer. This gate is **script-only** — CI has no untagged `go vet
+./...` job to mirror. Its `pr.yml` jobs are `backend-lint` (`golangci-lint-action`),
+`backend-test` (`go test -race -count=1 ./...`, which runs `go vet`'s default
+subset as a prelude), `backend-build` (`CGO_ENABLED=0 go build ./...`, which
+does not vet), and `backend-integration-build` (`go vet -tags=integration
+./...`, scoped to integration-tagged files only). Running the untagged vet up
+front buys a cheap, fast check — full package-level `govet` coverage — before
+paying for the slower `golangci-lint` gate, without waiting on it.
 
 ### The Go toolchain is pinned, on purpose
 
@@ -264,7 +269,7 @@ that the container build still has to pass in CI before merge.
   its own task, and raising the bar before clearing them would land a gate that
   fails on `main`.
 - `npm run format` is `prettier --check .` — it **verifies**, it does not
-  rewrite. To fix formatting, run `npx prettier --write .` yourself. The gate
+  rewrite. To fix formatting, run `npm run format:fix` yourself. The gate
   never mutates the tree on your behalf (with one exception, below), so a green
   run followed by a dirty diff is never something the gate did to you.
 - `golangci-lint run` uses `apps/backend/.golangci.yml`; Go formatting is
@@ -322,9 +327,9 @@ the form "X never happens" needs a structural check, not a green test.
 1. Write a `gate_<name>` function next to its peers. It runs one command in a
    subshell and returns its status.
 2. Register it with `step '<label>' gate_<name>` in the registry block at the
-   bottom, in the position you want it walked. `step()` is the only place a gate
-   may be recorded or executed — that invariant is what makes `--list`
-   trustworthy, and `tools/verify_test.sh` enforces it.
+   bottom, in the position you want it walked. `step()` is the only place a
+   *selected* gate may be recorded or executed — that invariant is what makes
+   `--list` trustworthy, and `tools/verify_test.sh` enforces it.
 3. If the gate is conditional, use `skip '<label>' '<reason>'` in the else
    branch. A conditional gate that vanishes silently defeats the transcript.
 4. Add the CI job that mirrors it — or, if you consciously choose not to, record
@@ -340,19 +345,21 @@ the form "X never happens" needs a structural check, not a green test.
 Tracked here so it is visible rather than folklore. **CI is the authority for
 everything it runs.** Neither side is a strict superset, but the asymmetry is
 one-directional today: CI runs four things the script does not, and the script
-runs one thing CI does not.
+runs two things CI does not.
 
 | CI-only gate | Where | Why it is not in the script |
 |---|---|---|
 | `gitleaks` | `pr.yml`, `gitleaks/gitleaks-action` | Needs its own toolchain and a `GITHUB_TOKEN`; a local miss is caught in CI before merge, and no credential handling may be introduced into the local gate. |
 | Trivy filesystem scan | `pr.yml`, `aquasecurity/trivy-action` with `.trivyignore` | Same: its own toolchain, a vulnerability database to fetch, and network. Local runs would be slow and non-deterministic across a stale DB. |
 | `go-licenses` allowlist | `pr.yml`, `go-licenses check ./...` against an allowed-licenses list plus [`tools/licenses/allowlist.yaml`](../tools/licenses/allowlist.yaml) | Installs a tool and needs `yq`. It also depends on the directly-installed Go rather than a module-cache toolchain, which the job's own comment records as a trap. |
-| `go vet -tags=integration ./...` | `pr.yml`, `backend-integration-build` | Cheap and genuinely tempting. The `//go:build integration` files are invisible to every other backend job, so signature drift between production code and the integration tests stays green on PRs and only surfaces in the nightly run — which is exactly why CI has this compile-only guard. It is absent locally because the gate list was fixed by the task that created the script and an eleventh gate was scope that task did not authorise. Recorded here so it is a known gap. |
+| `go vet -tags=integration ./...` | `pr.yml`, `backend-integration-build` | Cheap and genuinely tempting. The `//go:build integration` files are invisible to every other backend job, so signature drift between production code and the integration tests stays green on PRs and only surfaces in the nightly run — which is exactly why CI has this compile-only guard. It is absent locally because the gate list was fixed by the task that created the script and a twelfth gate was scope that task did not authorise. Recorded here so it is a known gap. |
 
-Script-only: the **toolchain drift** check (gate 0). CI has no equivalent — CI
-*is* one of the two sources it compares, so it cannot check itself. A pin
-mismatch landed without ever running `tools/verify.sh` locally would go
-unnoticed until the next local run.
+Script-only: the **toolchain drift** check (gate 0) and untagged **`go vet
+./...`**. CI has no equivalent for either — CI *is* one of the two sources the
+toolchain check compares, so it cannot check itself, and CI's only vet coverage
+is `go test`'s default subset plus the integration-tagged vet, never an
+untagged `go vet ./...` job. A pin mismatch landed without ever running
+`tools/verify.sh` locally would go unnoticed until the next local run.
 
 Also nightly-only: the real integration suite
 (`.github/workflows/nightly.yml`). It is neither a local gate nor a PR gate.

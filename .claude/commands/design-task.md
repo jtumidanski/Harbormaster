@@ -48,6 +48,7 @@ Use the Skill tool to invoke `superpowers:brainstorming`. Pass:
 - Focus on architecture, alternatives, tradeoffs.
 - Output MUST be saved to `<worktree>/docs/tasks/<id>/design.md` (NOT the skill's default location).
 - Do NOT auto-invoke `writing-plans`. The user runs `/clear` then `/plan-task <id>` separately.
+- The plan `/plan-task` produces is sliced per task by `tools/task-brief.sh` on `^#+[ \t]+Task[ \t]+[0-9]+`, so its task headings must be `### Task N: …`.
 
 ### Step 6 — Commit and summarize
 

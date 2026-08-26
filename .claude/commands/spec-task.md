@@ -11,15 +11,23 @@ You are a product-minded engineer turning a rough backlog idea into a structured
 
 Run `git rev-parse --show-toplevel` and `pwd`. If the result is under `.worktrees/`, stop and tell the user:
 
-> You're already inside a task worktree. `/spec-task` must be run from the main repo (`/Users/tumidanski/source/Harbormaster`). `cd` there and re-run.
+> You're already inside a task worktree. `/spec-task` must be run from the main repo root. `cd` there and re-run.
 
 ### Step 2 — Determine task number and working slug
 
-1. Scan BOTH `docs/tasks/` in the main repo AND every `.worktrees/*/docs/tasks/` folder (use `find .worktrees -maxdepth 4 -type d -name 'task-*'` — the directory may not exist yet, that's fine). Tasks-in-flight reserve their numbers even if not yet on main.
-2. Also check local `task-*` git branches (`git branch --list 'task-*'`) — a branch can exist before its docs folder does.
-3. Pick the next free `NNN` (zero-padded, three digits). The very first task is `001`.
-4. Derive a working slug from `$ARGUMENTS` (lowercase, hyphenated, 3–4 words). Examples: "bucket replication dashboard" → `bucket-replication-dashboard`, "iam policy editor" → `iam-policy-editor`.
-5. Compose the task identifier: `task-NNN-<slug>`.
+1. Allocate the task number:
+
+   ```sh
+   tools/task-numbers.sh next
+   ```
+
+   That script is the only collision-safe source. It scans `docs/tasks/`, every
+   `.worktrees/*/docs/tasks/`, local and remote `task-*` branches, and git
+   history — the last of which is what stops it re-issuing the number of a task
+   whose branch was merged and deleted. **Do not pick a number by hand.**
+   Picking by hand has produced two tasks sharing one number.
+2. Derive a working slug from `$ARGUMENTS` (lowercase, hyphenated, 3–4 words). Examples: "bucket replication dashboard" → `bucket-replication-dashboard`, "iam policy editor" → `iam-policy-editor`.
+3. Compose the task identifier: `task-NNN-<slug>`.
 
 ### Step 3 — Lightweight context scan
 
@@ -49,7 +57,7 @@ Once scope and slug are confirmed, invoke `superpowers:using-git-worktrees` to c
 - Branch: `task-NNN-<slug>` (from `main`)
 - Worktree: `.worktrees/task-NNN-<slug>` (relative to main repo root)
 
-From this point on, every file write, read, and shell command MUST use absolute paths under the worktree (e.g., `/Users/tumidanski/source/Harbormaster/.worktrees/task-NNN-<slug>/docs/tasks/task-NNN-<slug>/prd.md`). Do NOT write any files under the main repo's `docs/tasks/`.
+From this point on, every file write, read, and shell command MUST use absolute paths under the worktree (e.g., `<repo-root>/.worktrees/task-NNN-<slug>/docs/tasks/task-NNN-<slug>/prd.md`). Do NOT write any files under the main repo's `docs/tasks/`.
 
 ### Step 6 — Generate the PRD inside the worktree
 

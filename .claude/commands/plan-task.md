@@ -45,6 +45,10 @@ Use the Skill tool to invoke `superpowers:writing-plans`. Pass:
 
 Run the `writing-plans` skill's self-review (placeholder scan, type consistency, spec coverage) before saving.
 
+Plan task headings MUST match `^#+[ \t]+Task[ \t]+[0-9]+` (i.e. `### Task 1: …`).
+`tools/task-brief.sh` slices on that pattern, and `/execute-task` uses it to
+hand each implementer only its own task.
+
 ### Step 6 — Commit and summarize
 
 ```

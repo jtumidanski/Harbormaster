@@ -2,6 +2,17 @@ name: pr
 on:
   pull_request:
     branches: [main, "task-*"]
+    # Skip the machine-written image pin. bump-manifest in main.yml opens a PR
+    # touching only this file and merges it about three seconds later, deleting
+    # the branch -- which yanks the ref out from under a validation run that has
+    # not started a job yet, leaving a red run with no jobs and no logs.
+    #
+    # Waiting instead of skipping would buy nothing: `main` requires no status
+    # checks, so --auto would merge just as fast, and the image in that pin was
+    # already built, Trivy-scanned and cosign-signed by the run that produced
+    # it. There is nothing here left to validate.
+    paths-ignore:
+      - "deploy/kubernetes/deployment.yaml"
 
 permissions:
   contents: read

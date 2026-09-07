@@ -1,0 +1,27 @@
+# Harbormaster — Namespace.
+#
+# Present so the namespace is declared state rather than an artifact of
+# whoever ran `kubectl create namespace` first. Argo CD's CreateNamespace=true
+# would make one anyway, but a namespace it creates implicitly is owned by
+# nothing: it keeps whatever labels and annotations it was born with, and no
+# manifest describes it.
+#
+# Knobs operators routinely change:
+#   - name — must match the Application's destination.namespace (bee uses
+#            `harbormaster`, and the other manifests here omit `namespace:`
+#            so they inherit it).
+#
+# Prune=false is deliberate and is the important line in this file. Argo syncs
+# this directory with prune enabled, and pruning a Namespace deletes
+# EVERYTHING inside it -- including harbormaster-data, whose own Prune=false
+# cannot save it, because the volume goes with the namespace rather than being
+# pruned in its own right. A stray `git rm` of this file would otherwise be
+# indistinguishable from "delete the whole application and its data".
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: harbormaster
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+  labels:
+    app.kubernetes.io/name: harbormaster

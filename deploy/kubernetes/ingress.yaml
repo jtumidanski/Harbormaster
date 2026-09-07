@@ -1,0 +1,36 @@
+# Harbormaster — Ingress as actually deployed on the bee cluster.
+#
+# This is the live manifest, not an example. `ingress.example.yaml` beside it
+# is the portable ingress-nginx + cert-manager version for other operators;
+# Argo CD is configured to skip every *.example.yaml in this directory.
+#
+# Plain HTTP on the internal *.tumidanski domain, terminated by Traefik. There
+# is no TLS here, which is why deployment.yaml sets
+# HARBORMASTER_SESSION_COOKIE_SECURE=false.
+#
+# No SSE-specific annotations are needed. The empty-bucket endpoint
+# (POST /api/v1/buckets/{bucket}/empty) streams Server-Sent Events, and Traefik
+# forwards responses without buffering, applies no default body-size limit, and
+# sets no forwarding response-header timeout. The nginx annotations in
+# ingress.example.yaml exist to switch off behaviour Traefik does not have. If
+# a response-buffering Middleware is ever added cluster-wide, exclude this
+# route or SSE progress will arrive in batches instead of live.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: harbormaster
+  labels:
+    app.kubernetes.io/name: harbormaster
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: harbormaster.tumidanski
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: harbormaster
+                port:
+                  number: 8080

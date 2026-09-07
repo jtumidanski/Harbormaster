@@ -74,3 +74,72 @@ jobs:
           DIGEST: ${{ steps.push.outputs.digest }}
         run: |
           cosign sign --yes "ghcr.io/jtumidanski/harbormaster@${DIGEST}"
+
+  # Rewrites the image tag in deploy/kubernetes/deployment.yaml to the commit
+  # that produced the image, and pushes it back. Argo CD on the bee cluster
+  # watches that directory, so this is the deploy step: `git log` on that file
+  # becomes an accurate record of what is running.
+  #
+  # The tag must match what metadata-action publishes above --
+  # `type=sha,prefix=sha-,format=short` yields `sha-` plus the SHORT sha
+  # (7 chars), e.g. sha-f17d771. Using the full 40-character ${GITHUB_SHA}
+  # would pin to a tag that is never pushed and every pod would land in
+  # ImagePullBackOff.
+  #
+  # This does not recurse: pushes authenticated with GITHUB_TOKEN do not
+  # trigger workflow runs.
+  bump-manifest:
+    needs: [build-and-publish]
+    # Tag pushes (v*.*.*) also run this workflow, but a tag is not a branch --
+    # there would be nothing to commit back to.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    # Serialize across overlapping runs, so a later run's push cannot be undone
+    # by an earlier one finishing after it. Never cancel a queued bump:
+    # cancelling mid-push risks a half-written commit. Same shape as MyFleet's
+    # bump-overlay job.
+    concurrency:
+      group: bump-manifest
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        # MUST be `ref: main`. The default checkout for a push event leaves a
+        # detached HEAD, and `git push` from one fails outright.
+        with:
+          ref: main
+      - name: Pin image to this commit
+        run: |
+          set -euo pipefail
+
+          # Stale-run guard: main may have moved past the commit this run built
+          # if a later merge's bump already landed while this one was still in
+          # build/scan/sign. Rewriting to this run's older SHA would roll the
+          # deployment backwards with every step still green.
+          tip="$(git rev-parse HEAD)"
+          if [ "$tip" != "${GITHUB_SHA}" ]; then
+            echo "main's tip is now $tip, not this run's ${GITHUB_SHA} — a newer push already landed and will pin itself. Skipping to avoid deploying stale bits."
+            exit 0
+          fi
+
+          # Must match what metadata-action publishes:
+          # type=sha,prefix=sha-,format=short yields a 7-character sha.
+          short="sha-${GITHUB_SHA::7}"
+          f=deploy/kubernetes/deployment.yaml
+          sed -i -E "s#(image: ghcr\.io/jtumidanski/harbormaster):.*#\1:${short}#" "$f"
+
+          if git diff --quiet "$f"; then
+            echo "already pinned to ${short} — nothing to bump"
+            exit 0
+          fi
+          # Fail loudly rather than pushing a manifest the rewrite missed.
+          grep -q "image: ghcr.io/jtumidanski/harbormaster:${short}$" "$f"
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$f"
+          # Belt and braces against retriggering this workflow. A GITHUB_TOKEN
+          # push does not start a new run, but this costs nothing.
+          git commit -m "chore(deploy): pin harbormaster image to ${short} [skip ci]"
+          git push origin main

@@ -1,8 +1,9 @@
 # Harbormaster v1 — minimal Kubernetes Deployment.
 #
 # Knobs operators routinely change (top of file for visibility):
-#   - image tag                — default: ghcr.io/jtumidanski/harbormaster:v1
-#                                Pin to a digest in production.
+#   - image tag                — NOT hand-edited: rewritten to sha-<short-sha>
+#                                by the bump-manifest CI job on each push to
+#                                main. See the comment at the image field.
 #   - HARBORMASTER_LOG_LEVEL   — debug | info | warn | error (default info)
 #   - HARBORMASTER_LOG_FORMAT  — json (recommended for clusters) | text
 #   - HARBORMASTER_BASE_PATH   — set if mounted under a sub-path on the
@@ -49,7 +50,11 @@ spec:
         fsGroup: 65532
       containers:
         - name: harbormaster
-          image: ghcr.io/jtumidanski/harbormaster:v1
+          # Machine-written. The bump-manifest job in
+          # .github/workflows/main.yml rewrites this to sha-<short-sha> on
+          # every push to main, and Argo CD syncs it. Do not put a floating
+          # tag back here: `git log` on this file is the deployment record.
+          image: ghcr.io/jtumidanski/harbormaster:sha-f17d771
           imagePullPolicy: IfNotPresent
           args: ["serve"]
           ports:
@@ -67,8 +72,14 @@ spec:
             # Set to "false" ONLY when serving over plain HTTP (no HTTPS in
             # front). Browsers drop the Secure session cookie over HTTP, so
             # login won't persist otherwise. Leave true behind a TLS proxy.
-            # - name: HARBORMASTER_SESSION_COOKIE_SECURE
-            #   value: "false"
+            #
+            # ENABLED HERE because the bee cluster serves this over plain HTTP
+            # via Traefik (ingress.yaml, host harbormaster.tumidanski). The
+            # failure it prevents is silent: POST /auth/login returns 204 and
+            # the very next request is unauthenticated. If you are copying this
+            # directory for a TLS-fronted deployment, delete these two lines.
+            - name: HARBORMASTER_SESSION_COOKIE_SECURE
+              value: "false"
             # Uncomment to seed the session secret from a Secret rather than
             # letting Harbormaster generate one on first boot. See
             # secret.example.yaml.

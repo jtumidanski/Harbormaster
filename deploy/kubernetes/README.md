@@ -24,6 +24,7 @@ without one.
 
 | File                     | Purpose                                                  |
 | ------------------------ | -------------------------------------------------------- |
+| `namespace.yaml`         | The `harbormaster` namespace. Carries `Prune=false`.     |
 | `deployment.yaml`        | Single-replica Deployment, distroless image, nonroot.    |
 | `service.yaml`           | ClusterIP Service exposing port 8080 inside the cluster. |
 | `pvc.yaml`               | PersistentVolumeClaim for `/var/lib/harbormaster`.       |

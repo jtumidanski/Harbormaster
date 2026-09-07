@@ -54,7 +54,7 @@ spec:
           # .github/workflows/main.yml rewrites this to sha-<short-sha> on
           # every push to main, and Argo CD syncs it. Do not put a floating
           # tag back here: `git log` on this file is the deployment record.
-          image: ghcr.io/jtumidanski/harbormaster:sha-f17d771
+          image: ghcr.io/jtumidanski/harbormaster:sha-47b70fd
           imagePullPolicy: IfNotPresent
           args: ["serve"]
           ports:

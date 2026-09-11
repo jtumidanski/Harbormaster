@@ -1,5 +1,14 @@
-import { describe, it, expect, vi } from "vitest";
-import { consumeEmptyBucketStream, parseSseChunk, type ParseHandlers } from "./useEmptyBucket";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createElement, type PropsWithChildren } from "react";
+import { authKeys } from "@/lib/api/keys";
+import {
+  consumeEmptyBucketStream,
+  parseSseChunk,
+  useEmptyBucket,
+  type ParseHandlers,
+} from "./useEmptyBucket";
 
 function makeHandlers(): {
   handlers: ParseHandlers;
@@ -117,6 +126,49 @@ describe("consumeEmptyBucketStream", () => {
     ]);
     await consumeEmptyBucketStream(reader, h.handlers);
     expect(h.activity).toBe(2);
+  });
+});
+
+describe("useEmptyBucket session expiry", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("hands a 401 unauthenticated response to the global handler, no local error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              errors: [{ code: "unauthenticated", detail: "Authentication required." }],
+            }),
+            { status: 401, headers: { "Content-Type": "application/vnd.api+json" } },
+          ),
+        ),
+      ),
+    );
+    // Default gcTime: with gcTime 0 the observer-less seeded auth.me query
+    // would be garbage-collected out from under the expiry handler.
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 0 } },
+    });
+    qc.setQueryData(authKeys.me(), {
+      username: "alice",
+      session_expires_at: "2030-01-01T00:00:00Z",
+    });
+    const wrapper = ({ children }: PropsWithChildren) =>
+      createElement(QueryClientProvider, { client: qc }, children);
+
+    const { result } = renderHook(() => useEmptyBucket("b1"), { wrapper });
+    await act(async () => {
+      await result.current.start("b1", false);
+    });
+
+    // The raw-fetch SSE channel must reach the global expiry handler (route
+    // gate flips to /login) instead of stranding the user on a local error.
+    await waitFor(() => expect(qc.getQueryData(authKeys.me())).toBeNull());
+    expect(result.current.errorMsg).toBeNull();
   });
 });
 

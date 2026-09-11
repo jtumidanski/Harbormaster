@@ -1,6 +1,8 @@
 import { useCallback, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { AppError, parseErrorResponse } from "@/lib/api/errors";
 import { readCsrfCookie } from "@/lib/api/csrf";
+import { handleSessionExpiry } from "@/lib/api/queryClient";
 
 export type EmptyDoneState = { deletedTotal: number; durationMs: number };
 
@@ -91,6 +93,7 @@ const STALL_THRESHOLD_MS = 30_000;
 const STALL_POLL_MS = 5_000;
 
 export function useEmptyBucket(name: string): UseEmptyBucketResult {
+  const qc = useQueryClient();
   const [progress, setProgress] = useState(0);
   const [done, setDone] = useState<EmptyDoneState | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -153,6 +156,10 @@ export function useEmptyBucket(name: string): UseEmptyBucketResult {
           },
         });
       } catch (err) {
+        // Raw fetch (SSE) bypasses the api client, so hand session expiry
+        // to the global handler ourselves; the route gate flips to /login,
+        // so skip the local error state.
+        if (handleSessionExpiry(qc, err)) return;
         if (err instanceof AppError) {
           setErrorMsg(err.message);
         } else if (err instanceof Error) {
@@ -165,7 +172,7 @@ export function useEmptyBucket(name: string): UseEmptyBucketResult {
         setIsRunning(false);
       }
     },
-    [name],
+    [name, qc],
   );
 
   return { start, reset, progress, done, errorMsg, stalled, isRunning };

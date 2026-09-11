@@ -2,6 +2,7 @@ import { createContext, useContext, useMemo, type PropsWithChildren } from "reac
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api/client";
 import { authKeys } from "@/lib/api/keys";
+import { resetToSignedOut } from "@/lib/api/queryClient";
 
 export type Me = { username: string; session_expires_at: string };
 
@@ -39,12 +40,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
         try {
           await api.post("/api/v1/auth/logout");
         } finally {
-          // Drop every cached query, then explicitly seed `me` as null so the
-          // auth gate flips to the unauthenticated routes synchronously. Relying
-          // on clear()'s refetch left a window where the stale `me` was still
-          // truthy, so /login fell through to the authenticated "Not found".
-          qc.clear();
-          qc.setQueryData(authKeys.me(), null);
+          // Shared with the global session-expiry handler: seeds `me` null
+          // first (flipping the auth gate synchronously), then drops the
+          // other cached queries. The old clear()-then-seed order detached
+          // the mounted observer, leaving the flip to a refetch race
+          // against the dying session cookie.
+          resetToSignedOut(qc);
         }
       },
     }),

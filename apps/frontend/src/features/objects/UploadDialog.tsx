@@ -13,6 +13,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { readCsrfCookie } from "@/lib/api/csrf";
 import { objectsKeys } from "@/lib/api/keys";
+import { handleSessionExpiry } from "@/lib/api/queryClient";
 
 // V1 hardcodes the upload cap at 100 MiB to match the backend default of
 // HARBORMASTER_UPLOAD_MAX_BYTES. T3.27 will surface this dynamically
@@ -134,6 +135,19 @@ export function UploadDialog({ open, onOpenChange, bucket, prefix }: UploadDialo
         toast.success("Upload complete.");
         onOpenChange(false);
         return;
+      }
+      if (xhr.status === 401) {
+        // Raw XHR bypasses the api client, so hand session expiry to the
+        // global handler ourselves; the route gate flips to /login and this
+        // dialog unmounts — no local error state needed.
+        let code: string | undefined;
+        try {
+          const parsed = JSON.parse(xhr.responseText) as { errors?: { code?: string }[] };
+          code = parsed.errors?.[0]?.code;
+        } catch {
+          /* not a session expiry envelope; fall through */
+        }
+        if (handleSessionExpiry(qc, { status: xhr.status, code })) return;
       }
       if (xhr.status === 413) {
         // Prefer the server-reported limit (operator-configured cap) over

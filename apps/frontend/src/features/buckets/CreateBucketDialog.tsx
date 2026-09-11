@@ -34,7 +34,6 @@ import { Label } from "@/components/ui/label";
 import { AppError } from "@/lib/api/errors";
 import { bucketsKeys } from "@/lib/api/keys";
 import { createBucket, type CreateBucketRequest } from "./api";
-import type { PublicAccess, QuotaKind } from "./types";
 
 const UNIT_MULTIPLIERS = {
   MiB: 1024n * 1024n,
@@ -224,10 +223,7 @@ export function CreateBucketDialog({ open, onOpenChange }: CreateBucketDialogPro
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Public access</FormLabel>
-                  <Select
-                    value={field.value}
-                    onValueChange={(v) => field.onChange(v as PublicAccess)}
-                  >
+                  <Select value={field.value} onValueChange={(v) => field.onChange(v)}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue />
@@ -273,10 +269,7 @@ export function CreateBucketDialog({ open, onOpenChange }: CreateBucketDialogPro
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Kind</FormLabel>
-                      <Select
-                        value={field.value}
-                        onValueChange={(v) => field.onChange(v as QuotaKind)}
-                      >
+                      <Select value={field.value} onValueChange={(v) => field.onChange(v)}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue />
@@ -312,7 +305,7 @@ export function CreateBucketDialog({ open, onOpenChange }: CreateBucketDialogPro
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Unit</FormLabel>
-                      <Select value={field.value} onValueChange={(v) => field.onChange(v as Unit)}>
+                      <Select value={field.value} onValueChange={(v) => field.onChange(v)}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue />

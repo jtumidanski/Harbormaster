@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	madmin "github.com/minio/madmin-go/v3"
+	madmin "github.com/minio/madmin-go/v4"
 	miniogo "github.com/minio/minio-go/v7"
 )
 

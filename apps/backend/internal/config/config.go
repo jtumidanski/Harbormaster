@@ -5,6 +5,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"path/filepath"
 	"strings"
 	"time"
@@ -138,6 +139,14 @@ func validate(c Config) error {
 	}
 	if c.MetricsRetention <= 0 {
 		return errors.New("HARBORMASTER_METRICS_RETENTION must be positive")
+	}
+	// chi's ClientIPFromXFF parses these with netip.MustParsePrefix, so an
+	// operator typo would panic at boot. Reject it here with a message that
+	// names the offending entry instead.
+	for _, p := range c.TrustedProxies {
+		if _, err := netip.ParsePrefix(p); err != nil {
+			return fmt.Errorf("HARBORMASTER_TRUSTED_PROXIES entry %q is not a valid CIDR: %w", p, err)
+		}
 	}
 	return nil
 }

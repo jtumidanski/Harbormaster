@@ -26,7 +26,9 @@ export default tseslint.config(
       },
     },
     plugins: { react, "react-hooks": reactHooks, "jsx-a11y": jsxA11y },
-    settings: { react: { version: "detect" } },
+    // Pinned rather than "detect": eslint-plugin-react's version sniffing
+    // calls `context.getFilename()`, which ESLint 10 removed.
+    settings: { react: { version: "19.2" } },
     rules: {
       ...react.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
@@ -38,6 +40,12 @@ export default tseslint.config(
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
       "@typescript-eslint/consistent-type-imports": "error",
+      // New in eslint-plugin-react-hooks 7 (React Compiler ruleset). It flags
+      // the "reset local state when a dialog opens" effect used across the
+      // feature dialogs. Migrating those to remount-by-key is a behavioural
+      // refactor, so it is tracked separately rather than done alongside a
+      // dependency bump.
+      "react-hooks/set-state-in-effect": "off",
     },
   },
   {
@@ -53,6 +61,8 @@ export default tseslint.config(
       "@typescript-eslint/no-unsafe-call": "off",
       "@typescript-eslint/no-unnecessary-type-assertion": "off",
       "@typescript-eslint/restrict-template-expressions": "off",
+      // The vendored skeleton primitive picks a random width during render.
+      "react-hooks/purity": "off",
     },
   },
 );

@@ -5,13 +5,30 @@ intentionally out of scope for v1 (see `docs/tasks/task-001-harbormaster-mvp-v1/
 R7); these manifests are heavily commented so operators can tune them
 without one.
 
+> **This directory is live.** Argo CD on the `bee` cluster syncs it
+> continuously, so the non-example files here are deployed state, not a
+> template. Two consequences:
+>
+> - **`deployment.yaml`'s image tag is machine-written.** The `bump-manifest`
+>   job in `.github/workflows/main.yml` rewrites it to `sha-<short-sha>` on
+>   every push to `main`. Do not replace it with a floating tag.
+> - **Some values are specific to that cluster** — `storageClassName: longhorn`,
+>   the Traefik `ingress.yaml`, and `HARBORMASTER_SESSION_COOKIE_SECURE=false`
+>   (plain HTTP behind an internal Traefik route). If you are copying this
+>   directory, read those three before applying.
+>
+> Files matching `*.example.yaml` are excluded from the sync and remain
+> documentation only.
+
 ## Files
 
 | File                     | Purpose                                                  |
 | ------------------------ | -------------------------------------------------------- |
+| `namespace.yaml`         | The `harbormaster` namespace. Carries `Prune=false`.     |
 | `deployment.yaml`        | Single-replica Deployment, distroless image, nonroot.    |
 | `service.yaml`           | ClusterIP Service exposing port 8080 inside the cluster. |
 | `pvc.yaml`               | PersistentVolumeClaim for `/var/lib/harbormaster`.       |
+| `ingress.yaml`           | Live Traefik Ingress, plain HTTP (bee cluster).          |
 | `ingress.example.yaml`   | TLS-terminating Ingress with SSE-aware annotations.      |
 | `secret.example.yaml`    | Optional Secret seeding `HARBORMASTER_SESSION_SECRET`.   |
 

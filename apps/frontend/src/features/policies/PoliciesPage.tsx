@@ -69,8 +69,7 @@ export function PoliciesPage() {
       if (err instanceof AppError) {
         if (err.code === "policy_in_use") {
           const details = err.details as
-            | { attached_to?: { users?: string[]; groups?: string[] } }
-            | undefined;
+            { attached_to?: { users?: string[]; groups?: string[] } } | undefined;
           const users = details?.attached_to?.users ?? [];
           const groups = details?.attached_to?.groups ?? [];
           // Show the in-use details inside the confirm dialog

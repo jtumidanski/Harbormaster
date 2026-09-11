@@ -2,6 +2,17 @@ name: pr
 on:
   pull_request:
     branches: [main, "task-*"]
+    # Skip the machine-written image pin. bump-manifest in main.yml opens a PR
+    # touching only this file and merges it about three seconds later, deleting
+    # the branch -- which yanks the ref out from under a validation run that has
+    # not started a job yet, leaving a red run with no jobs and no logs.
+    #
+    # Waiting instead of skipping would buy nothing: `main` requires no status
+    # checks, so --auto would merge just as fast, and the image in that pin was
+    # already built, Trivy-scanned and cosign-signed by the run that produced
+    # it. There is nothing here left to validate.
+    paths-ignore:
+      - "deploy/kubernetes/deployment.yaml"
 
 permissions:
   contents: read
@@ -11,9 +22,9 @@ jobs:
     runs-on: ubuntu-24.04
     defaults: { run: { working-directory: apps/frontend } }
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
-        with: { node-version: "20", cache: "npm", cache-dependency-path: apps/frontend/package-lock.json }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version: "24.20.0", cache: "npm", cache-dependency-path: apps/frontend/package-lock.json }
       - run: npm ci
       - run: npm run lint
       - run: npm run format
@@ -22,9 +33,9 @@ jobs:
     runs-on: ubuntu-24.04
     defaults: { run: { working-directory: apps/frontend } }
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
-        with: { node-version: "20", cache: "npm", cache-dependency-path: apps/frontend/package-lock.json }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version: "24.20.0", cache: "npm", cache-dependency-path: apps/frontend/package-lock.json }
       - run: npm ci
       - run: npm test
 
@@ -32,9 +43,9 @@ jobs:
     runs-on: ubuntu-24.04
     defaults: { run: { working-directory: apps/frontend } }
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
-        with: { node-version: "20", cache: "npm", cache-dependency-path: apps/frontend/package-lock.json }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version: "24.20.0", cache: "npm", cache-dependency-path: apps/frontend/package-lock.json }
       - run: npm ci
       - run: npm run build
 
@@ -42,18 +53,18 @@ jobs:
     runs-on: ubuntu-24.04
     defaults: { run: { working-directory: apps/backend } }
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with: { go-version-file: apps/backend/go.mod }
-      - uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
-        with: { version: v2.12.2, working-directory: apps/backend }
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with: { version: v2.13.2, working-directory: apps/backend }
 
   backend-test:
     runs-on: ubuntu-24.04
     defaults: { run: { working-directory: apps/backend } }
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with: { go-version-file: apps/backend/go.mod }
       - run: go test -race -count=1 ./...
 
@@ -61,8 +72,8 @@ jobs:
     runs-on: ubuntu-24.04
     defaults: { run: { working-directory: apps/backend } }
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with: { go-version-file: apps/backend/go.mod }
       - run: CGO_ENABLED=0 go build ./...
 
@@ -77,24 +88,24 @@ jobs:
     runs-on: ubuntu-24.04
     defaults: { run: { working-directory: apps/backend } }
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with: { go-version-file: apps/backend/go.mod }
       - run: go vet -tags=integration ./...
 
   gitleaks:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
-      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.6
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   dependency-scan:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
@@ -108,8 +119,8 @@ jobs:
   license-allowlist:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with: { go-version-file: apps/backend/go.mod }
       - run: |
           cd apps/backend

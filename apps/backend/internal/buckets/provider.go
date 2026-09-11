@@ -3,7 +3,7 @@ package buckets
 import (
 	"strings"
 
-	madmin "github.com/minio/madmin-go/v3"
+	madmin "github.com/minio/madmin-go/v4"
 	miniogo "github.com/minio/minio-go/v7"
 )
 
@@ -69,9 +69,9 @@ func publicAccessFromPolicy(raw string) PublicAccess {
 
 // quotaFromMadmin converts madmin's BucketQuota into the domain Quota
 // representation. Returns nil when no quota is configured (madmin reports
-// Quota == 0 in that case).
+// Size == 0 in that case).
 //
-// Note: madmin v3.0.66 only knows about HardQuota at the wire level. The
+// Note: madmin only knows about HardQuota at the wire level. The
 // FIFO quota Harbormaster offers is a domain-level concept that maps onto
 // a (hard quota + lifecycle template) pair on the write side. The read
 // path therefore always returns QuotaKindHard for any non-zero quota
@@ -79,9 +79,6 @@ func publicAccessFromPolicy(raw string) PublicAccess {
 // template handler lands and we can recognise a FIFO-managed bucket.
 func quotaFromMadmin(q madmin.BucketQuota, usedBytes int64) *Quota {
 	bytes := int64(q.Size)
-	if bytes == 0 {
-		bytes = int64(q.Quota) // pre-Aug-2023 field; harmless if zero
-	}
 	if bytes == 0 {
 		return nil
 	}

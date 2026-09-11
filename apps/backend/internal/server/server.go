@@ -50,7 +50,20 @@ func (s *Server) Run(ctx context.Context) error {
 	root.Use(chimw.RequestID)
 	root.Use(chimw.Recoverer)
 	root.Use(observability.Logger(s.deps.Logger))
-	root.Use(chimw.RealIP)
+	// Client-IP derivation, read back via httpx.ClientIP. chi's RealIP is
+	// deprecated (it mutates r.RemoteAddr from an unvalidated
+	// X-Forwarded-For / True-Client-IP / X-Real-IP, so any caller could
+	// forge the source IP we record in audit events). ClientIPFromXFF walks
+	// the XFF chain right-to-left, skipping only hops inside
+	// HARBORMASTER_TRUSTED_PROXIES — which is what the operator docs have
+	// always claimed this setting does. With no trusted proxies configured
+	// we are directly exposed, so the TCP peer address is the only
+	// trustworthy source.
+	if len(s.cfg.TrustedProxies) > 0 {
+		root.Use(chimw.ClientIPFromXFF(s.cfg.TrustedProxies...))
+	} else {
+		root.Use(chimw.ClientIPFromRemoteAddr)
+	}
 	// NOTE: the per-request Timeout middleware is intentionally NOT applied
 	// at the root level. It is scoped to the non-streaming API router below
 	// so SSE handlers (POST /api/v1/buckets/{name}/empty) can outlive the

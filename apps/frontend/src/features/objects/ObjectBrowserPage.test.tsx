@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router";
 import type { PropsWithChildren } from "react";
 import { Toaster } from "sonner";
 import { ObjectBrowserPage } from "./ObjectBrowserPage";
@@ -39,11 +39,24 @@ function patchedGetBoundingClientRect(this: Element): DOMRect {
       x: 0,
       y: 0,
       toJSON: () => ({}),
-    } as DOMRect;
+    };
   }
   return originalGetBoundingClientRect.call(this);
 }
 Element.prototype.getBoundingClientRect = patchedGetBoundingClientRect;
+
+// @tanstack/react-virtual measures the scroll element with offsetWidth /
+// offsetHeight (not getBoundingClientRect), and jsdom hardcodes both to 0.
+// Report the scroller's real size so rows get rendered.
+const SCROLLER_SIZE = { offsetWidth: 800, offsetHeight: 480 } as const;
+for (const [prop, size] of Object.entries(SCROLLER_SIZE)) {
+  Object.defineProperty(HTMLElement.prototype, prop, {
+    configurable: true,
+    get(this: HTMLElement) {
+      return this.dataset.testid === "object-list-scroller" ? size : 0;
+    },
+  });
+}
 
 type FetchSpy = ReturnType<typeof vi.fn>;
 

@@ -5,7 +5,7 @@ import (
 	"io"
 	"strings"
 
-	madmin "github.com/minio/madmin-go/v3"
+	madmin "github.com/minio/madmin-go/v4"
 	miniogo "github.com/minio/minio-go/v7"
 
 	"github.com/jtumidanski/Harbormaster/internal/audit"

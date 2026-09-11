@@ -10,7 +10,7 @@ jobs:
   attach-notes:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
       - name: Generate notes from CHANGELOG.md
         id: notes
@@ -19,7 +19,7 @@ jobs:
           awk "/^## ${tag}$/{flag=1; next} /^## /{flag=0} flag" CHANGELOG.md > /tmp/notes.md
           [ -s /tmp/notes.md ] || echo "No CHANGELOG entry for ${tag}; see commit history." > /tmp/notes.md
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-      - uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 # v2.0.8
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           body_path: /tmp/notes.md
           append_body: true

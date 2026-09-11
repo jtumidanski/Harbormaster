@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"sort"
 
-	madmin "github.com/minio/madmin-go/v3"
+	madmin "github.com/minio/madmin-go/v4"
 	"github.com/rs/zerolog"
 
 	"github.com/jtumidanski/Harbormaster/internal/apierror"

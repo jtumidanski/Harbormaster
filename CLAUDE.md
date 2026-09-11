@@ -1,89 +1,141 @@
-# CLAUDE.md
+# Harbormaster
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Harbormaster is a self-hosted MinIO admin UI for homelab and small-cluster
+operators.
 
-## Project Overview
+- `apps/backend` — a single Go module (`cmd/`, `internal/`, `migrations/`,
+  `Makefile`, `.golangci.yml`). There is no `go.work`; every Go change is
+  local to this module.
+- `apps/frontend` — Vite / React / TypeScript.
+- `deploy/docker`, `deploy/kubernetes` — the two deploy paths.
+- `docs/architecture/`, `docs/operator/`, `docs/tasks/` — design, runbooks,
+  and per-task artifacts.
+- `tools/` — `verify.sh` (the gate), `task-numbers.sh`, `task-brief.sh`,
+  `toolchain.versions`.
 
-Harbormaster is a self-hosted MinIO admin UI for homelab and small-cluster operators. The system is a multi-service project: one or more **Go** backend services plus a **React/TypeScript** web UI. The repository is currently unscaffolded — only `README.md` exists. Service layout, module structure, and build tooling will be decided during the first task; update this file (build commands, service paths, conventions) once those are settled.
+## Never do this
 
-## Workflow Rules
+- Don't implement when you were asked to understand or plan. Planning and
+  implementation are separate phases; wait for explicit approval.
+- Don't edit files in the main repo when a task worktree exists for that work.
+- Don't open a PR without running the code review step (`/audit-plan` or
+  `superpowers:requesting-code-review`) — not even when the plan looks complete.
+- Don't call a `--quick` or `--no-docker` run "done". Those print
+  `VERIFY: PARTIAL`, and they mean it.
+- Don't walk a design or plan document through section-by-section approval. Write
+  the full document to the file; the reader will read the committed file.
+- Don't pick a task number by hand. `tools/task-numbers.sh next`.
+- Don't `git add -A` or `git add .`.
 
-When asked to understand or plan something, DO NOT start implementing code changes. Wait for explicit approval before making any edits. Planning and implementation are separate phases.
+## Evidence & grounding
 
-## Build & Verification
+- Verify MinIO admin API contracts, configuration values, and service-to-service
+  interactions against local source or upstream MinIO docs. Never cite them from
+  memory.
+- When uncertain about behaviour, read the source rather than speculating.
+- Report what you could not verify as unverified. Unverified is "unknown", not a
+  plausible guess.
 
-A branch is "done" only when all of these are clean:
+## Development workflow
 
-**Backend** (cwd = `apps/backend`):
-- `go test -race -count=1 ./...`
-- `go vet ./...`
-- `golangci-lint run`
-- `CGO_ENABLED=0 go build ./...`
+1. `/spec-task <idea>` — from the main repo. Creates the worktree at
+   `.worktrees/task-NNN-slug/` on branch `task-NNN-slug`, commits `prd.md`.
+2. `/design-task <id>` — `design.md`.
+3. `/plan-task <id>` — `plan.md` + `context.md`.
+4. `/execute-task <id>` — implementation, in the existing worktree. Never
+   creates a new one.
 
-**Backend integration tests** (Docker required, on-demand):
-- `HARBORMASTER_INTEGRATION=1 go test -tags=integration -count=1 ./...`
+Phase 5 for a post-implementation bug is `/fix-pr-bug <task> <slug>`.
 
-**Frontend** (cwd = `apps/frontend`):
-- `npm ci`
-- `npm run lint`
-- `npm run format`
-- `npm test`
-- `npm run build`
+- Each phase runs in a fresh (`/clear`'d) session so it consumes only the prior
+  phase's documented artifacts.
+- **Artifact-location override:** `superpowers:brainstorming` and
+  `superpowers:writing-plans` default to `docs/superpowers/specs/` and
+  `docs/superpowers/plans/`. **In this project both go under
+  `docs/tasks/task-NNN-slug/`.** Pass the task folder explicitly when invoking
+  those skills outside a phase command.
+- Fuzzy task identifiers: `task-001-slug`, `task-001`, `001` and `1` all resolve.
+  Search both `docs/tasks/` and `.worktrees/*/docs/tasks/`.
+- Worktree discipline: verify cwd is the right worktree before working; `cd`
+  there yourself rather than asking. Search all worktrees (`git worktree list`)
+  before concluding an artifact is missing.
+- Task numbers come from `tools/task-numbers.sh next`. A `SessionStart` hook runs
+  `tools/task-numbers.sh check` and reports collisions.
+- Skip `/spec-task` only for trivial fixes that don't warrant a PRD.
 
-**Container** (cwd = worktree root):
-- `docker buildx build --platform linux/amd64,linux/arm64 -f deploy/docker/Dockerfile .`
+## Done means verified
 
-**E2E** (on-demand, not per-PR; requires Docker Compose stack):
-- `cd apps/frontend && npm run test:e2e`
+```sh
+tools/verify.sh              # every gate. Exit 0 → the branch may be called done.
+tools/verify.sh --quick      # skips buildx, -race, and npm ci when current. NOT done.
+tools/verify.sh --no-docker  # skips buildx only. NOT done.
+tools/verify.sh --list       # the gates these flags would select. Runs none.
+tools/verify.sh --help       # usage, and the two on-demand suites.
+```
 
-## Code Patterns
+Read the terminal `VERIFY:` line, not just the exit code — `DONE` and `PARTIAL`
+both exit 0.
 
-When refactoring shared types or creating common libraries, prefer straightforward moves over re-exporting type aliases. Keep abstractions clean — don't break service boundaries by having one layer call another's internals directly.
+Two suites are on-demand and are not part of any mode:
+`HARBORMASTER_INTEGRATION=1 go test -tags=integration -count=1 ./...` in
+`apps/backend` (needs Docker), and `npm run test:e2e` in `apps/frontend`
+(needs the Compose stack).
 
-## Development Workflow
+Gate failure, or the script disagreeing with CI: `docs/verification.md`.
 
-The canonical flow for any non-trivial change is four phases. **`/spec-task` creates a dedicated worktree at `.worktrees/task-NNN-slug/` on a `task-NNN-slug` branch; all subsequent phases run inside that worktree** so docs, code, and the eventual PR are one unit. Each phase is a separate slash command, invoked from a fresh (`/clear`'d) session so the next phase consumes only the prior phase's documented artifacts:
+## Dispatching agents
 
-1. `/spec-task <idea>` — run from the main repo. Interactive PRD interview that creates the worktree + branch and commits the PRD. Output: `<worktree>/docs/tasks/task-NNN-slug/prd.md`.
-2. `cd .worktrees/task-NNN-slug`, `/clear`, then `/design-task <task-id>` — invokes `superpowers:brainstorming`. Output: `design.md` (committed on the task branch).
-3. `/clear`, then `/plan-task <task-id>` — invokes `superpowers:writing-plans`. Output: `plan.md` + `context.md` (committed).
-4. `/clear`, then `/execute-task <task-id>` — invokes `superpowers:subagent-driven-development`. Reuses the existing worktree; never creates a new one.
+- The trio: `task-implementer` (one plan task, 120 tool-call budget, `PARTIAL`
+  hand-back, module-local build/test only), `task-verifier` (runs
+  `tools/verify.sh` in its own clean context, never edits), `task-reviewer` (one
+  unit against its brief, artifact under `docs/tasks/<task>/reviews/`).
+- Never run `tools/verify.sh` inside an implementer.
+- Before a PR: `plan-adherence-reviewer`, `backend-guidelines-reviewer` (Go
+  `DOM-*` / `SUB-*` / `SEC-*`), `frontend-guidelines-reviewer` (`FE-*`) — all
+  writing to `docs/tasks/<task>/audit.md`, dispatched by
+  `superpowers:requesting-code-review`.
+- `service-documentation` / `/service-doc <component>` documents one component
+  into `docs/architecture/<name>.md`.
+- `todo-scanner` / `/review-todos` refreshes `docs/TODO.md`.
+- Model pinning, fan-out vs. fork, and the handoff decision:
+  `docs/agent-dispatch.md`.
 
-Phase commands accept fuzzy task identifiers: `task-001-slug`, `task-001`, `001`, or `1` all resolve to the same folder. They search both `docs/tasks/` (main) and `.worktrees/*/docs/tasks/` to locate the task.
+## Handing off context
 
-Skip `/spec-task` only for trivial fixes that don't warrant a PRD; document those directly via a brainstorming session.
+- Brief-first: an implementer gets `tools/task-brief.sh plan.md N`, not the whole
+  plan. Plan task headings must match `^#+[ \t]+Task[ \t]+[0-9]+`.
+- Slice a large document, diff, plan, or tool result before reading it whole:
+  `docs/slice-first.md`.
+- The handoff question: does the next unit depend on this conversation, or only
+  on repository state? If only on repository state, write the state down and
+  hand off.
 
-### Artifact Location Override
+## Repository conventions
 
-Both `superpowers:brainstorming` and `superpowers:writing-plans` default to `docs/superpowers/specs/` and `docs/superpowers/plans/`. **In this project, both go under `docs/tasks/task-NNN-slug/` instead.** When invoking those skills directly (outside the phase commands), pass the task folder explicitly so artifacts land in the right place.
+- Prefer straightforward moves over re-exported type aliases when refactoring
+  shared types or creating common libraries.
+- Keep abstractions clean — don't break service boundaries by having one layer
+  call another's internals directly.
+- The `backend-dev-guidelines` and `frontend-dev-guidelines` skills in
+  `.claude/skills/` are the authority on Go and React/TS patterns; the
+  `skill-activation-prompt` hook auto-suggests them from the triggers in
+  `.claude/skills/skill-rules.json`.
+- Use repo-relative paths in committed files — never literal home or absolute
+  paths. `block-home-paths-in-docs.sh` enforces this under `docs/`.
+- Long-running processes go in the background and are never polled;
+  `wait-loop-guard.sh` refuses a poll. See `docs/tooling-conventions.md`.
 
-### Code Review Pattern
+## Where the procedures live
 
-Code review uses three modular reviewer agents, dispatched in parallel:
-
-- `plan-adherence-reviewer` — verifies plan tasks were actually implemented
-- `backend-guidelines-reviewer` — Go DOM-* / SUB-* / SEC-* checklist (when Go files changed)
-- `frontend-guidelines-reviewer` — React/TS FE-* checklist (when frontend files changed)
-
-Invoke via `superpowers:requesting-code-review` (it dispatches the appropriate subset), or invoke an individual agent directly for ad-hoc checks. Each agent writes findings to `docs/tasks/task-NNN-slug/audit.md`.
-
-The backend and frontend reviewer checklists are sourced from the `backend-dev-guidelines` and `frontend-dev-guidelines` skills in `.claude/skills/`. The `skill-activation-prompt` hook (wired in `.claude/settings.json`) auto-suggests those skills based on file/intent triggers configured in `.claude/skills/skill-rules.json`.
-
-## Design/Plan Output Style
-
-- When producing design.md or plan.md documents, write the full document directly to the file. Do NOT walk through sections interactively or ask for per-section approval. The user will read the committed file.
-
-## Worktree Discipline
-
-- Tasks live in git worktrees (siblings of the main repo under `.worktrees/`). Before planning/designing/executing a task, verify cwd is the correct worktree; if not, `cd` into it yourself rather than asking the user.
-- When searching for task PRDs/plans/designs, search across all worktrees (`git worktree list`) before concluding a file is missing.
-- Never edit files in the main repo when a task worktree exists for that work.
-
-## Code Review Before PR
-
-- Always run the code-review step (`/audit-plan` or `superpowers:requesting-code-review`) before opening a PR. Do not skip even when the task plan looks complete.
-
-## Verification Over Memory
-
-- For MinIO admin API contracts, configuration values, and service-to-service interactions, verify against local source or upstream MinIO docs rather than citing values from memory or general knowledge.
-- When uncertain about behavior, read the source rather than speculating.
+| Trigger | Owner |
+|---|---|
+| Model pinning, fan-out vs. fork, the handoff decision | [`docs/agent-dispatch.md`](docs/agent-dispatch.md) |
+| A gate failed, or the script disagrees with CI | [`docs/verification.md`](docs/verification.md) |
+| A bare task number; a superpowers skill outside a phase command | [`docs/superpowers-integration.md`](docs/superpowers-integration.md) |
+| Dispatching a reviewer; writing up a review | [`docs/review-protocol.md`](docs/review-protocol.md) |
+| A bug found after implementation; Phase 5 / `/fix-pr-bug` | [`docs/post-implementation.md`](docs/post-implementation.md) |
+| About to point a second implementer at the same transformation | [`docs/codemod-vs-agents.md`](docs/codemod-vs-agents.md) |
+| Reading a large document, diff, plan, or tool result | [`docs/slice-first.md`](docs/slice-first.md) |
+| Long-running processes, mechanical repo facts, shell conventions | [`docs/tooling-conventions.md`](docs/tooling-conventions.md) |
+| Committing, pushing, rebasing, a stray commit on `main` | [`docs/git-workflow.md`](docs/git-workflow.md) |
+| Deploying, reading logs, the runbook story | [`docs/observability.md`](docs/observability.md) |

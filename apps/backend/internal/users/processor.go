@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"sort"
 
-	madmin "github.com/minio/madmin-go/v3"
+	madmin "github.com/minio/madmin-go/v4"
 	"github.com/rs/zerolog"
 
 	"github.com/jtumidanski/Harbormaster/internal/apierror"
@@ -30,7 +30,7 @@ type adminAPI interface {
 	DetachPolicy(ctx context.Context, req madmin.PolicyAssociationReq) (madmin.PolicyAssociationResp, error)
 	AddCannedPolicy(ctx context.Context, name string, body []byte) error
 	ListCannedPolicies(ctx context.Context) (map[string]json.RawMessage, error)
-	InfoCannedPolicy(ctx context.Context, name string) ([]byte, error)
+	InfoCannedPolicy(ctx context.Context, name string) (*madmin.PolicyInfo, error)
 }
 
 // AdminClient is the public face of adminAPI. It exists so callers outside
@@ -48,7 +48,7 @@ type AdminClient interface {
 	DetachPolicy(ctx context.Context, req madmin.PolicyAssociationReq) (madmin.PolicyAssociationResp, error)
 	AddCannedPolicy(ctx context.Context, name string, body []byte) error
 	ListCannedPolicies(ctx context.Context) (map[string]json.RawMessage, error)
-	InfoCannedPolicy(ctx context.Context, name string) ([]byte, error)
+	InfoCannedPolicy(ctx context.Context, name string) (*madmin.PolicyInfo, error)
 }
 
 // ClientGetter is the concrete dependency the Processor pulls from on

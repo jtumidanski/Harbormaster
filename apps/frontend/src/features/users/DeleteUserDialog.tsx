@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -38,7 +38,7 @@ export function DeleteUserDialog({ open, onOpenChange, accessKey }: DeleteUserDi
       await qc.invalidateQueries({ queryKey: usersKeys.all() });
       toast.success("User deleted.");
       onOpenChange(false);
-      navigate("/users");
+      await navigate("/users");
     },
     onError: (err: unknown) => {
       if (err instanceof AppError) {

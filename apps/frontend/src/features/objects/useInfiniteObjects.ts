@@ -10,7 +10,7 @@ import type { ObjectListResponse } from "./types";
 export function useInfiniteObjects(bucket: string, prefix: string) {
   return useInfiniteQuery({
     queryKey: objectsKeys.list(bucket, prefix),
-    initialPageParam: "" as string,
+    initialPageParam: "",
     queryFn: ({ pageParam }: { pageParam: string }): Promise<ObjectListResponse> =>
       listObjects(bucket, prefix, pageParam || undefined),
     getNextPageParam: (last: ObjectListResponse): string | undefined => {

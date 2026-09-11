@@ -106,10 +106,11 @@ func TestUsersIntegration_BackupTargetPolicy(t *testing.T) {
 	if wantName != "harbormaster-backup-target-"+bucket {
 		t.Fatalf("MaterializedName drifted: got %q", wantName)
 	}
-	body, err := env.Adm.InfoCannedPolicy(ctx, wantName)
+	info, err := env.Adm.InfoCannedPolicy(ctx, wantName)
 	if err != nil {
 		t.Fatalf("InfoCannedPolicy(%s): %v", wantName, err)
 	}
+	body := info.Policy
 	if !strings.Contains(string(body), bucket) {
 		t.Errorf("materialised backup-target policy missing bucket name %q in body: %s",
 			bucket, string(body))

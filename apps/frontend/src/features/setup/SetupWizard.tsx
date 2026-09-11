@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,7 +52,7 @@ export function SetupWizard() {
     onSuccess: async () => {
       toast.success("Setup complete. Please sign in.");
       await queryClient.invalidateQueries({ queryKey: authKeys.setupStatus() });
-      navigate("/login");
+      await navigate("/login");
     },
     onError: (err: unknown) => {
       if (err instanceof AppError) {

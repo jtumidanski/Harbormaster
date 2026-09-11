@@ -3,6 +3,13 @@ on:
   push:
     branches: [main]
     tags: ["v*.*.*"]
+    # Loop prevention for the bump-manifest job below. Its PR merges a commit
+    # touching only this file, which would otherwise start another build that
+    # bumps again, forever. `[skip ci]` is deliberately NOT used instead:
+    # it would also skip pr-validation.yml on the bot's branch, leaving the
+    # merge with no checks. (Path filters do not apply to tag pushes.)
+    paths-ignore:
+      - "deploy/kubernetes/deployment.yaml"
 
 permissions:
   contents: read
@@ -13,17 +20,17 @@ jobs:
   build-and-publish:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
-      - uses: docker/setup-qemu-action@49b3bc8e6bdd4a60e6116a5414239cba5943d3cf # v3.2.0
-      - uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db # v3.6.1
-      - uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: meta
-        uses: docker/metadata-action@8e5442c4ef9f78752691e2d8f8d19755c6f78e81 # v5.5.1
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/jtumidanski/harbormaster
           tags: |
@@ -38,7 +45,7 @@ jobs:
         # arch-independent here (distroless base + static CGO_ENABLED=0 Go
         # binary), and the push step below rebuilds multi-arch from cache.
         name: Build image for scanning (single-arch, no push)
-        uses: docker/build-push-action@5cd11c3a4ced054e52742c5fd54dca954e0edd85 # v6.7.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: deploy/docker/Dockerfile
@@ -59,7 +66,7 @@ jobs:
           trivyignores: ".trivyignore"
       - id: push
         name: Push image
-        uses: docker/build-push-action@5cd11c3a4ced054e52742c5fd54dca954e0edd85 # v6.7.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: deploy/docker/Dockerfile
@@ -68,9 +75,123 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: VERSION=${{ steps.meta.outputs.version }}
-      - uses: sigstore/cosign-installer@4959ce089c160fddf62f7b42464195ba1a56d382 # v3.6.0
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - name: cosign sign (keyless via GitHub OIDC)
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
         run: |
           cosign sign --yes "ghcr.io/jtumidanski/harbormaster@${DIGEST}"
+
+  # Rewrites the image tag in deploy/kubernetes/deployment.yaml to the commit
+  # that produced the image, and pushes it back. Argo CD on the bee cluster
+  # watches that directory, so this is the deploy step: `git log` on that file
+  # becomes an accurate record of what is running.
+  #
+  # The tag must match what metadata-action publishes above --
+  # `type=sha,prefix=sha-,format=short` yields `sha-` plus the SHORT sha
+  # (7 chars), e.g. sha-f17d771. Using the full 40-character ${GITHUB_SHA}
+  # would pin to a tag that is never pushed and every pod would land in
+  # ImagePullBackOff.
+  #
+  # Delivered as a pull request, not a direct push: `main` is protected here
+  # ("Changes must be made through a pull request"), so MyFleet's push-to-main
+  # bump is rejected outright with GH006. This follows atlas's
+  # main-publish.yml instead, which opens a bot PR and merges it. Protection on
+  # this branch requires no approvals and no status checks, so the merge does
+  # not need a human.
+  bump-manifest:
+    needs: [build-and-publish]
+    # Tag pushes (v*.*.*) also run this workflow, but a tag is not a branch --
+    # there would be nothing to commit back to.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    # Serialize across overlapping runs, so a later run's bump cannot be undone
+    # by an earlier one finishing after it. Never cancel a queued bump:
+    # cancelling mid-push risks a half-written commit. Same shape as MyFleet's
+    # bump-overlay job.
+    concurrency:
+      group: bump-manifest
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        # MUST be `ref: main`. The default checkout for a push event leaves a
+        # detached HEAD, and `git push` from one fails outright.
+        with:
+          ref: main
+      - name: Pin image to this commit
+        id: pin
+        run: |
+          set -euo pipefail
+
+          # Stale-run guard: main may have moved past the commit this run built
+          # if a later merge's bump already landed while this one was still in
+          # build/scan/sign. Rewriting to this run's older SHA would roll the
+          # deployment backwards with every step still green.
+          tip="$(git rev-parse HEAD)"
+          if [ "$tip" != "${GITHUB_SHA}" ]; then
+            echo "main's tip is now $tip, not this run's ${GITHUB_SHA} — a newer push already landed and will pin itself. Skipping to avoid deploying stale bits."
+            exit 0
+          fi
+
+          # Must match what metadata-action publishes:
+          # type=sha,prefix=sha-,format=short yields a 7-character sha.
+          short="sha-${GITHUB_SHA::7}"
+          f=deploy/kubernetes/deployment.yaml
+          sed -i -E "s#(image: ghcr\.io/jtumidanski/harbormaster):.*#\1:${short}#" "$f"
+
+          if git diff --quiet "$f"; then
+            echo "already pinned to ${short} — nothing to bump"
+            exit 0
+          fi
+          # Fail loudly rather than pushing a manifest the rewrite missed.
+          grep -q "image: ghcr.io/jtumidanski/harbormaster:${short}$" "$f"
+
+          branch="bot/image-bump-${short}"
+          git config user.name  "harbormaster-image-bot"
+          git config user.email "harbormaster-image-bot@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add "$f"
+          git commit -m "chore(deploy): pin harbormaster image to ${short}
+
+          Generated by main.yml run ${GITHUB_RUN_ID} after a successful
+          build, scan and sign. Argo CD's Application(harbormaster-main) on
+          the bee cluster picks this up on its next reconcile."
+          # --force, because the branch name is derived from the commit and is
+          # therefore identical on a re-run. A previous attempt that pushed the
+          # branch and then failed later (as happened when Actions was not yet
+          # permitted to open PRs) would otherwise make every re-run die on
+          # "! [rejected] ... (fetch first)". Nothing but this job writes here.
+          git push --force origin "$branch"
+          echo "branch=$branch"   >> "$GITHUB_OUTPUT"
+          echo "short=$short"     >> "$GITHUB_OUTPUT"
+
+      - name: Open and merge the bump PR
+        if: steps.pin.outputs.branch != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.pin.outputs.branch }}
+          SHORT: ${{ steps.pin.outputs.short }}
+        run: |
+          set -euo pipefail
+
+          # Re-runs must not fail just because the PR already exists.
+          url=$(gh pr list --head "$BRANCH" --state open \
+                  --json url -q '.[0].url // empty')
+          if [ -n "$url" ]; then
+            echo "Reusing existing PR: $url"
+          else
+          url=$(gh pr create --base main --head "$BRANCH" \
+            --title "chore(deploy): pin harbormaster image to ${SHORT}" \
+            --body "Auto-generated by [main.yml run ${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}).
+
+          Pins \`deploy/kubernetes/deployment.yaml\` to \`${SHORT}\`, the image just built, scanned and signed from this commit.
+
+          Argo CD's \`Application(harbormaster-main)\` on the bee cluster rolls the Deployment on its next reconcile.")
+          echo "PR opened: $url"
+          fi
+          gh pr merge "$url" --squash --delete-branch || \
+            gh pr merge "$url" --squash --delete-branch --auto || \
+            echo "::warning::Could not merge ${url} automatically. The image is published; only the manifest pin is pending."

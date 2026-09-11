@@ -1,6 +1,6 @@
 module github.com/jtumidanski/Harbormaster
 
-go 1.25.12
+go 1.26.0
 
 require (
 	github.com/glebarez/sqlite v1.11.0
@@ -15,8 +15,8 @@ require (
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.12.1
 	github.com/testcontainers/testcontainers-go/modules/minio v0.44.0
-	golang.org/x/crypto v0.55.0
-	golang.org/x/sync v0.22.0
+	golang.org/x/crypto v0.56.0
+	golang.org/x/sync v0.23.0
 	golang.org/x/term v0.45.0
 	gorm.io/gorm v1.31.2
 )

@@ -131,15 +131,26 @@ jobs:
 
   # arm64 builds natively on one of the Pi 4 workers. No QEMU: the Pis exist to
   # replace emulation.
+  #
+  # `needs: build-amd64` is what makes the Trivy gate above absolute. The two
+  # legs are otherwise independent and would run in parallel, which would let
+  # this job publish <tag>-arm64 while the gate was still deciding -- a failing
+  # scan would then leave a scanned-and-rejected build half-pushed to zot.
+  # Serializing costs roughly the amd64 leg's wall time (~8 min) per push and
+  # buys "a failed scan pushes nothing, anywhere".
+  #
+  # The tag comes from build-amd64's output rather than being recomputed, so
+  # the four jobs cannot disagree about it.
   build-arm64:
+    needs: [build-amd64]
     runs-on: ubuntu-24.04
+    env:
+      SHORT: ${{ needs.build-amd64.outputs.short }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
       - name: Reset toolchain caches
         run: rm -rf /work/ci-cache
-      - id: vars
-        run: echo "short=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
       - id: arm64
         uses: ci/actions/select-arm64-builder@v1
       - name: Selected arm64 builder
@@ -166,14 +177,14 @@ jobs:
           platforms: linux/arm64
           push: true
           provenance: false
-          tags: ${{ env.IMAGE }}:${{ steps.vars.outputs.short }}-arm64
-          build-args: VERSION=${{ steps.vars.outputs.short }}
+          tags: ${{ env.IMAGE }}:${{ env.SHORT }}-arm64
+          build-args: VERSION=${{ env.SHORT }}
           cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache-arm64
           cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache-arm64,mode=max
       - name: Assert the published layer really is arm64
         run: |
           set -euo pipefail
-          arch=$(docker buildx imagetools inspect "${IMAGE}:${{ steps.vars.outputs.short }}-arm64" \
+          arch=$(docker buildx imagetools inspect "${IMAGE}:${SHORT}-arm64" \
             --format '{{json .Image}}' | jq -r .architecture)
           echo "built on ${{ steps.arm64.outputs.host }}, architecture=$arch"
           test "$arch" = arm64

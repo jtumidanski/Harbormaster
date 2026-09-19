@@ -1,0 +1,45 @@
+name: release
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+# No toolchain runs here, so this workflow deliberately configures no cache:
+# the runner cache PVC has no retention policy and nothing below compiles.
+jobs:
+  attach-notes:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - name: Generate notes from CHANGELOG.md
+        id: notes
+        run: |
+          tag="${GITHUB_REF##*/}"
+          awk "/^## ${tag}$/{flag=1; next} /^## /{flag=0} flag" CHANGELOG.md > /tmp/notes.md
+          [ -s /tmp/notes.md ] || echo "No CHANGELOG entry for ${tag}; see commit history." > /tmp/notes.md
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          mkdir -p dist/release
+          cp CHANGELOG.md dist/release/
+      # `override: true` deletes the release the event just created and
+      # recreates it from dist/release plus release-notes-file, rather than
+      # failing on the existing tag. `release-notes-file` is what carries the
+      # extracted notes into the body: without it the action posts an empty
+      # body, which is how release-note parity was lost on the canary.
+      # `sha` is passed explicitly because the action's default is a `forge.*`
+      # context expression, and an empty SHA makes the action delete the tag.
+      - uses: actions/forgejo-release@98265452477dafb3f0f27ba9c462c90b18cb44fd # v2.13.4
+        with:
+          direction: upload
+          url: https://git.tumidanski
+          repo: ${{ github.repository }}
+          tag: ${{ steps.notes.outputs.tag }}
+          sha: ${{ github.sha }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          release-dir: dist/release
+          release-notes-file: /tmp/notes.md
+          release-notes-assistant: false
+          override: true
+          verbose: true

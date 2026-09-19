@@ -2,10 +2,13 @@ name: pr
 on:
   pull_request:
     branches: [main, "task-*"]
-    # Skip the machine-written image pin. bump-manifest in main.yml pushes a
-    # commit touching only this file; there is nothing here left to validate
-    # (the image in that pin was already built and Trivy-scanned by the run
-    # that produced it).
+    # Skip the machine-written image pin. bump-manifest in main.yml commits the
+    # new image digest to this file and pushes it straight to main -- the GitHub
+    # workflow instead pushed a bot/image-bump-<sha> branch and squash-merged it
+    # with the `gh` CLI, which does not speak to Forgejo. The gate guards that
+    # bump commit: wherever it surfaces, there is nothing in it left to
+    # validate, because the image the pin names was already built and
+    # Trivy-scanned by the run that produced it.
     paths-ignore:
       - "deploy/kubernetes/deployment.yaml"
 

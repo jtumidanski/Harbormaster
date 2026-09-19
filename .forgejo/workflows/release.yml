@@ -23,11 +23,41 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           mkdir -p dist/release
           cp CHANGELOG.md dist/release/
-      # `override: true` deletes the release the event just created and
-      # recreates it from dist/release plus release-notes-file, rather than
-      # failing on the existing tag. `release-notes-file` is what carries the
-      # extracted notes into the body: without it the action posts an empty
-      # body, which is how release-note parity was lost on the canary.
+      # READ THIS BEFORE PUBLISHING A RELEASE BY HAND:
+      #
+      #   Do not attach assets when you publish. `override: true` makes the
+      #   action DELETE the release the event just created and recreate it, so
+      #   only files this job puts in dist/release survive. A binary you
+      #   attached in the web UI is gone seconds later, silently, with no error
+      #   in this run or anywhere else. Ship extra artifacts by adding them to
+      #   dist/release above, never by hand.
+      #
+      # `override: true` is what lets the action edit the release the event
+      # just created instead of failing on the existing tag, but it does so by
+      # delete-and-recreate rather than in place, and three more things are
+      # lost with the original record besides attachments: the release author
+      # becomes whatever identity the run token maps to (`Ghost`, in practice),
+      # `target_commitish` is blanked, and the body is replaced rather than
+      # appended.
+      #
+      # Replacing the body is deliberate and is the one difference from the
+      # GitHub original (`softprops/action-gh-release` with `append_body:
+      # true`) that we are keeping: CHANGELOG.md is this repo's source of truth
+      # for release notes, so the extract wins over anything typed at publish
+      # time. If that is ever revisited, `github.event.release.body` must reach
+      # the script through `env:` and must never be interpolated into a `run:`
+      # block -- that is a shell-injection sink.
+      #
+      # `release-notes-file` is what carries the extracted notes into the body.
+      # Without it the action posts an empty body, which is how release-note
+      # parity was lost on the canary.
+      #
+      # `title` and `prerelease` echo the event back, because the recreated
+      # release would otherwise be renamed to the raw tag (the action does
+      # `: ${TITLE:=$TAG}`, which fires on empty and not merely on unset) and
+      # would lose its prerelease flag unless the tag happened to contain
+      # `-rc`.
+      #
       # `sha` is passed explicitly because the action's default is a `forge.*`
       # context expression, and an empty SHA makes the action delete the tag.
       - uses: actions/forgejo-release@98265452477dafb3f0f27ba9c462c90b18cb44fd # v2.13.4
@@ -40,6 +70,8 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           release-dir: dist/release
           release-notes-file: /tmp/notes.md
+          title: ${{ github.event.release.name }}
+          prerelease: ${{ github.event.release.prerelease }}
           release-notes-assistant: false
           override: true
           verbose: true

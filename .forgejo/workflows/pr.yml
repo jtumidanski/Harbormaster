@@ -172,6 +172,24 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Reset toolchain caches
         run: rm -rf /work/ci-cache
+      # aquasecurity/setup-trivy is skipped (skip-setup-trivy below): it installs
+      # Trivy by checking out aquasecurity/trivy from github.com with
+      # actions/checkout, which passes the forge's job token as a github.com
+      # credential. GitHub rejects it and git dies with "could not read Username
+      # for 'https://github.com': terminal prompts disabled". The published
+      # release tarball is the same binary, fetched the same way as gitleaks
+      # above.
+      - name: Install Trivy
+        env:
+          TRIVY_VERSION: 0.70.0 # keep in step with the action's `version` default
+        run: |
+          set -euo pipefail
+          cd /tmp
+          curl -fsSL -o trivy.tar.gz \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          tar -xzf trivy.tar.gz trivy
+          install -m 755 trivy /usr/local/bin/trivy
+          trivy --version
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
@@ -181,6 +199,10 @@ jobs:
           format: table
           exit-code: "1"
           trivyignores: ".trivyignore"
+          skip-setup-trivy: "true"
+          # The action's default is ${{ github.workspace }}/.cache/trivy, which
+          # can never be restored here; see the header comment.
+          cache-dir: /work/ci-cache/trivy
 
   license-allowlist:
     runs-on: ubuntu-24.04

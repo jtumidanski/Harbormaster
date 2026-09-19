@@ -100,8 +100,19 @@ jobs:
         with:
           images: ${{ env.IMAGE }}
           tags: type=sha,prefix=sha-,format=short
+          # These three are pinned because metadata-action's auto-generated
+          # values override the Dockerfile's own LABEL block, and two of them
+          # are wrong or absent here. .licenses comes from the forge repo's
+          # licence field, which the mirrored repository does not report, so it
+          # arrives EMPTY and silently erases AGPL-3.0-or-later. .description
+          # comes from the mutable repo description, so the image would drift
+          # whenever that text is edited. .version must equal the VERSION
+          # build-arg, or the label disagrees with the binary's own -X
+          # main.version on a tag push -- the defect this step exists to fix.
           labels: |
             org.opencontainers.image.version=${{ steps.vars.outputs.version }}
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
+            org.opencontainers.image.description=Self-hosted MinIO admin UI for homelab and small-cluster operators.
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
         with:
           driver: remote

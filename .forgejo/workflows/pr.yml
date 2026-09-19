@@ -1,0 +1,207 @@
+name: pr
+on:
+  pull_request:
+    branches: [main, "task-*"]
+    # Skip the machine-written image pin. bump-manifest in main.yml pushes a
+    # commit touching only this file; there is nothing here left to validate
+    # (the image in that pin was already built and Trivy-scanned by the run
+    # that produced it).
+    paths-ignore:
+      - "deploy/kubernetes/deployment.yaml"
+
+permissions:
+  contents: read
+
+# Every job below pins its toolchain caches to fixed absolute paths under
+# /work/ci-cache, set at job level, and clears them as its first step. Two
+# rules, both load-bearing on the host executor:
+#
+#   1. Fixed absolute paths, not ${{ github.workspace }}/...: the host executor
+#      gives every job a unique workspace directory, and the cache entry's
+#      version is derived from the cached paths, so a workspace-relative cache
+#      can never be restored from the Forgejo cache server. See the k3s repo's
+#      README, "Forgejo CI". Set at job level, never workflow level -- at
+#      workflow level ${{ github.workspace }} expands to the empty string.
+#
+#   2. Host-mode runners share /work (a per-pod emptyDir) between jobs, so a
+#      module cache left behind by a previous job would silently warm this one.
+#      Clear it first: the Forgejo cache server is then the only warm path for
+#      the Go module/build caches and the npm cache, and the directory stays
+#      bounded to a single build's worth of data. The Go and Node toolchains
+#      themselves are a deliberate exception - setup-go/setup-node key their
+#      tool cache by exact version and keep it under /work/jobs/tool_cache,
+#      which this reset does not touch. A fixed path is safe because runner
+#      capacity is 1, so no two jobs share /work concurrently.
+#
+# Restoring the caches back onto those paths is setup-go's and setup-node's
+# own `cache:` input (on by default for Go), keyed on the toolchain version
+# plus go.sum / package-lock.json. cache-dependency-path is mandatory for Go
+# here: setup-go's default lookup only finds a go.mod at the repository root,
+# and this module lives in apps/backend.
+
+jobs:
+  frontend-lint:
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: apps/frontend } }
+    env:
+      npm_config_cache: /work/ci-cache/npm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Reset toolchain caches
+        run: rm -rf /work/ci-cache
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version: "24.21.0", cache: "npm", cache-dependency-path: apps/frontend/package-lock.json }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format
+
+  frontend-test:
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: apps/frontend } }
+    env:
+      npm_config_cache: /work/ci-cache/npm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Reset toolchain caches
+        run: rm -rf /work/ci-cache
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version: "24.21.0", cache: "npm", cache-dependency-path: apps/frontend/package-lock.json }
+      - run: npm ci
+      - run: npm test
+
+  frontend-build:
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: apps/frontend } }
+    env:
+      npm_config_cache: /work/ci-cache/npm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Reset toolchain caches
+        run: rm -rf /work/ci-cache
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version: "24.21.0", cache: "npm", cache-dependency-path: apps/frontend/package-lock.json }
+      - run: npm ci
+      - run: npm run build
+
+  backend-lint:
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: apps/backend } }
+    env:
+      GOMODCACHE: /work/ci-cache/go/mod
+      GOCACHE: /work/ci-cache/go/build
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Reset toolchain caches
+        run: rm -rf /work/ci-cache
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version-file: apps/backend/go.mod, cache-dependency-path: apps/backend/go.sum }
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with: { version: v2.13.2, working-directory: apps/backend }
+
+  backend-test:
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: apps/backend } }
+    env:
+      GOMODCACHE: /work/ci-cache/go/mod
+      GOCACHE: /work/ci-cache/go/build
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Reset toolchain caches
+        run: rm -rf /work/ci-cache
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version-file: apps/backend/go.mod, cache-dependency-path: apps/backend/go.sum }
+      - run: go test -race -count=1 ./...
+
+  backend-build:
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: apps/backend } }
+    env:
+      GOMODCACHE: /work/ci-cache/go/mod
+      GOCACHE: /work/ci-cache/go/build
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Reset toolchain caches
+        run: rm -rf /work/ci-cache
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version-file: apps/backend/go.mod, cache-dependency-path: apps/backend/go.sum }
+      - run: CGO_ENABLED=0 go build ./...
+
+  # Compile-only guard for the //go:build integration code. `go vet` type-checks
+  # the tagged non-test files AND the _test.go files (plain `go build` skips test
+  # files), but never executes a test body or TestMain, so no MinIO is required.
+  backend-integration-build:
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: apps/backend } }
+    env:
+      GOMODCACHE: /work/ci-cache/go/mod
+      GOCACHE: /work/ci-cache/go/build
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Reset toolchain caches
+        run: rm -rf /work/ci-cache
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version-file: apps/backend/go.mod, cache-dependency-path: apps/backend/go.sum }
+      - run: go vet -tags=integration ./...
+
+  # gitleaks/gitleaks-action is not used here: it calls the GitHub API to post
+  # PR comments and expects an organisation licence. The binary does the scan.
+  gitleaks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - name: Reset toolchain caches
+        run: rm -rf /work/ci-cache
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.0
+        run: |
+          set -euo pipefail
+          cd /tmp
+          curl -fsSL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf gitleaks.tar.gz gitleaks
+          install -m 755 gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+      - name: Scan
+        run: gitleaks detect --source . --redact --verbose --exit-code 1
+
+  dependency-scan:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Reset toolchain caches
+        run: rm -rf /work/ci-cache
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: "."
+          ignore-unfixed: "true"
+          severity: "CRITICAL,HIGH"
+          format: table
+          exit-code: "1"
+          trivyignores: ".trivyignore"
+
+  license-allowlist:
+    runs-on: ubuntu-24.04
+    env:
+      GOMODCACHE: /work/ci-cache/go/mod
+      GOCACHE: /work/ci-cache/go/build
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Reset toolchain caches
+        run: rm -rf /work/ci-cache
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version-file: apps/backend/go.mod, cache-dependency-path: apps/backend/go.sum }
+      - run: |
+          cd apps/backend
+          go install github.com/google/go-licenses@v1.6.0
+          # Always ignore our own module (no LICENSE at the module root — the
+          # repo LICENSE lives at the tree root) plus any reviewed overrides
+          # from the allowlist.
+          IGNORES="github.com/jtumidanski/Harbormaster"
+          EXTRA=$(yq -r '.ignore[].module' ../../tools/licenses/allowlist.yaml 2>/dev/null | paste -sd, -)
+          if [ -n "$EXTRA" ]; then IGNORES="$IGNORES,$EXTRA"; fi
+          go-licenses check ./... \
+            --allowed_licenses=Apache-2.0,MIT,BSD-2-Clause,BSD-3-Clause,ISC,MPL-2.0,AGPL-3.0,AGPL-3.0-or-later,GPL-3.0,GPL-3.0-or-later \
+            --ignore="$IGNORES"

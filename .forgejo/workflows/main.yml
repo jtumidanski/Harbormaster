@@ -1,0 +1,300 @@
+name: main
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+    # Loop prevention for bump-manifest below: its commit touches only this
+    # file, which would otherwise start another build that bumps again, forever.
+    # (Path filters do not apply to tag pushes, which is fine — bump-manifest
+    # only runs on refs/heads/main.)
+    paths-ignore:
+      - "deploy/kubernetes/deployment.yaml"
+  # Lets the image pipeline be exercised on a branch — used to prove the Trivy
+  # gate bites before anything is pushed, and useful for any later rebuild.
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: registry.tumidanski/jtumidanski/harbormaster
+
+# Every job below clears /work/ci-cache as its first step after checkout. Two
+# rules, both load-bearing on the host executor, and identical to pr.yml's:
+#
+#   1. Cache paths are fixed absolute paths under /work/ci-cache, never
+#      ${{ github.workspace }}/...: the host executor gives every job a unique
+#      workspace directory, and the cache entry's version is derived from the
+#      cached paths, so a workspace-relative cache can never be restored from
+#      the Forgejo cache server. See the k3s repo's README, "Forgejo CI". Set
+#      at job level, never workflow level -- at workflow level
+#      ${{ github.workspace }} expands to the empty string.
+#
+#   2. Host-mode runners share /work (a per-pod emptyDir) between jobs, so
+#      state left behind by a previous job would silently warm this one. Clear
+#      it first so the directory stays bounded to a single build's worth of
+#      data. A fixed path is safe because runner capacity is 1, so no two jobs
+#      share /work concurrently.
+#
+# Unlike pr.yml there are no actions/cache steps here and no setup-go /
+# setup-node: the Go and Node toolchains only ever run inside BuildKit, whose
+# layer cache lives in zot (the buildcache-* tags below), not on the cache
+# server. The only thing this workflow puts under /work/ci-cache is Trivy's
+# vulnerability database, which is re-fetched per job on purpose -- caching it
+# would add an entry to the runner's cache volume for no gain, and a stale
+# vuln DB is worse than a cold one.
+
+jobs:
+  # amd64 builds on bee's in-cluster buildkitd. The vulnerability gate runs here,
+  # on a docker-archive tarball, BEFORE anything is pushed: trivy --input reads
+  # docker-save tars (manifest.json) and OCI layout dirs, but not the multi-arch
+  # OCI archive that type=oci emits. Findings are arch-independent here
+  # (distroless base + static CGO_ENABLED=0 Go binary).
+  build-amd64:
+    runs-on: ubuntu-24.04
+    outputs:
+      short: ${{ steps.vars.outputs.short }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - name: Reset toolchain caches
+        run: rm -rf /work/ci-cache
+      - id: vars
+        run: echo "short=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        with:
+          driver: remote
+          endpoint: tcp://buildkitd.buildkit.svc.cluster.local:1234
+          driver-opts: |
+            cacert=/etc/buildkit-client/ca.pem
+            cert=/etc/buildkit-client/cert.pem
+            key=/etc/buildkit-client/key.pem
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: registry.tumidanski
+          username: ci
+          password: ${{ secrets.ZOT_CI_PASSWORD }}
+      - name: Build image for scanning (single-arch, no push)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: false
+          provenance: false
+          tags: ${{ env.IMAGE }}:${{ steps.vars.outputs.short }}-amd64
+          build-args: VERSION=${{ steps.vars.outputs.short }}
+          outputs: type=docker,dest=/tmp/image.tar
+      # aquasecurity/setup-trivy is skipped (skip-setup-trivy below): it installs
+      # Trivy by checking out aquasecurity/trivy from github.com with
+      # actions/checkout, which passes the forge's job token as a github.com
+      # credential. GitHub rejects it and git dies with "could not read Username
+      # for 'https://github.com': terminal prompts disabled". The published
+      # release tarball is the same binary. Same pattern as pr.yml's
+      # dependency-scan job.
+      - name: Install Trivy
+        env:
+          TRIVY_VERSION: 0.70.0 # keep in step with the action's `version` default
+        run: |
+          set -euo pipefail
+          cd /tmp
+          curl -fsSL -o trivy.tar.gz \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          tar -xzf trivy.tar.gz trivy
+          install -m 755 trivy /usr/local/bin/trivy
+          trivy --version
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          input: /tmp/image.tar
+          ignore-unfixed: "true"
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+          trivyignores: ".trivyignore"
+          skip-setup-trivy: "true"
+          # The action's default is ${{ github.workspace }}/.cache/trivy, which
+          # can never be restored here; see the header comment.
+          cache-dir: /work/ci-cache/trivy
+      - name: Push amd64
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          tags: ${{ env.IMAGE }}:${{ steps.vars.outputs.short }}-amd64
+          build-args: VERSION=${{ steps.vars.outputs.short }}
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache-amd64
+          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache-amd64,mode=max
+
+  # arm64 builds natively on one of the Pi 4 workers. No QEMU: the Pis exist to
+  # replace emulation.
+  build-arm64:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - name: Reset toolchain caches
+        run: rm -rf /work/ci-cache
+      - id: vars
+        run: echo "short=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - id: arm64
+        uses: ci/actions/select-arm64-builder@v1
+      - name: Selected arm64 builder
+        run: echo "arm64 builder host=${{ steps.arm64.outputs.host }} endpoint=${{ steps.arm64.outputs.endpoint }} preferred=${{ steps.arm64.outputs.preferred }}"
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        with:
+          driver: remote
+          endpoint: ${{ steps.arm64.outputs.endpoint }}
+          driver-opts: |
+            cacert=/etc/buildkit-client/ca.pem
+            cert=/etc/buildkit-client/cert.pem
+            key=/etc/buildkit-client/key.pem
+            servername=${{ steps.arm64.outputs.host }}.tumidanski
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: registry.tumidanski
+          username: ci
+          password: ${{ secrets.ZOT_CI_PASSWORD }}
+      - name: Push arm64 (on ${{ steps.arm64.outputs.host }})
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          platforms: linux/arm64
+          push: true
+          provenance: false
+          tags: ${{ env.IMAGE }}:${{ steps.vars.outputs.short }}-arm64
+          build-args: VERSION=${{ steps.vars.outputs.short }}
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache-arm64
+          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache-arm64,mode=max
+      - name: Assert the published layer really is arm64
+        run: |
+          set -euo pipefail
+          arch=$(docker buildx imagetools inspect "${IMAGE}:${{ steps.vars.outputs.short }}-arm64" \
+            --format '{{json .Image}}' | jq -r .architecture)
+          echo "built on ${{ steps.arm64.outputs.host }}, architecture=$arch"
+          test "$arch" = arm64
+
+  # Merges the two single-platform tags into every tag metadata-action would
+  # have produced. imagetools needs a builder and runner pods have no Docker
+  # daemon, hence the remote driver here too.
+  manifest:
+    needs: [build-amd64, build-arm64]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Reset toolchain caches
+        run: rm -rf /work/ci-cache
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        with:
+          driver: remote
+          endpoint: tcp://buildkitd.buildkit.svc.cluster.local:1234
+          driver-opts: |
+            cacert=/etc/buildkit-client/ca.pem
+            cert=/etc/buildkit-client/cert.pem
+            key=/etc/buildkit-client/key.pem
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: registry.tumidanski
+          username: ci
+          password: ${{ secrets.ZOT_CI_PASSWORD }}
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+      - name: Create multi-arch manifests
+        env:
+          SHORT: ${{ needs.build-amd64.outputs.short }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          echo "$TAGS" | while read -r tag; do
+            [ -n "$tag" ] || continue
+            echo "== $tag"
+            docker buildx imagetools create -t "$tag" \
+              "${IMAGE}:${SHORT}-amd64" "${IMAGE}:${SHORT}-arm64"
+          done
+          docker buildx imagetools inspect "${IMAGE}:${SHORT}" --format '{{json .Manifest}}' | jq .
+          archs=$(docker buildx imagetools inspect "${IMAGE}:${SHORT}" --format '{{json .Manifest}}' \
+            | jq -r '[.manifests[].platform.architecture] | sort | unique | join(",")')
+          echo "architectures=$archs"
+          test "$archs" = "amd64,arm64"
+
+  # Rewrites the image tag in deploy/kubernetes/deployment.yaml to the commit
+  # that produced the image, and pushes it back. Argo CD on the bee cluster
+  # watches that directory, so this is the deploy step.
+  #
+  # Unlike the GitHub original this pushes straight to main. That version opened
+  # and merged a bot PR with the `gh` CLI, purely because GitHub's branch
+  # protection rejected a direct push; the forge repository carries no such
+  # rule, and `gh` does not speak to Forgejo. The loop prevention that matters
+  # is the paths-ignore filter above, which is unchanged.
+  #
+  # The tag must match what metadata-action publishes above --
+  # `type=sha,prefix=sha-,format=short` yields `sha-` plus the SHORT sha
+  # (7 chars), e.g. sha-f17d771. Using the full 40-character ${GITHUB_SHA}
+  # would pin to a tag that is never pushed and every pod would land in
+  # ImagePullBackOff.
+  bump-manifest:
+    needs: [manifest]
+    # A tag is not a branch — there would be nothing to commit back to.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    # Serialize across overlapping runs so a later run's bump cannot be undone
+    # by an earlier one finishing after it. Never cancel a queued bump:
+    # cancelling mid-push risks a half-written commit.
+    concurrency:
+      group: bump-manifest
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        # MUST be `ref: main`. The default checkout for a push event leaves a
+        # detached HEAD, and `git push` from one fails outright.
+        with:
+          ref: main
+      - name: Reset toolchain caches
+        run: rm -rf /work/ci-cache
+      - name: Pin image to this commit
+        env:
+          FORGE_PUSH_TOKEN: ${{ secrets.FORGE_PUSH_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Stale-run guard: main may have moved past the commit this run built
+          # if a later merge's bump already landed while this one was still in
+          # build/scan. Rewriting to this run's older SHA would roll the
+          # deployment backwards with every step still green.
+          tip="$(git rev-parse HEAD)"
+          if [ "$tip" != "${GITHUB_SHA}" ]; then
+            echo "main's tip is now $tip, not this run's ${GITHUB_SHA} — a newer push already landed and will pin itself. Skipping."
+            exit 0
+          fi
+
+          short="sha-${GITHUB_SHA::7}"
+          f=deploy/kubernetes/deployment.yaml
+          sed -i -E "s#(image: registry\.tumidanski/jtumidanski/harbormaster):.*#\1:${short}#" "$f"
+
+          if git diff --quiet "$f"; then
+            echo "already pinned to ${short} — nothing to bump"
+            exit 0
+          fi
+          # Fail loudly rather than pushing a manifest the rewrite missed.
+          grep -q "image: registry.tumidanski/jtumidanski/harbormaster:${short}$" "$f"
+
+          git config user.name  "harbormaster-image-bot"
+          git config user.email "harbormaster-image-bot@git.tumidanski"
+          git add "$f"
+          git commit -m "chore(deploy): pin harbormaster image to ${short}
+
+          Generated by main.yml run ${GITHUB_RUN_ID}. Argo CD's
+          Application(harbormaster-main) on the bee cluster picks this up on its
+          next reconcile."
+          git push "https://harbormaster-image-bot:${FORGE_PUSH_TOKEN}@git.tumidanski/jtumidanski/Harbormaster.git" HEAD:main

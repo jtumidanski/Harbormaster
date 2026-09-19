@@ -18,9 +18,10 @@ jobs:
           - "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
           - "quay.io/minio/minio:latest"
     runs-on: ubuntu-24.04
-    # Fixed absolute paths, set at job level, cleared as the first step below.
-    # See the header comment in pr.yml for why both halves are load-bearing on
-    # the host executor.
+    # Fixed absolute paths, set at job level, cleared as the first step below,
+    # and restored by an explicit actions/cache step rather than setup-go's own
+    # `cache:` input. See the header comment in pr.yml for why all three are
+    # load-bearing on the host executor.
     env:
       GOMODCACHE: /work/ci-cache/go/mod
       GOCACHE: /work/ci-cache/go/build
@@ -29,7 +30,14 @@ jobs:
       - name: Reset toolchain caches
         run: rm -rf /work/ci-cache
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with: { go-version-file: apps/backend/go.mod, cache-dependency-path: apps/backend/go.sum }
+        id: go
+        with: { go-version-file: apps/backend/go.mod, cache: false }
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            /work/ci-cache/go/mod
+            /work/ci-cache/go/build
+          key: go-ubuntu-24.04-x64-${{ steps.go.outputs.go-version }}-${{ hashFiles('apps/backend/go.sum') }}
       - name: Run integration suite
         env:
           HARBORMASTER_INTEGRATION: "1"

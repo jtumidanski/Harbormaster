@@ -33,11 +33,18 @@ permissions:
 #      which this reset does not touch. A fixed path is safe because runner
 #      capacity is 1, so no two jobs share /work concurrently.
 #
-# Restoring the caches back onto those paths is setup-go's and setup-node's
-# own `cache:` input (on by default for Go), keyed on the toolchain version
-# plus go.sum / package-lock.json. cache-dependency-path is mandatory for Go
-# here: setup-go's default lookup only finds a go.mod at the repository root,
-# and this module lives in apps/backend.
+# Restoring the caches back onto those paths is an explicit actions/cache step,
+# keyed on the toolchain version plus go.sum / package-lock.json, and setup-go's
+# and setup-node's own `cache:` inputs are off. That is deliberate, and it is
+# not interchangeable with letting them cache: the Forgejo cache server answers
+# a restore with a lower-cased key, setup-go/setup-node compare the returned key
+# to their primary key with `===`, conclude they missed, and re-upload the whole
+# cache in their post step on every job -- roughly half a gigabyte per Go job,
+# each re-save retained as a new blob on the cache server's volume.
+# actions/cache compares the two case-insensitively (isExactKeyMatch uses
+# localeCompare with sensitivity "accent"), so it correctly reports the hit and
+# skips the save. The keys below are all-lowercase as well, so the comparison
+# holds even for a consumer that does compare exactly.
 
 jobs:
   frontend-lint:
@@ -50,7 +57,11 @@ jobs:
       - name: Reset toolchain caches
         run: rm -rf /work/ci-cache
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with: { node-version: "24.21.0", cache: "npm", cache-dependency-path: apps/frontend/package-lock.json }
+        with: { node-version: "24.21.0" }
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: /work/ci-cache/npm
+          key: npm-ubuntu-24.04-x64-24.21.0-${{ hashFiles('apps/frontend/package-lock.json') }}
       - run: npm ci
       - run: npm run lint
       - run: npm run format
@@ -65,7 +76,11 @@ jobs:
       - name: Reset toolchain caches
         run: rm -rf /work/ci-cache
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with: { node-version: "24.21.0", cache: "npm", cache-dependency-path: apps/frontend/package-lock.json }
+        with: { node-version: "24.21.0" }
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: /work/ci-cache/npm
+          key: npm-ubuntu-24.04-x64-24.21.0-${{ hashFiles('apps/frontend/package-lock.json') }}
       - run: npm ci
       - run: npm test
 
@@ -79,7 +94,11 @@ jobs:
       - name: Reset toolchain caches
         run: rm -rf /work/ci-cache
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with: { node-version: "24.21.0", cache: "npm", cache-dependency-path: apps/frontend/package-lock.json }
+        with: { node-version: "24.21.0" }
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: /work/ci-cache/npm
+          key: npm-ubuntu-24.04-x64-24.21.0-${{ hashFiles('apps/frontend/package-lock.json') }}
       - run: npm ci
       - run: npm run build
 
@@ -94,7 +113,14 @@ jobs:
       - name: Reset toolchain caches
         run: rm -rf /work/ci-cache
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with: { go-version-file: apps/backend/go.mod, cache-dependency-path: apps/backend/go.sum }
+        id: go
+        with: { go-version-file: apps/backend/go.mod, cache: false }
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            /work/ci-cache/go/mod
+            /work/ci-cache/go/build
+          key: go-ubuntu-24.04-x64-${{ steps.go.outputs.go-version }}-${{ hashFiles('apps/backend/go.sum') }}
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with: { version: v2.13.2, working-directory: apps/backend }
 
@@ -109,7 +135,14 @@ jobs:
       - name: Reset toolchain caches
         run: rm -rf /work/ci-cache
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with: { go-version-file: apps/backend/go.mod, cache-dependency-path: apps/backend/go.sum }
+        id: go
+        with: { go-version-file: apps/backend/go.mod, cache: false }
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            /work/ci-cache/go/mod
+            /work/ci-cache/go/build
+          key: go-ubuntu-24.04-x64-${{ steps.go.outputs.go-version }}-${{ hashFiles('apps/backend/go.sum') }}
       - run: go test -race -count=1 ./...
 
   backend-build:
@@ -123,7 +156,14 @@ jobs:
       - name: Reset toolchain caches
         run: rm -rf /work/ci-cache
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with: { go-version-file: apps/backend/go.mod, cache-dependency-path: apps/backend/go.sum }
+        id: go
+        with: { go-version-file: apps/backend/go.mod, cache: false }
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            /work/ci-cache/go/mod
+            /work/ci-cache/go/build
+          key: go-ubuntu-24.04-x64-${{ steps.go.outputs.go-version }}-${{ hashFiles('apps/backend/go.sum') }}
       - run: CGO_ENABLED=0 go build ./...
 
   # Compile-only guard for the //go:build integration code. `go vet` type-checks
@@ -140,7 +180,14 @@ jobs:
       - name: Reset toolchain caches
         run: rm -rf /work/ci-cache
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with: { go-version-file: apps/backend/go.mod, cache-dependency-path: apps/backend/go.sum }
+        id: go
+        with: { go-version-file: apps/backend/go.mod, cache: false }
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            /work/ci-cache/go/mod
+            /work/ci-cache/go/build
+          key: go-ubuntu-24.04-x64-${{ steps.go.outputs.go-version }}-${{ hashFiles('apps/backend/go.sum') }}
       - run: go vet -tags=integration ./...
 
   # gitleaks/gitleaks-action is not used here: it calls the GitHub API to post
@@ -214,7 +261,14 @@ jobs:
       - name: Reset toolchain caches
         run: rm -rf /work/ci-cache
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with: { go-version-file: apps/backend/go.mod, cache-dependency-path: apps/backend/go.sum }
+        id: go
+        with: { go-version-file: apps/backend/go.mod, cache: false }
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            /work/ci-cache/go/mod
+            /work/ci-cache/go/build
+          key: go-ubuntu-24.04-x64-${{ steps.go.outputs.go-version }}-${{ hashFiles('apps/backend/go.sum') }}
       - run: |
           cd apps/backend
           go install github.com/google/go-licenses@v1.6.0

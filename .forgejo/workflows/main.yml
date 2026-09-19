@@ -272,9 +272,23 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.IMAGE }}
-          # The branch tag is guarded: without `enable` every workflow_dispatch
-          # on a branch would leave that branch's name in zot forever, and zot
-          # has no TTL. main is the only branch whose tag is meaningful.
+          # A deliberate divergence from the frozen GitHub original, which left
+          # this at the default `latest=auto`. Under `auto`, metadata-action
+          # adds `latest` for ANY semver tag push, regardless of the explicit
+          # type=raw line below -- so pushing v1.2.3 silently repointed
+          # :latest, and the enable= condition that looks like the only control
+          # over :latest was not. Proven on this repository: the throwaway
+          # v9.9.9 push moved :latest off main's build. Nothing deploys from
+          # :latest today (deployment.yaml pins sha-<short>), but Argo points at
+          # this registry from Task 6 on, and "the canonical-looking tag is
+          # whatever was pushed last" is not a property to carry into the other
+          # repositories. With latest=false the type=raw line below is the whole
+          # truth: :latest moves on a push to main and at no other time.
+          flavor: latest=false
+          # The branch tag is guarded too: without `enable` every
+          # workflow_dispatch on a branch would leave that branch's name in zot
+          # forever, and zot has no TTL. main is the only branch whose tag is
+          # meaningful.
           tags: |
             type=ref,event=branch,enable=${{ github.ref == 'refs/heads/main' }}
             type=semver,pattern={{version}}

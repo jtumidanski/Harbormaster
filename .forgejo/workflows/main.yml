@@ -40,9 +40,12 @@ env:
 # setup-node: the Go and Node toolchains only ever run inside BuildKit, whose
 # layer cache lives in zot (the buildcache-* tags below), not on the cache
 # server. The only thing this workflow puts under /work/ci-cache is Trivy's
-# vulnerability database, which is re-fetched per job on purpose -- caching it
-# would add an entry to the runner's cache volume for no gain, and a stale
-# vuln DB is worse than a cold one.
+# vulnerability database. That one IS cached, but not by anything declared here:
+# aquasecurity/trivy-action calls actions/cache itself, keyed cache-trivy-<date>
+# (~81 MB), and pr.yml's dependency-scan already creates that entry on every PR.
+# The reset above therefore costs nothing -- the DB comes back from the cache
+# server on a hit, and the action skips the save ("Cache hit occurred on the
+# primary key ..., not saving cache"), so main.yml adds no blob of its own.
 
 jobs:
   # amd64 builds on bee's in-cluster buildkitd. The vulnerability gate runs here,
@@ -54,13 +57,51 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       short: ${{ steps.vars.outputs.short }}
+      version: ${{ steps.vars.outputs.version }}
+      labels: ${{ steps.meta.outputs.labels }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
       - name: Reset toolchain caches
         run: rm -rf /work/ci-cache
+      # `short` names the per-arch tags and the manifest pin; `version` is what
+      # gets baked into the binary (-X main.version) and the image's
+      # org.opencontainers.image.version label. They differ on a tag push: a
+      # v1.2.3 push must ship a binary that reports 1.2.3, matching the
+      # :1.2.3 tag metadata-action publishes in the manifest job. The GitHub
+      # original got this from steps.meta.outputs.version; deriving it from
+      # GITHUB_REF keeps sha-<short> (not the branch name) on branch pushes.
+      # Both legs read these outputs -- build-arm64 must never recompute them.
       - id: vars
-        run: echo "short=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          short="sha-${GITHUB_SHA::7}"
+          case "$GITHUB_REF" in
+            refs/tags/v*) version="${GITHUB_REF#refs/tags/v}" ;;
+            *)            version="$short" ;;
+          esac
+          echo "short=$short"     >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "short=$short version=$version"
+      # Only `labels` is consumed from this step -- the authoritative tag list
+      # lives in the manifest job, which is what actually publishes tags. The
+      # labels are what the GitHub original passed to both of its build steps
+      # and what this port dropped: org.opencontainers.image.revision and
+      # .created exist nowhere else (the Dockerfile's own LABEL block covers
+      # title/description/source/licenses/version only), and imagetools create
+      # adds no annotations of its own. The tag list here is deliberately
+      # minimal because no auto-generated label depends on it once
+      # .image.version is pinned below; .source and .url resolve to the forge
+      # rather than the Dockerfile's hard-coded github.com URLs, which is
+      # correct now. build-arm64 reuses this output so both per-arch configs
+      # carry byte-identical labels, including .created.
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: type=sha,prefix=sha-,format=short
+          labels: |
+            org.opencontainers.image.version=${{ steps.vars.outputs.version }}
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
         with:
           driver: remote
@@ -84,7 +125,8 @@ jobs:
           load: false
           provenance: false
           tags: ${{ env.IMAGE }}:${{ steps.vars.outputs.short }}-amd64
-          build-args: VERSION=${{ steps.vars.outputs.short }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: VERSION=${{ steps.vars.outputs.version }}
           outputs: type=docker,dest=/tmp/image.tar
       # aquasecurity/setup-trivy is skipped (skip-setup-trivy below): it installs
       # Trivy by checking out aquasecurity/trivy from github.com with
@@ -125,7 +167,8 @@ jobs:
           push: true
           provenance: false
           tags: ${{ env.IMAGE }}:${{ steps.vars.outputs.short }}-amd64
-          build-args: VERSION=${{ steps.vars.outputs.short }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: VERSION=${{ steps.vars.outputs.version }}
           cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache-amd64
           cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache-amd64,mode=max
 
@@ -146,6 +189,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       SHORT: ${{ needs.build-amd64.outputs.short }}
+      VERSION: ${{ needs.build-amd64.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
@@ -178,7 +222,8 @@ jobs:
           push: true
           provenance: false
           tags: ${{ env.IMAGE }}:${{ env.SHORT }}-arm64
-          build-args: VERSION=${{ env.SHORT }}
+          labels: ${{ needs.build-amd64.outputs.labels }}
+          build-args: VERSION=${{ env.VERSION }}
           cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache-arm64
           cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache-arm64,mode=max
       - name: Assert the published layer really is arm64
@@ -216,8 +261,11 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.IMAGE }}
+          # The branch tag is guarded: without `enable` every workflow_dispatch
+          # on a branch would leave that branch's name in zot forever, and zot
+          # has no TTL. main is the only branch whose tag is meaningful.
           tags: |
-            type=ref,event=branch
+            type=ref,event=branch,enable=${{ github.ref == 'refs/heads/main' }}
             type=semver,pattern={{version}}
             type=sha,prefix=sha-,format=short
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}

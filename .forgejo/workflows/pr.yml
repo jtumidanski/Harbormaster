@@ -42,8 +42,9 @@ permissions:
 # not interchangeable with letting them cache: the Forgejo cache server answers
 # a restore with a lower-cased key, setup-go/setup-node compare the returned key
 # to their primary key with `===`, conclude they missed, and re-upload the whole
-# cache in their post step on every job -- roughly half a gigabyte per Go job,
-# each re-save retained as a new blob on the cache server's volume.
+# cache in their post step on every job -- 337-491 MB depending on the job
+# (backend-test's first save measured 353346563 B), each re-save retained as a
+# new blob on the cache server's volume.
 # actions/cache compares the two case-insensitively (isExactKeyMatch uses
 # localeCompare with sensitivity "accent"), so it correctly reports the hit and
 # skips the save. The keys below are all-lowercase as well, so the comparison

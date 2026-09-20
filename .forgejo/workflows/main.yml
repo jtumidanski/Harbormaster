@@ -42,10 +42,17 @@ env:
 # server. The only thing this workflow puts under /work/ci-cache is Trivy's
 # vulnerability database. That one IS cached, but not by anything declared here:
 # aquasecurity/trivy-action calls actions/cache itself, keyed cache-trivy-<date>
-# (~81 MB), and pr.yml's dependency-scan already creates that entry on every PR.
-# The reset above therefore costs nothing -- the DB comes back from the cache
-# server on a hit, and the action skips the save ("Cache hit occurred on the
-# primary key ..., not saving cache"), so main.yml adds no blob of its own.
+# (~81 MB). The reset above costs nothing whenever that day's entry already
+# exists: the DB comes back from the cache server on a hit, and the action
+# skips the save ("Cache hit occurred on the primary key ..., not saving
+# cache").
+#
+# But the key is per-DATE, so that only holds if something already created
+# today's entry -- normally pr.yml's dependency-scan, which runs on every PR.
+# A direct push to main on a day with no PR (a bump-triggered rebuild, a
+# hotfix, a weekend) misses, and this workflow then saves the ~81 MB entry
+# itself. So: usually no blob of its own, not never. Sized accordingly when
+# reasoning about the cache PVC.
 
 jobs:
   # amd64 builds on bee's in-cluster buildkitd. The vulnerability gate runs here,

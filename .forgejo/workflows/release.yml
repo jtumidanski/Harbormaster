@@ -1,4 +1,19 @@
 name: release
+#
+# SILENT NO-OP WARNING. Forgejo resolves the workflow file from THE TAG'S
+# COMMIT, not from the default branch. Publishing a release on a tag that
+# points at a commit older than this file produces NO RUN AND NO ERROR --
+# no queued task, no failed task, nothing in the Actions tab. The release
+# simply keeps whatever body and assets were typed by hand.
+#
+# This repo has tags predating 2026-09-19, so any release published against
+# one of them will not run this workflow. If a release comes out with an
+# empty body, check the tag's commit date before looking anywhere else.
+#
+# It is the third silent-failure mode in this one subsystem. The other two
+# are annotated at the forgejo-release step below: an unset
+# `release-notes-file` publishes an empty body, and an unresolved `sha`
+# deletes the release tag.
 on:
   release:
     types: [published]

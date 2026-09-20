@@ -28,12 +28,20 @@ RUN go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/harbo
 FROM gcr.io/distroless/static-debian12:nonroot
 
 # OCI image labels (https://github.com/opencontainers/image-spec/blob/main/annotations.md)
+#
+# .source and .url below are dead values in a CI build: docker/metadata-action
+# in .forgejo/workflows/main.yml generates both and its labels win the merge,
+# so the published image carries the forge URLs. They are kept only so a plain
+# `docker build` produces something sane. .documentation is different --
+# metadata-action does NOT auto-generate it, so whatever is written here is
+# what ships. It pointed at github.com until 2026-09-19 and was, at that point,
+# the last github.com reference baked into the published image.
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="Harbormaster" \
       org.opencontainers.image.description="Self-hosted MinIO admin UI for homelab and small-cluster operators." \
       org.opencontainers.image.source="https://github.com/jtumidanski/harbormaster" \
       org.opencontainers.image.url="https://github.com/jtumidanski/harbormaster" \
-      org.opencontainers.image.documentation="https://github.com/jtumidanski/harbormaster/tree/main/docs" \
+      org.opencontainers.image.documentation="https://git.tumidanski/jtumidanski/Harbormaster/src/branch/main/docs" \
       org.opencontainers.image.vendor="Harbormaster" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later" \
       org.opencontainers.image.version="${VERSION}"

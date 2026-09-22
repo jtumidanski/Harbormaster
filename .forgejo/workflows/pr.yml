@@ -226,21 +226,12 @@ jobs:
       # aquasecurity/setup-trivy is skipped (skip-setup-trivy below): it installs
       # Trivy by checking out aquasecurity/trivy from github.com with
       # actions/checkout, which passes the forge's job token as a github.com
-      # credential. GitHub rejects it and git dies with "could not read Username
-      # for 'https://github.com': terminal prompts disabled". The published
-      # release tarball is the same binary, fetched the same way as gitleaks
-      # above.
-      - name: Install Trivy
-        env:
-          TRIVY_VERSION: 0.70.0 # keep in step with the action's `version` default
-        run: |
-          set -euo pipefail
-          cd /tmp
-          curl -fsSL -o trivy.tar.gz \
-            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
-          tar -xzf trivy.tar.gz trivy
-          install -m 755 trivy /usr/local/bin/trivy
-          trivy --version
+      # credential and dies. The runner image bakes the trivy binary instead
+      # (k3s ci/forgejo-runner-image/Dockerfile, TRIVY_VERSION); the action
+      # picks it up from PATH. Do NOT install trivy from here: the runners are
+      # host-mode with a shared /usr/local/bin, so a per-job install
+      # overwrites the baked binary for every other repo's jobs (it did,
+      # 2026-09-21..22, downgrading 0.74.0 to 0.70.0 fleet-wide).
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs

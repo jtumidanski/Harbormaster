@@ -4,6 +4,15 @@ This document is the operator's reference for Harbormaster's security
 posture: what it does for you out of the box, what assumptions it makes,
 and what you remain responsible for.
 
+### Supported targets
+
+| Target | Version floor | Notes |
+|---|---|---|
+| MinIO | RELEASE.2025-09-07T16-13-09Z | Dashboard metrics scraped from `/minio/v2/metrics`. |
+| RustFS | 1.0.0 | Set `HARBORMASTER_PROMETHEUS_URL`; RustFS exports OTLP only. Unsupported operations (if any) return `backend_unsupported`: none — the full compatibility suite (task-005 Task 7) passes against RustFS 1.0.0 unmodified. One response-shape gap was found and closed: RustFS's admin `info` endpoint reports neither a version nor a `servers[]` entry, so the dashboard falls back to the target's public `/health/ready` endpoint for version and single-node drive status. |
+
+Both run in the nightly integration matrix.
+
 ## Threat model (summary)
 
 Harbormaster is designed for **trusted networks** — homelabs,

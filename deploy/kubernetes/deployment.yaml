@@ -73,6 +73,10 @@ spec:
               value: "json"
             - name: HARBORMASTER_LOG_LEVEL
               value: "info"
+            # Dashboard series come from the cluster Prometheus (RustFS pushes
+            # OTLP there; there is no /minio/v2/metrics to scrape).
+            - name: HARBORMASTER_PROMETHEUS_URL
+              value: "http://prometheus.observability.svc.cluster.local:9090"
             # Set to "false" ONLY when serving over plain HTTP (no HTTPS in
             # front). Browsers drop the Secure session cookie over HTTP, so
             # login won't persist otherwise. Leave true behind a TLS proxy.

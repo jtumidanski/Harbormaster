@@ -345,10 +345,16 @@ func newDashboardPoolGetter(pool *hmminio.Pool) dashboard.PoolGetter {
 	return dashboardPoolAdapter{pool: pool}
 }
 
-// newMetricsSourceGetter returns a metrics.SourceGetter bound to the live
-// pool. Each call builds a fresh madmin MetricsClient (cheap; re-reads creds
-// + transport) so credential rotations are picked up automatically.
-func newMetricsSourceGetter(pool *hmminio.Pool) metrics.SourceGetter {
+// newMetricsSourceGetter picks the dashboard's series source. With a
+// Prometheus URL configured the pool is not consulted at all: the series
+// come from PromQL over the target's exported metrics (RustFS pushes OTLP
+// and has no scrape endpoint). Otherwise the madmin metrics client scrapes
+// /minio/v2/metrics on the live connection, as before.
+func newMetricsSourceGetter(pool *hmminio.Pool, prometheusURL string) metrics.SourceGetter {
+	if prometheusURL != "" {
+		src := metrics.NewPrometheusSource(prometheusURL, nil)
+		return func(ctx context.Context) (metrics.MetricsSource, error) { return src, nil }
+	}
 	return func(ctx context.Context) (metrics.MetricsSource, error) {
 		return pool.NewMetricsClient(ctx)
 	}

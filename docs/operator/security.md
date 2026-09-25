@@ -9,7 +9,7 @@ and what you remain responsible for.
 | Target | Version floor | Notes |
 |---|---|---|
 | MinIO | RELEASE.2025-09-07T16-13-09Z | Dashboard metrics scraped from `/minio/v2/metrics`. |
-| RustFS | 1.0.0 | Set `HARBORMASTER_PROMETHEUS_URL`; RustFS exports OTLP only. Unsupported operations (if any) return `backend_unsupported`: none — the full compatibility suite (task-005 Task 7) passes against RustFS 1.0.0 unmodified. One response-shape gap was found and closed: RustFS's admin `info` endpoint reports neither a version nor a `servers[]` entry, so the dashboard falls back to the target's public `/health/ready` endpoint for version and single-node drive status. |
+| RustFS | 1.0.0 | Set `HARBORMASTER_PROMETHEUS_URL`; RustFS exports OTLP only. Unsupported operations (if any) return `backend_unsupported`: none — the full compatibility suite (task-005 Task 7) passes against RustFS 1.0.0 unmodified. One response-shape gap was found and closed: RustFS's admin `info` endpoint reports neither a version nor a `servers[]` entry, so the dashboard falls back to the target's public `/health/ready` endpoint for version and single-node drive status. That fallback reports at most one node and one drive regardless of RustFS's actual topology, so a multi-node RustFS cluster is undercounted on the dashboard. |
 
 Both run in the nightly integration matrix.
 

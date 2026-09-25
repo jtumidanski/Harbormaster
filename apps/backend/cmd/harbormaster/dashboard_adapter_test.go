@@ -69,6 +69,64 @@ func TestDashboardPoolAdapter_ServerInfo_FallsBackToHealthReadyWhenInfoEmpty(t *
 	}
 }
 
+// minioInfoBody is a MinIO-shaped GET /minio/admin/v3/info response
+// (madmin.InfoMessage): "mode" populated and a non-empty "servers" array,
+// unlike the RustFS-empty fixture above. Used to prove the /health/ready
+// fallback never engages when the primary admin info call already carries
+// version/node/drive data — MinIO's normal case.
+const minioInfoBody = `{"mode":"server","servers":[{"state":"online","endpoint":"127.0.0.1:9000","uptime":123456,"version":"RELEASE.2025-09-07T16-13-09Z","drives":[{"endpoint":"/data1","state":"ok"},{"endpoint":"/data2","state":"faulty"}]}]}`
+
+// stubMinIOServer answers only the admin "info" path with a MinIO-shaped
+// InfoMessage. Any other admin path — in particular /health/ready, the
+// fallback endpoint — fails the test immediately: the primary ServerInfo
+// source is already populated, so dashboardPoolAdapter.ServerInfo must
+// never consult the fallback for a MinIO target.
+func stubMinIOServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/info") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(minioInfoBody))
+			return
+		}
+		t.Fatalf("unexpected request to %s; the /health/ready fallback must stay dormant when the primary admin info call already has version/servers data", r.URL.Path)
+	}))
+}
+
+func TestDashboardPoolAdapter_ServerInfo_MinIOPrimaryPathNeverFallsBack(t *testing.T) {
+	srv := stubMinIOServer(t)
+	defer srv.Close()
+
+	pool := hmminio.NewEmpty()
+	if err := pool.Rebuild(hmminio.Credentials{EndpointURL: srv.URL, AccessKey: "ak", SecretKey: "sk"}); err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+
+	adapter := newDashboardPoolGetter(pool)
+	info, nodes, warnings, err := adapter.ServerInfo(context.Background())
+	if err != nil {
+		t.Fatalf("ServerInfo: %v", err)
+	}
+	if info.Version != "RELEASE.2025-09-07T16-13-09Z" {
+		t.Errorf("want version from the primary admin info response, got %q", info.Version)
+	}
+	if info.DeploymentMode != "server" {
+		t.Errorf("want deployment mode %q from the primary admin info response, got %q", "server", info.DeploymentMode)
+	}
+	if len(nodes) != 1 {
+		t.Fatalf("want 1 node from the primary admin info response, got %d: %+v", len(nodes), nodes)
+	}
+	if nodes[0].State != "online" {
+		t.Errorf("want node state online, got %q", nodes[0].State)
+	}
+	if nodes[0].Drives.Total != 2 || nodes[0].Drives.Healthy != 1 || nodes[0].Drives.Unhealthy != 1 {
+		t.Errorf("want 2 drives (1 healthy, 1 unhealthy) from the primary admin info response, got %+v", nodes[0].Drives)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "unhealthy drives") {
+		t.Errorf("want one unhealthy-drives warning, got %v", warnings)
+	}
+}
+
 func TestDashboardPoolAdapter_ServerInfo_NotReadyWarns(t *testing.T) {
 	const notReady = `{"status":"degraded","version":"1.0.0","ready":false,"details":{"storage":{"ready":false}}}`
 	srv := stubRustFSServer(t, rustfsEmptyInfoBody, notReady)

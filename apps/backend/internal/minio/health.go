@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
 // healthReadyBody is RustFS's /health/ready shape. Verified live against
@@ -65,6 +66,9 @@ func (p *Pool) ServerHealth(ctx context.Context) (ServerHealthInfo, error) {
 		return ServerHealthInfo{}, err
 	}
 	client := &http.Client{Transport: tr}
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 
 	u := *parsed
 	u.Path = "/health/ready"

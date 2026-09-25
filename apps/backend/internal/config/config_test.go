@@ -105,3 +105,31 @@ func TestLoadAcceptsTrustedProxies(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"10.0.0.0/8", "2001:db8::/32"}, cfg.TrustedProxies)
 }
+
+func TestLoad_PrometheusURL_DefaultEmpty(t *testing.T) {
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.PrometheusURL != "" {
+		t.Errorf("want empty default, got %q", cfg.PrometheusURL)
+	}
+}
+
+func TestLoad_PrometheusURL_TrimsTrailingSlash(t *testing.T) {
+	t.Setenv("HARBORMASTER_PROMETHEUS_URL", "http://prometheus.observability.svc.cluster.local:9090/")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.PrometheusURL != "http://prometheus.observability.svc.cluster.local:9090" {
+		t.Errorf("got %q", cfg.PrometheusURL)
+	}
+}
+
+func TestLoad_PrometheusURL_RejectsRelative(t *testing.T) {
+	t.Setenv("HARBORMASTER_PROMETHEUS_URL", "prometheus:9090")
+	if _, err := Load(); err == nil {
+		t.Error("want error for URL without scheme")
+	}
+}

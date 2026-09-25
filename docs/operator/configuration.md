@@ -45,6 +45,7 @@ descriptive error. The validators are:
 | `HARBORMASTER_ENCRYPTION_KEY_FILE`         | `${DATA_DIR}/encryption.key`     | path                  | 32-byte key used to encrypt sensitive columns. Auto-generated `0600` on first boot if absent.                   |
 | `HARBORMASTER_METRICS_ENABLED`             | `false`                          | bool                  | Enables the Prometheus listener on a separate `http.Server`.                                                    |
 | `HARBORMASTER_METRICS_LISTEN_ADDR`         | `:9090`                          | `host:port`           | Bind address for the metrics listener; ignored when metrics are disabled.                                       |
+| `HARBORMASTER_PROMETHEUS_URL`              | (empty)                          | URL                   | When set, the dashboard's request/capacity series are read from this Prometheus (PromQL over `rustfs_*` metrics) instead of the target's `/minio/v2/metrics` endpoint. Required for RustFS targets. Empty keeps the MinIO scrape path. |
 | `HARBORMASTER_OTEL_EXPORTER_OTLP_ENDPOINT` | (empty)                          | URL                   | If set, enables OTLP-HTTP trace exporter; otherwise tracing is a no-op.                                         |
 | `HARBORMASTER_AUDIT_RETENTION`             | `2160h` (~90 days)               | Go duration           | Audit-event retention. The sweeper runs daily and deletes rows older than this.                                 |
 | `HARBORMASTER_INTEGRATION`                 | (empty)                          | bool gate             | Test-only: when `1`, the integration suite stops skipping. Not consumed by the running server.                  |
@@ -68,6 +69,7 @@ share_link_max_ttl: "168h"
 download_proxy_mode: "proxy"
 metrics_enabled: true
 metrics_listen_addr: ":9090"
+prometheus_url: ""
 audit_retention: "2160h"
 ```
 

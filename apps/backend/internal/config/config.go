@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -38,6 +39,10 @@ type Config struct {
 	AuditRetention           time.Duration
 	MetricsPollInterval      time.Duration
 	MetricsRetention         time.Duration
+	// PrometheusURL, when set, makes the dashboard read its series from a
+	// Prometheus server instead of the target's /minio/v2/metrics endpoint.
+	// Required for RustFS, which exports OTLP only.
+	PrometheusURL string
 }
 
 // Load reads configuration in priority order: env (HARBORMASTER_*) > file > defaults.
@@ -80,6 +85,7 @@ func Load() (Config, error) {
 		AuditRetention:           v.GetDuration("AUDIT_RETENTION"),
 		MetricsPollInterval:      v.GetDuration("METRICS_POLL_INTERVAL"),
 		MetricsRetention:         v.GetDuration("METRICS_RETENTION"),
+		PrometheusURL:            strings.TrimRight(v.GetString("PROMETHEUS_URL"), "/"),
 	}
 
 	if cfg.DatabasePath == "" {
@@ -116,6 +122,7 @@ func defaults(v *viper.Viper) {
 	v.SetDefault("AUDIT_RETENTION", 90*24*time.Hour)
 	v.SetDefault("METRICS_POLL_INTERVAL", 30*time.Second)
 	v.SetDefault("METRICS_RETENTION", 8*24*time.Hour)
+	v.SetDefault("PROMETHEUS_URL", "")
 }
 
 func validate(c Config) error {
@@ -139,6 +146,12 @@ func validate(c Config) error {
 	}
 	if c.MetricsRetention <= 0 {
 		return errors.New("HARBORMASTER_METRICS_RETENTION must be positive")
+	}
+	if c.PrometheusURL != "" {
+		u, err := url.Parse(c.PrometheusURL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("HARBORMASTER_PROMETHEUS_URL must be an absolute http(s) URL (got %q)", c.PrometheusURL)
+		}
 	}
 	// chi's ClientIPFromXFF parses these with netip.MustParsePrefix, so an
 	// operator typo would panic at boot. Reject it here with a message that

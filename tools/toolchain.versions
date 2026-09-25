@@ -16,6 +16,6 @@
 # NODE_VERSION is recorded for reference and is NOT asserted. Its pin appears
 # at three separate `setup-node` sites in pr.yml; grepping for it would be
 # brittle for no gain.
-GO_VERSION=1.25.12
+GO_VERSION=1.26.0
 NODE_VERSION=24.19.0
-GOLANGCI_LINT_VERSION=v2.12.2
+GOLANGCI_LINT_VERSION=v2.13.2

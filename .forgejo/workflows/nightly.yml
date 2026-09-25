@@ -12,19 +12,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # MinIO floor (README "MinIO floor version") and the rolling `latest`.
+        # MinIO floor (README "MinIO floor version") and the rolling `latest`,
+        # then RustFS 1.0.0.
         #
         # The runners have no Docker daemon, so the suite runs each test's
-        # MinIO as a local process from HARBORMASTER_MINIO_BINARY instead of
-        # a testcontainer (see internal/integration/helper.go). MinIO no
-        # longer publishes images or binaries, so:
+        # server as a local process from HARBORMASTER_MINIO_BINARY /
+        # HARBORMASTER_RUSTFS_BINARY instead of a testcontainer (see
+        # internal/integration/helper.go). MinIO no longer publishes images
+        # or binaries, so:
         #   - floor: upstream RELEASE.2025-09-07T16-13-09Z, compiled from
         #     source with `go install` (module proxy + sumdb verified).
         #   - latest: the newest release of pgsty/silo (formerly
         #     pgsty/minio), the community fork that still cuts releases,
         #     checked against its published sha256 checksums.
-        # A MinIO that fails to start fails the suite; it no longer skips.
-        leg: [floor, latest]
+        #   - rustfs: RustFS 1.0.0's published linux-x86_64-musl release
+        #     asset, checked against its sha256.
+        # A server that fails to start fails the suite; it no longer skips.
+        leg: [floor, latest, rustfs]
     runs-on: ubuntu-24.04
     # Fixed absolute paths, set at job level, cleared as the first step below,
     # and restored by an explicit actions/cache step rather than setup-go's own
@@ -47,12 +51,17 @@ jobs:
             /work/ci-cache/go/build
           key: go-ubuntu-24.04-x64-${{ steps.go.outputs.go-version }}-${{ hashFiles('apps/backend/go.sum') }}
       - name: Provide MinIO binary (${{ matrix.leg }})
+        if: matrix.leg != 'rustfs'
         env:
           LEG: ${{ matrix.leg }}
         run: tools/nightly-minio-binary.sh "$LEG"
+      - name: Provide RustFS binary (${{ matrix.leg }})
+        if: matrix.leg == 'rustfs'
+        run: tools/nightly-rustfs-binary.sh
       - name: Run integration suite
         env:
           HARBORMASTER_INTEGRATION: "1"
+          HARBORMASTER_IT_TARGET: ${{ matrix.leg == 'rustfs' && 'rustfs' || 'minio' }}
         run: |
           cd apps/backend
           go test -race -count=1 -tags=integration ./...

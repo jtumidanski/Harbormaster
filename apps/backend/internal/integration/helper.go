@@ -1,9 +1,9 @@
 //go:build integration
 
 // Package integration holds end-to-end tests that drive Harbormaster's
-// domain processors against a real, per-test MinIO server. The whole
-// package is gated behind the `integration` build tag so the default
-// `go test ./...` invocation excludes these files.
+// domain processors against a real, per-test object store: MinIO (the
+// default) or RustFS. The whole package is gated behind the `integration`
+// build tag so the default `go test ./...` invocation excludes these files.
 //
 // Invocation:
 //
@@ -14,21 +14,31 @@
 // belt-and-suspenders gate: even when the build tag is set, the tests
 // skip themselves unless the env var is also present. This keeps an
 // accidental `go test -tags=integration ./...` invocation from needing a
-// MinIO at all — the tests skip with a clear "set HARBORMASTER_INTEGRATION=1
-// to enable" message.
+// running server at all — the tests skip with a clear "set
+// HARBORMASTER_INTEGRATION=1 to enable" message.
 //
-// Each test gets its own MinIO, from one of two sources:
+// HARBORMASTER_IT_TARGET selects which store the suite runs against:
+// "minio" (the default) or "rustfs". The same tests run unchanged against
+// both; a call that works on one and fails on the other is a finding, not
+// a flake. Any other value is a fatal configuration error.
 //
-//   - HARBORMASTER_MINIO_BINARY set: a `minio server` process started from
-//     that binary on a free loopback port with a fresh temp data dir. No
-//     Docker needed; this is what the nightly workflow uses, because the
-//     Forgejo runners have no Docker daemon.
-//   - otherwise: a testcontainers-go MinIO container (needs Docker), image
-//     from HARBORMASTER_MINIO_IMAGE or defaultMinIOImage.
+// Each test gets its own server, from one of two sources per target:
 //
-// Once HARBORMASTER_INTEGRATION=1 is set, a MinIO that fails to start
-// FAILS the test. It used to skip, which let the nightly report green
-// with every test skipped for as long as its image was unpullable.
+//   - HARBORMASTER_MINIO_BINARY / HARBORMASTER_RUSTFS_BINARY set: a
+//     server process started from that binary on a free loopback port
+//     with a fresh temp data dir. No Docker needed; this is what the
+//     nightly workflow uses, because the Forgejo runners have no Docker
+//     daemon.
+//   - otherwise: a testcontainers-go container (needs Docker), image from
+//     HARBORMASTER_MINIO_IMAGE / HARBORMASTER_RUSTFS_IMAGE or the matching
+//     default*Image constant.
+//
+// Once HARBORMASTER_INTEGRATION=1 is set, a process-mode server that fails
+// to start FAILS the test — it used to skip, which let the nightly report
+// green with every test skipped for as long as its image was unpullable.
+// Container mode may still skip when Docker itself is unreachable, since
+// that's a property of the local/CI environment rather than the server
+// under test.
 package integration
 
 import (
@@ -48,7 +58,9 @@ import (
 	"github.com/glebarez/sqlite"
 	madmin "github.com/minio/madmin-go/v4"
 	miniogo "github.com/minio/minio-go/v7"
+	"github.com/testcontainers/testcontainers-go"
 	tcminio "github.com/testcontainers/testcontainers-go/modules/minio"
+	"github.com/testcontainers/testcontainers-go/wait"
 	"gorm.io/gorm"
 
 	"github.com/jtumidanski/Harbormaster/internal/audit"
@@ -65,6 +77,10 @@ import (
 // envEnable is the env-var gate. Tests skip themselves when this is unset.
 const envEnable = "HARBORMASTER_INTEGRATION"
 
+// envTarget selects the object-store implementation the suite runs
+// against: "minio" (default) or "rustfs".
+const envTarget = "HARBORMASTER_IT_TARGET"
+
 // envMinIOImage lets the nightly matrix (or a local operator) override
 // the pinned MinIO image without editing source. Falls back to the
 // default constant below when unset.
@@ -73,6 +89,15 @@ const envMinIOImage = "HARBORMASTER_MINIO_IMAGE"
 // envMinIOBinary, when set, is the path to a `minio server`-compatible
 // binary. setup() runs it as a local process instead of a testcontainer.
 const envMinIOBinary = "HARBORMASTER_MINIO_BINARY"
+
+// envRustFSImage lets the nightly matrix (or a local operator) override
+// the pinned RustFS image without editing source. Falls back to the
+// default constant below when unset.
+const envRustFSImage = "HARBORMASTER_RUSTFS_IMAGE"
+
+// envRustFSBinary, when set, is the path to a `rustfs`-compatible binary.
+// setup() runs it as a local process instead of a testcontainer.
+const envRustFSBinary = "HARBORMASTER_RUSTFS_BINARY"
 
 // defaultMinIOImage is the pinned MinIO release. Pinning prevents a
 // surprise CI failure when MinIO ships a backwards-incompatible
@@ -84,12 +109,25 @@ const envMinIOBinary = "HARBORMASTER_MINIO_BINARY"
 // runs binaries via HARBORMASTER_MINIO_BINARY.
 const defaultMinIOImage = "pgsty/minio:RELEASE.2026-08-04T00-00-00Z"
 
+// defaultRustFSImage is the pinned RustFS release (1.0.0 GA, 2026-09-16).
+// The nightly workflow does not use this image; it runs binaries via
+// HARBORMASTER_RUSTFS_BINARY.
+const defaultRustFSImage = "rustfs/rustfs:1.0.0"
+
 // processRootUser / processRootPassword are the root credentials a
-// binary-mode server is started with. Throwaway: the server listens on
-// loopback only and its data dir is deleted with the test.
+// binary-mode MinIO server is started with. Throwaway: the server listens
+// on loopback only and its data dir is deleted with the test.
 const (
 	processRootUser     = "harbormaster"
 	processRootPassword = "harbormaster-integration"
+)
+
+// rustfsProcessAccessKey / rustfsProcessSecretKey are the root credentials
+// a binary-mode RustFS server is started with. Same throwaway posture as
+// the MinIO process credentials above.
+const (
+	rustfsProcessAccessKey = "harbormaster"
+	rustfsProcessSecretKey = "harbormaster-integration"
 )
 
 // minioImageFor returns the image the testcontainer should run. The
@@ -101,6 +139,14 @@ func minioImageFor() string {
 		return v
 	}
 	return defaultMinIOImage
+}
+
+// rustfsImageFor mirrors minioImageFor for the RustFS target.
+func rustfsImageFor() string {
+	if v := os.Getenv(envRustFSImage); v != "" {
+		return v
+	}
+	return defaultRustFSImage
 }
 
 // TestEnv bundles the live MinIO clients and the wired-up domain
@@ -126,12 +172,30 @@ type TestEnv struct {
 	DB              *gorm.DB
 }
 
-// minioServer is a running per-test MinIO: its endpoint URL and root
-// credentials.
+// minioServer is a running per-test object store: its endpoint URL and
+// root credentials. The name predates RustFS support; it now also
+// describes a RustFS server.
 type minioServer struct {
 	EndpointURL string
 	AccessKey   string
 	SecretKey   string
+}
+
+// startTarget starts a per-test object store from the configured target
+// and source (see the package doc) and registers its teardown. It fails
+// the test if the server cannot be started, except for container-mode
+// Docker-unreachable failures, which skip.
+func startTarget(ctx context.Context, t *testing.T) minioServer {
+	t.Helper()
+	switch tgt := os.Getenv(envTarget); tgt {
+	case "", "minio":
+		return startMinIO(ctx, t)
+	case "rustfs":
+		return startRustFS(ctx, t)
+	default:
+		t.Fatalf("%s=%q: want minio or rustfs", envTarget, tgt)
+		panic("unreachable")
+	}
 }
 
 // startMinIO starts a per-test MinIO from the configured source (see the
@@ -169,13 +233,7 @@ func startMinIOContainer(ctx context.Context, t *testing.T, image string) minioS
 	// container.ConnectionString returns "host:port" on this module
 	// version; normalise to a full http URL so hmminio.Pool's URL
 	// parser accepts it.
-	rawURL := endpoint
-	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
-		rawURL = "http://" + rawURL
-	}
-	if _, err := url.Parse(rawURL); err != nil {
-		t.Fatalf("invalid endpoint URL %q: %v", rawURL, err)
-	}
+	rawURL := normaliseEndpoint(t, endpoint)
 	return minioServer{EndpointURL: rawURL, AccessKey: container.Username, SecretKey: container.Password}
 }
 
@@ -188,11 +246,6 @@ func startMinIOProcess(ctx context.Context, t *testing.T, bin string) minioServe
 
 	addr := freeLoopbackAddr(t)
 	dataDir := t.TempDir()
-	logPath := filepath.Join(t.TempDir(), "minio.log")
-	logFile, err := os.Create(logPath)
-	if err != nil {
-		t.Fatalf("create MinIO log file: %v", err)
-	}
 
 	cmd := exec.Command(bin, "server", dataDir, "--address", addr, "--quiet")
 	cmd.Env = append(os.Environ(),
@@ -200,15 +253,125 @@ func startMinIOProcess(ctx context.Context, t *testing.T, bin string) minioServe
 		"MINIO_ROOT_PASSWORD="+processRootPassword,
 		"MINIO_BROWSER=off",
 	)
+
+	endpoint := "http://" + addr
+	waitProcessReady(ctx, t, cmd, bin, endpoint+"/minio/health/ready")
+	return minioServer{EndpointURL: endpoint, AccessKey: processRootUser, SecretKey: processRootPassword}
+}
+
+// startRustFS starts a per-test RustFS from the configured source (see the
+// package doc) and registers its teardown. It fails the test if the
+// server cannot be started.
+func startRustFS(ctx context.Context, t *testing.T) minioServer {
+	t.Helper()
+	if bin := os.Getenv(envRustFSBinary); bin != "" {
+		return startRustFSProcess(ctx, t, bin)
+	}
+	return startRustFSContainer(ctx, t, rustfsImageFor())
+}
+
+// startRustFSContainer runs the RustFS image with a fixed root pair and
+// waits for its readiness endpoint. RustFS reads everything from env;
+// there is no testcontainers module for it, so this is a
+// GenericContainer.
+func startRustFSContainer(ctx context.Context, t *testing.T, image string) minioServer {
+	t.Helper()
+
+	req := testcontainers.ContainerRequest{
+		Image:        image,
+		ExposedPorts: []string{"9000/tcp"},
+		Env: map[string]string{
+			"RUSTFS_ACCESS_KEY":                 rustfsProcessAccessKey,
+			"RUSTFS_SECRET_KEY":                 rustfsProcessSecretKey,
+			"RUSTFS_VOLUMES":                    "/data",
+			"RUSTFS_ADDRESS":                    ":9000",
+			"RUSTFS_CONSOLE_ENABLE":             "false",
+			"RUSTFS_OBS_METRICS_EXPORT_ENABLED": "false",
+		},
+		WaitingFor: wait.ForHTTP("/health/ready").WithPort("9000/tcp").WithStartupTimeout(90 * time.Second),
+	}
+	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{ContainerRequest: req, Started: true})
+	if err != nil {
+		t.Fatalf("start RustFS testcontainer %q (Docker not reachable? set %s to run without Docker): %v",
+			image, envRustFSBinary, err)
+	}
+	t.Cleanup(func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer stopCancel()
+		_ = container.Terminate(stopCtx)
+	})
+
+	endpoint, err := container.Endpoint(ctx, "")
+	if err != nil {
+		t.Fatalf("get RustFS connection string: %v", err)
+	}
+	rawURL := normaliseEndpoint(t, endpoint)
+	return minioServer{EndpointURL: rawURL, AccessKey: rustfsProcessAccessKey, SecretKey: rustfsProcessSecretKey}
+}
+
+// startRustFSProcess runs `bin` on a free loopback port, pointed at a
+// fresh temp data dir via RUSTFS_VOLUMES, and waits for /health/ready.
+// The server's combined output goes to a file in the test's temp dir and
+// is included in the failure message if it never becomes ready.
+func startRustFSProcess(ctx context.Context, t *testing.T, bin string) minioServer {
+	t.Helper()
+
+	addr := freeLoopbackAddr(t)
+	dataDir := t.TempDir()
+
+	cmd := exec.Command(bin)
+	cmd.Env = append(os.Environ(),
+		"RUSTFS_ACCESS_KEY="+rustfsProcessAccessKey,
+		"RUSTFS_SECRET_KEY="+rustfsProcessSecretKey,
+		"RUSTFS_VOLUMES="+dataDir,
+		"RUSTFS_ADDRESS="+addr,
+		"RUSTFS_CONSOLE_ENABLE=false",
+		"RUSTFS_OBS_METRICS_EXPORT_ENABLED=false",
+	)
+
+	endpoint := "http://" + addr
+	waitProcessReady(ctx, t, cmd, bin, endpoint+"/health/ready")
+	return minioServer{EndpointURL: endpoint, AccessKey: rustfsProcessAccessKey, SecretKey: rustfsProcessSecretKey}
+}
+
+// normaliseEndpoint prefixes endpoint with "http://" when it has no
+// scheme yet, and fails the test if the result does not parse as a URL.
+// testcontainers connection-string / Endpoint helpers return bare
+// "host:port" on the module versions this package uses.
+func normaliseEndpoint(t *testing.T, endpoint string) string {
+	t.Helper()
+	rawURL := endpoint
+	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
+		rawURL = "http://" + rawURL
+	}
+	if _, err := url.Parse(rawURL); err != nil {
+		t.Fatalf("invalid endpoint URL %q: %v", rawURL, err)
+	}
+	return rawURL
+}
+
+// waitProcessReady starts cmd (writing its combined output to a log file
+// in the test's temp dir), registers its teardown, and blocks until
+// readyURL answers 200, the process exits, or the readiness timeout
+// elapses. It fails the test on any of those problems, including the
+// dump of the server's log output.
+func waitProcessReady(ctx context.Context, t *testing.T, cmd *exec.Cmd, bin, readyURL string) {
+	t.Helper()
+
+	logPath := filepath.Join(t.TempDir(), filepath.Base(bin)+".log")
+	logFile, err := os.Create(logPath)
+	if err != nil {
+		t.Fatalf("create %s log file: %v", bin, err)
+	}
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	if err := cmd.Start(); err != nil {
 		_ = logFile.Close()
-		t.Fatalf("start MinIO process %q: %v", bin, err)
+		t.Fatalf("start process %q: %v", bin, err)
 	}
 	// exited is closed once the process has been reaped; waitErr is safe to
 	// read after that. A closed channel (rather than a sent value) lets both
-	// waitMinIOReady and the cleanup below observe the exit.
+	// the readiness poll and the cleanup below observe the exit.
 	exited := make(chan struct{})
 	var waitErr error
 	go func() {
@@ -223,12 +386,10 @@ func startMinIOProcess(ctx context.Context, t *testing.T, bin string) minioServe
 		_ = logFile.Close()
 	})
 
-	endpoint := "http://" + addr
-	if err := waitMinIOReady(ctx, endpoint, exited, func() error { return waitErr }); err != nil {
+	if err := waitReady(ctx, readyURL, exited, func() error { return waitErr }); err != nil {
 		out, _ := os.ReadFile(logPath)
-		t.Fatalf("MinIO process %q never became ready at %s: %v\n--- server output ---\n%s", bin, endpoint, err, out)
+		t.Fatalf("process %q never became ready at %s: %v\n--- server output ---\n%s", bin, readyURL, err, out)
 	}
-	return minioServer{EndpointURL: endpoint, AccessKey: processRootUser, SecretKey: processRootPassword}
 }
 
 // freeLoopbackAddr returns a 127.0.0.1 host:port that was free a moment ago.
@@ -243,16 +404,16 @@ func freeLoopbackAddr(t *testing.T) string {
 	return addr
 }
 
-// waitMinIOReady polls endpoint's readiness probe until it answers 200, the
-// process exits (exited closes; exitErr then reports why), or 60s pass.
-func waitMinIOReady(ctx context.Context, endpoint string, exited <-chan struct{}, exitErr func() error) error {
+// waitReady polls readyURL until it answers 200, the process exits
+// (exited closes; exitErr then reports why), or 60s pass.
+func waitReady(ctx context.Context, readyURL string, exited <-chan struct{}, exitErr func() error) error {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	client := &http.Client{Timeout: 2 * time.Second}
 	tick := time.NewTicker(200 * time.Millisecond)
 	defer tick.Stop()
 	for {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/minio/health/ready", nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, readyURL, nil)
 		if err != nil {
 			return err
 		}
@@ -272,11 +433,12 @@ func waitMinIOReady(ctx context.Context, endpoint string, exited <-chan struct{}
 	}
 }
 
-// setup boots a fresh MinIO (see startMinIO), opens a temp SQLite DB for
-// audit/job rows, builds the live domain processors against the pool,
-// and registers cleanup hooks. Tests skip only when the
-// HARBORMASTER_INTEGRATION env var is unset; a MinIO that cannot be
-// started fails the test.
+// setup boots a fresh object store (see startTarget), opens a temp SQLite
+// DB for audit/job rows, builds the live domain processors against the
+// pool, and registers cleanup hooks. Tests skip only when the
+// HARBORMASTER_INTEGRATION env var is unset; a server that cannot be
+// started fails the test (process mode) or skips (container mode, when
+// Docker itself is unreachable).
 //
 // The returned context inherits a 5-minute deadline so a runaway test
 // cannot block CI forever.
@@ -290,7 +452,7 @@ func setup(t *testing.T) (*TestEnv, context.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	t.Cleanup(cancel)
 
-	srv := startMinIO(ctx, t)
+	srv := startTarget(ctx, t)
 
 	pool := hmminio.NewEmpty()
 	if err := pool.Rebuild(hmminio.Credentials{

@@ -12,11 +12,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # MinIO floor (per docs/operator/security.md "supported floor") and the
-        # rolling `latest` tag.
-        minio:
-          - "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
-          - "quay.io/minio/minio:latest"
+        # MinIO floor (README "MinIO floor version") and the rolling `latest`.
+        #
+        # MinIO no longer publishes pullable images (quay.io/minio/minio and
+        # docker.io/minio/minio both 401 anonymous pulls), so:
+        #   - floor: upstream RELEASE.2025-09-07T16-13-09Z, compiled from
+        #     source by the "Build floor MinIO image" step below.
+        #   - latest: pgsty/minio, the community fork that still cuts
+        #     releases of the same codebase.
+        # A missing image does not fail the suite -- setup() t.Skipf's every
+        # test when the container cannot start -- so check the log for SKIP.
+        include:
+          - leg: floor
+            minio: "harbormaster-minio-floor:local"
+            build_floor: true
+          - leg: latest
+            minio: "pgsty/minio:latest"
+            build_floor: false
     runs-on: ubuntu-24.04
     # Fixed absolute paths, set at job level, cleared as the first step below,
     # and restored by an explicit actions/cache step rather than setup-go's own
@@ -38,6 +50,12 @@ jobs:
             /work/ci-cache/go/mod
             /work/ci-cache/go/build
           key: go-ubuntu-24.04-x64-${{ steps.go.outputs.go-version }}-${{ hashFiles('apps/backend/go.sum') }}
+      - name: Build floor MinIO image
+        if: ${{ matrix.build_floor }}
+        run: |
+          docker build -t "${{ matrix.minio }}" \
+            -f apps/backend/internal/integration/minio-floor.Dockerfile \
+            apps/backend/internal/integration
       - name: Run integration suite
         env:
           HARBORMASTER_INTEGRATION: "1"

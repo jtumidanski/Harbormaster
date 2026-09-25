@@ -135,7 +135,10 @@ lives in [`docs/operator/configuration.md`](docs/operator/configuration.md).
   action with actor, action, target, outcome, and an opaque payload
   summary (no secrets). Retention is bounded by `AUDIT_RETENTION`.
 - **MinIO floor version.** v1 supports `RELEASE.2025-09-07T16-13-09Z`
-  and later. The nightly workflow exercises both the floor and `latest`.
+  and later. The nightly workflow exercises both the floor (built from
+  upstream source, since MinIO no longer publishes pullable images) and
+  `latest` of the [pgsty/minio](https://hub.docker.com/r/pgsty/minio)
+  community fork.
 - **Single replica.** v1 holds in-process state (rate limiter, empty
   worker, sweeper) and is intentionally a single replica. See R6.
 

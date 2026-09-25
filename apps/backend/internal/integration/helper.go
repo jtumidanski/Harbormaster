@@ -62,8 +62,12 @@ const envMinIOImage = "HARBORMASTER_MINIO_IMAGE"
 // defaultMinIOImage is the pinned MinIO release. Pinning prevents a
 // surprise CI failure when MinIO ships a backwards-incompatible
 // admin-API tweak; bump deliberately and re-run the suite. The tag is
-// one of the quay.io/minio/minio "RELEASE.<timestamp>" rolling tags.
-const defaultMinIOImage = "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
+// one of the pgsty/minio "RELEASE.<timestamp>" tags: MinIO no longer
+// publishes pullable images (quay.io/minio/minio and docker.io/minio/minio
+// both 401 anonymous pulls), and pgsty/minio is the community fork that
+// still cuts releases. The upstream floor release is exercised by the
+// nightly workflow, which builds it from source (minio-floor.Dockerfile).
+const defaultMinIOImage = "pgsty/minio:RELEASE.2026-08-04T00-00-00Z"
 
 // minioImageFor returns the image the testcontainer should run. The
 // HARBORMASTER_MINIO_IMAGE env var wins so the nightly workflow's matrix

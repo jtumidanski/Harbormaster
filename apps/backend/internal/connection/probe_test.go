@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	madmin "github.com/minio/madmin-go/v4"
+	"github.com/stretchr/testify/require"
 
 	"github.com/jtumidanski/Harbormaster/internal/apierror"
 )

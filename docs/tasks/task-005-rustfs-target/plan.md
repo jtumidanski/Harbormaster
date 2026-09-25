@@ -676,18 +676,20 @@ import (
 // Counters stay cumulative: Aggregate derives rates at read time, exactly
 // as it does for values scraped from MinIO.
 //
-// Label values (status_class, runtime_state encoding) were confirmed
-// against a live RustFS 1.0 scrape; the family list is the contract.
+// Label values confirmed against the cluster Prometheus scrape of RustFS
+// 1.0.0: status_class lives on the request-duration histogram count (the
+// plain requests counter only carries method); drive runtime state is a
+// per-state gauge. The family list is the contract.
 var promQueries = map[string]string{
 	"minio_s3_requests_total":                   `sum(rustfs_http_server_requests_total)`,
-	"minio_s3_requests_4xx_errors_total":        `sum(rustfs_http_server_requests_total{status_class="4xx"})`,
-	"minio_s3_requests_5xx_errors_total":        `sum(rustfs_http_server_requests_total{status_class="5xx"})`,
+	"minio_s3_requests_4xx_errors_total":        `sum(rustfs_http_server_request_duration_seconds_count{status_class="4xx"})`,
+	"minio_s3_requests_5xx_errors_total":        `sum(rustfs_http_server_request_duration_seconds_count{status_class="5xx"})`,
 	"minio_s3_traffic_received_bytes":           `sum(rustfs_http_server_request_body_bytes_total)`,
 	"minio_s3_traffic_sent_bytes":               `sum(rustfs_http_server_response_body_bytes_total)`,
 	"minio_cluster_capacity_usable_total_bytes": `sum(rustfs_cluster_drive_total_bytes)`,
 	"minio_cluster_capacity_usable_free_bytes":  `sum(rustfs_cluster_drive_free_bytes)`,
-	"minio_cluster_drive_online_total":          `count(rustfs_cluster_drive_runtime_state == 1)`,
-	"minio_cluster_drive_offline_total":         `count(rustfs_cluster_drive_present) - count(rustfs_cluster_drive_runtime_state == 1)`,
+	"minio_cluster_drive_online_total":          `sum(rustfs_cluster_drive_runtime_state{state="online"})`,
+	"minio_cluster_drive_offline_total":         `sum(rustfs_cluster_drive_runtime_state{state="offline"})`,
 }
 
 // clusterFamilies are served by ClusterMetrics; the rest by ResourceMetrics.

@@ -69,6 +69,22 @@ func (p *Pool) Get(ctx context.Context) (*madmin.AdminClient, *miniogo.Client, e
 // ErrNotInitialized is returned by Get when the pool has no active connection.
 var ErrNotInitialized = errors.New("minio pool: connection not yet configured")
 
+// EndpointHost returns the active connection's host:port, or "" if the
+// pool has not been Rebuild'd yet. Used by adapters that need a label for
+// a node row (e.g. the /health/ready fallback) without a full client.
+func (p *Pool) EndpointHost() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.mc == nil || p.madm == nil {
+		return ""
+	}
+	_, _, host, err := parseEndpoint(p.cred.EndpointURL)
+	if err != nil {
+		return ""
+	}
+	return host
+}
+
 // NewMetricsClient builds a madmin MetricsClient from the active connection,
 // reusing the pool's TLS transport (custom CA / skip-verify). Returns
 // ErrNotInitialized when no connection is configured.

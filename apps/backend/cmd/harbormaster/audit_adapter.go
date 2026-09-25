@@ -330,6 +330,35 @@ func (a dashboardPoolAdapter) ServerInfo(ctx context.Context) (dashboard.ServerI
 		}
 	}
 
+	// RustFS's admin "info" endpoint reports neither a version nor any
+	// servers[] entries (verified live against RustFS 1.0.0: 200 OK with
+	// bucket/object/usage counts only). When ServerInfo comes back empty
+	// this way, fall back to the target's public /health/ready endpoint,
+	// synthesising a single-node NodeStatus from its readiness flags so
+	// the dashboard still reports a version and a drive-online count
+	// instead of going blank. MinIO always populates info.Servers, so this
+	// path is a no-op for MinIO targets.
+	if version == "" && info.Mode == "" && len(info.Servers) == 0 {
+		if hv, herr := a.pool.ServerHealth(ctx); herr == nil {
+			version = hv.Version
+			state := "offline"
+			healthy := 0
+			if hv.StorageReady {
+				healthy = 1
+			}
+			if hv.Ready {
+				state = "online"
+			} else {
+				warnings = append(warnings, "node reported not ready via /health/ready")
+			}
+			nodes = append(nodes, dashboard.NodeStatus{
+				Endpoint: a.pool.EndpointHost(),
+				State:    state,
+				Drives:   dashboard.DriveCount{Total: 1, Healthy: healthy, Unhealthy: 1 - healthy},
+			})
+		}
+	}
+
 	return dashboard.ServerInfo{
 		Version:        version,
 		DeploymentMode: info.Mode,

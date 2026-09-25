@@ -13,31 +13,23 @@ jobs:
       fail-fast: false
       matrix:
         # MinIO floor (README "MinIO floor version") and the rolling `latest`.
-        # MinIO no longer publishes pullable images, so the floor is compiled
-        # from source and `latest` is the pgsty/minio community fork. See
-        # .forgejo/workflows/nightly.yml for the full rationale.
-        include:
-          - leg: floor
-            minio: "harbormaster-minio-floor:local"
-            build_floor: true
-          - leg: latest
-            minio: "pgsty/minio:latest"
-            build_floor: false
+        # MinIO runs as a local process from HARBORMASTER_MINIO_BINARY: the
+        # floor compiled from upstream source, `latest` the pgsty/silo
+        # community fork's newest release. See .forgejo/workflows/nightly.yml
+        # for the full rationale.
+        leg: [floor, latest]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with: { go-version-file: apps/backend/go.mod }
-      - name: Build floor MinIO image
-        if: ${{ matrix.build_floor }}
-        run: |
-          docker build -t "${{ matrix.minio }}" \
-            -f apps/backend/internal/integration/minio-floor.Dockerfile \
-            apps/backend/internal/integration
+      - name: Provide MinIO binary (${{ matrix.leg }})
+        env:
+          LEG: ${{ matrix.leg }}
+        run: tools/nightly-minio-binary.sh "$LEG"
       - name: Run integration suite
         env:
           HARBORMASTER_INTEGRATION: "1"
-          HARBORMASTER_MINIO_IMAGE: ${{ matrix.minio }}
         run: |
           cd apps/backend
           go test -race -count=1 -tags=integration ./...

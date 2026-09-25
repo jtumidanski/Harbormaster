@@ -178,10 +178,13 @@ Notable variations:
 
 - Unit tests live next to source as `*_test.go` (always-on).
 - Integration tests in `internal/integration/` carry `//go:build
-  integration` + skip when `HARBORMASTER_INTEGRATION` is unset. They
-  use `testcontainers-go/modules/minio`; the image is the
-  default constant unless `HARBORMASTER_MINIO_IMAGE` overrides it
-  (used by the nightly matrix).
+  integration` + skip when `HARBORMASTER_INTEGRATION` is unset; once it
+  is set, a MinIO that fails to start fails the test. Each test gets its
+  own MinIO: a local `minio server` process when
+  `HARBORMASTER_MINIO_BINARY` is set (the nightly, whose runners have no
+  Docker daemon; binaries come from `tools/nightly-minio-binary.sh`),
+  otherwise a `testcontainers-go/modules/minio` container whose image is
+  the default constant unless `HARBORMASTER_MINIO_IMAGE` overrides it.
 
 ## Where to start when changing things
 

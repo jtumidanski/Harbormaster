@@ -48,7 +48,8 @@ descriptive error. The validators are:
 | `HARBORMASTER_OTEL_EXPORTER_OTLP_ENDPOINT` | (empty)                          | URL                   | If set, enables OTLP-HTTP trace exporter; otherwise tracing is a no-op.                                         |
 | `HARBORMASTER_AUDIT_RETENTION`             | `2160h` (~90 days)               | Go duration           | Audit-event retention. The sweeper runs daily and deletes rows older than this.                                 |
 | `HARBORMASTER_INTEGRATION`                 | (empty)                          | bool gate             | Test-only: when `1`, the integration suite stops skipping. Not consumed by the running server.                  |
-| `HARBORMASTER_MINIO_IMAGE`                 | (empty)                          | image ref             | Test-only: when set, overrides the MinIO testcontainer image. The nightly workflow's matrix uses this.          |
+| `HARBORMASTER_MINIO_IMAGE`                 | (empty)                          | image ref             | Test-only: when set, overrides the MinIO testcontainer image. Ignored when `HARBORMASTER_MINIO_BINARY` is set.  |
+| `HARBORMASTER_MINIO_BINARY`                | (empty)                          | path                  | Test-only: when set, each integration test runs this `minio server` binary as a local process (no Docker). The nightly workflow uses this. |
 
 ## Config-file example
 

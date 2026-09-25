@@ -1,11 +1,9 @@
 //go:build integration
 
 // Package integration holds end-to-end tests that drive Harbormaster's
-// domain processors against a real MinIO server spun up via
-// testcontainers-go. The whole package is gated behind the `integration`
-// build tag so the default `go test ./...` invocation excludes these
-// files (they require Docker and add ~30s of container-startup latency
-// to every run).
+// domain processors against a real, per-test MinIO server. The whole
+// package is gated behind the `integration` build tag so the default
+// `go test ./...` invocation excludes these files.
 //
 // Invocation:
 //
@@ -15,20 +13,33 @@
 // The HARBORMASTER_INTEGRATION=1 environment variable is the
 // belt-and-suspenders gate: even when the build tag is set, the tests
 // skip themselves unless the env var is also present. This keeps an
-// accidental `go test -tags=integration ./...` invocation in a CI
-// pipeline without Docker from failing noisily — instead the tests skip
-// with a clear "set HARBORMASTER_INTEGRATION=1 to enable" message.
+// accidental `go test -tags=integration ./...` invocation from needing a
+// MinIO at all — the tests skip with a clear "set HARBORMASTER_INTEGRATION=1
+// to enable" message.
 //
-// If Docker is unreachable (or the testcontainers reaper cannot start),
-// setup() calls t.Skipf so the tests skip cleanly rather than failing.
+// Each test gets its own MinIO, from one of two sources:
+//
+//   - HARBORMASTER_MINIO_BINARY set: a `minio server` process started from
+//     that binary on a free loopback port with a fresh temp data dir. No
+//     Docker needed; this is what the nightly workflow uses, because the
+//     Forgejo runners have no Docker daemon.
+//   - otherwise: a testcontainers-go MinIO container (needs Docker), image
+//     from HARBORMASTER_MINIO_IMAGE or defaultMinIOImage.
+//
+// Once HARBORMASTER_INTEGRATION=1 is set, a MinIO that fails to start
+// FAILS the test. It used to skip, which let the nightly report green
+// with every test skipped for as long as its image was unpullable.
 package integration
 
 import (
 	"context"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -59,20 +70,32 @@ const envEnable = "HARBORMASTER_INTEGRATION"
 // default constant below when unset.
 const envMinIOImage = "HARBORMASTER_MINIO_IMAGE"
 
+// envMinIOBinary, when set, is the path to a `minio server`-compatible
+// binary. setup() runs it as a local process instead of a testcontainer.
+const envMinIOBinary = "HARBORMASTER_MINIO_BINARY"
+
 // defaultMinIOImage is the pinned MinIO release. Pinning prevents a
 // surprise CI failure when MinIO ships a backwards-incompatible
 // admin-API tweak; bump deliberately and re-run the suite. The tag is
 // one of the pgsty/minio "RELEASE.<timestamp>" tags: MinIO no longer
 // publishes pullable images (quay.io/minio/minio and docker.io/minio/minio
 // both 401 anonymous pulls), and pgsty/minio is the community fork that
-// still cuts releases. The upstream floor release is exercised by the
-// nightly workflow, which builds it from source (minio-floor.Dockerfile).
+// still cuts releases. The nightly workflow does not use this image; it
+// runs binaries via HARBORMASTER_MINIO_BINARY.
 const defaultMinIOImage = "pgsty/minio:RELEASE.2026-08-04T00-00-00Z"
 
+// processRootUser / processRootPassword are the root credentials a
+// binary-mode server is started with. Throwaway: the server listens on
+// loopback only and its data dir is deleted with the test.
+const (
+	processRootUser     = "harbormaster"
+	processRootPassword = "harbormaster-integration"
+)
+
 // minioImageFor returns the image the testcontainer should run. The
-// HARBORMASTER_MINIO_IMAGE env var wins so the nightly workflow's matrix
-// can exercise both the floor release and `latest` against the same
-// suite; otherwise the default constant is used.
+// HARBORMASTER_MINIO_IMAGE env var wins so a local operator can try
+// another release against the same suite; otherwise the default constant
+// is used.
 func minioImageFor() string {
 	if v := os.Getenv(envMinIOImage); v != "" {
 		return v
@@ -103,29 +126,33 @@ type TestEnv struct {
 	DB              *gorm.DB
 }
 
-// setup boots a fresh MinIO testcontainer, opens a temp SQLite DB for
-// audit/job rows, builds the live domain processors against the pool,
-// and registers cleanup hooks. Tests skip via t.Skipf when:
-//
-//   - the HARBORMASTER_INTEGRATION env var is unset, or
-//   - the testcontainer fails to start (typically: Docker not
-//     reachable, no docker.sock, or the reaper image cannot be pulled).
-//
-// The returned context inherits a 5-minute deadline so a runaway test
-// cannot block CI forever.
-func setup(t *testing.T) (*TestEnv, context.Context) {
+// minioServer is a running per-test MinIO: its endpoint URL and root
+// credentials.
+type minioServer struct {
+	EndpointURL string
+	AccessKey   string
+	SecretKey   string
+}
+
+// startMinIO starts a per-test MinIO from the configured source (see the
+// package doc) and registers its teardown. It fails the test if the
+// server cannot be started.
+func startMinIO(ctx context.Context, t *testing.T) minioServer {
+	t.Helper()
+	if bin := os.Getenv(envMinIOBinary); bin != "" {
+		return startMinIOProcess(ctx, t, bin)
+	}
+	return startMinIOContainer(ctx, t, minioImageFor())
+}
+
+// startMinIOContainer runs image via testcontainers-go.
+func startMinIOContainer(ctx context.Context, t *testing.T, image string) minioServer {
 	t.Helper()
 
-	if os.Getenv(envEnable) == "" {
-		t.Skipf("integration tests gated by %s=1; skipping", envEnable)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	t.Cleanup(cancel)
-
-	container, err := tcminio.Run(ctx, minioImageFor())
+	container, err := tcminio.Run(ctx, image)
 	if err != nil {
-		t.Skipf("MinIO testcontainer unavailable (Docker not reachable?): %v", err)
+		t.Fatalf("start MinIO testcontainer %q (Docker not reachable? set %s to run without Docker): %v",
+			image, envMinIOBinary, err)
 	}
 	t.Cleanup(func() {
 		// Use a fresh context so cleanup runs even when the test's
@@ -149,12 +176,127 @@ func setup(t *testing.T) (*TestEnv, context.Context) {
 	if _, err := url.Parse(rawURL); err != nil {
 		t.Fatalf("invalid endpoint URL %q: %v", rawURL, err)
 	}
+	return minioServer{EndpointURL: rawURL, AccessKey: container.Username, SecretKey: container.Password}
+}
+
+// startMinIOProcess runs `bin server <tempdir>` on a free loopback port and
+// waits for /minio/health/ready. The server's combined output goes to a file
+// in the test's temp dir and is included in the failure message if it never
+// becomes ready.
+func startMinIOProcess(ctx context.Context, t *testing.T, bin string) minioServer {
+	t.Helper()
+
+	addr := freeLoopbackAddr(t)
+	dataDir := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "minio.log")
+	logFile, err := os.Create(logPath)
+	if err != nil {
+		t.Fatalf("create MinIO log file: %v", err)
+	}
+
+	cmd := exec.Command(bin, "server", dataDir, "--address", addr, "--quiet")
+	cmd.Env = append(os.Environ(),
+		"MINIO_ROOT_USER="+processRootUser,
+		"MINIO_ROOT_PASSWORD="+processRootPassword,
+		"MINIO_BROWSER=off",
+	)
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	if err := cmd.Start(); err != nil {
+		_ = logFile.Close()
+		t.Fatalf("start MinIO process %q: %v", bin, err)
+	}
+	// exited is closed once the process has been reaped; waitErr is safe to
+	// read after that. A closed channel (rather than a sent value) lets both
+	// waitMinIOReady and the cleanup below observe the exit.
+	exited := make(chan struct{})
+	var waitErr error
+	go func() {
+		waitErr = cmd.Wait()
+		close(exited)
+	}()
+	// Registered after t.TempDir, so it runs first: the process is gone
+	// before its data dir is removed.
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		<-exited
+		_ = logFile.Close()
+	})
+
+	endpoint := "http://" + addr
+	if err := waitMinIOReady(ctx, endpoint, exited, func() error { return waitErr }); err != nil {
+		out, _ := os.ReadFile(logPath)
+		t.Fatalf("MinIO process %q never became ready at %s: %v\n--- server output ---\n%s", bin, endpoint, err, out)
+	}
+	return minioServer{EndpointURL: endpoint, AccessKey: processRootUser, SecretKey: processRootPassword}
+}
+
+// freeLoopbackAddr returns a 127.0.0.1 host:port that was free a moment ago.
+func freeLoopbackAddr(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("find a free port: %v", err)
+	}
+	addr := l.Addr().String()
+	_ = l.Close()
+	return addr
+}
+
+// waitMinIOReady polls endpoint's readiness probe until it answers 200, the
+// process exits (exited closes; exitErr then reports why), or 60s pass.
+func waitMinIOReady(ctx context.Context, endpoint string, exited <-chan struct{}, exitErr func() error) error {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	client := &http.Client{Timeout: 2 * time.Second}
+	tick := time.NewTicker(200 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/minio/health/ready", nil)
+		if err != nil {
+			return err
+		}
+		if resp, err := client.Do(req); err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return nil
+			}
+		}
+		select {
+		case <-exited:
+			return fmt.Errorf("process exited: %v", exitErr())
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-tick.C:
+		}
+	}
+}
+
+// setup boots a fresh MinIO (see startMinIO), opens a temp SQLite DB for
+// audit/job rows, builds the live domain processors against the pool,
+// and registers cleanup hooks. Tests skip only when the
+// HARBORMASTER_INTEGRATION env var is unset; a MinIO that cannot be
+// started fails the test.
+//
+// The returned context inherits a 5-minute deadline so a runaway test
+// cannot block CI forever.
+func setup(t *testing.T) (*TestEnv, context.Context) {
+	t.Helper()
+
+	if os.Getenv(envEnable) == "" {
+		t.Skipf("integration tests gated by %s=1; skipping", envEnable)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	t.Cleanup(cancel)
+
+	srv := startMinIO(ctx, t)
 
 	pool := hmminio.NewEmpty()
 	if err := pool.Rebuild(hmminio.Credentials{
-		EndpointURL: rawURL,
-		AccessKey:   container.Username,
-		SecretKey:   container.Password,
+		EndpointURL: srv.EndpointURL,
+		AccessKey:   srv.AccessKey,
+		SecretKey:   srv.SecretKey,
 	}); err != nil {
 		t.Fatalf("pool.Rebuild: %v", err)
 	}

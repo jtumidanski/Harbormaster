@@ -157,11 +157,15 @@ func Probe(ctx context.Context, in SubmitInput) (TestResult, *apierror.Error) {
 }
 
 // serverVersion picks the most useful version banner available in the
-// madmin v3 InfoMessage. Prefer the per-server RELEASE.YYYY-… string;
-// fall back to Mode if no servers are reported (older deployments).
+// madmin v3 InfoMessage. MinIO reports RELEASE.YYYY-… per server, RustFS a
+// bare semver such as 1.0.0; both pass through. Fall back to Mode, then
+// to "unknown" so the wizard never shows an empty banner.
 func serverVersion(info madmin.InfoMessage) string {
 	if len(info.Servers) > 0 && info.Servers[0].Version != "" {
 		return info.Servers[0].Version
 	}
-	return info.Mode
+	if info.Mode != "" {
+		return info.Mode
+	}
+	return "unknown"
 }

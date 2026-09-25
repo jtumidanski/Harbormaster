@@ -1,6 +1,9 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
-  extends: ["config:base", ":dependencyDashboard", ":semanticCommits"],
+  // The forge-local preset already carries config:recommended and the
+  // dependency dashboard, and disables the github-actions manager (action
+  // pins are mirrored into the forge by hand, so they move by hand).
+  extends: ["local>renovate/presets", ":semanticCommits"],
   rangeStrategy: "pin",
   packageRules: [
     {
@@ -12,14 +15,6 @@
       matchManagers: ["npm"],
       groupName: "npm dependencies",
       minimumReleaseAge: "3 days",
-    },
-    {
-      matchManagers: ["github-actions"],
-      groupName: "github actions",
-      minimumReleaseAge: "3 days",
-      automerge: true,
-      automergeType: "pr",
-      matchUpdateTypes: ["patch"],
     },
     {
       matchManagers: ["dockerfile"],

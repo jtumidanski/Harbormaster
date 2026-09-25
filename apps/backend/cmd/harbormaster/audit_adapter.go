@@ -66,15 +66,12 @@ type bucketAdminAdapter struct {
 	*madmin.AdminClient
 }
 
-// BucketUsageInfo returns the usage row for bucket. A missing bucket
-// surfaces as the zero value plus nil error so the processor's tolerant
-// usage-fetch path treats it as "scanner has not seen this bucket yet".
+// BucketUsageInfo delegates to hmminio.BucketUsage, which tolerates both
+// MinIO's camelCase and RustFS's snake_case census. A missing bucket surfaces
+// as the zero value plus nil error so the processor's tolerant usage-fetch
+// path treats it as "scanner has not seen this bucket yet".
 func (a bucketAdminAdapter) BucketUsageInfo(ctx context.Context, bucket string) (madmin.BucketUsageInfo, error) {
-	info, err := a.DataUsageInfo(ctx)
-	if err != nil {
-		return madmin.BucketUsageInfo{}, err
-	}
-	return info.BucketsUsage[bucket], nil
+	return hmminio.BucketUsage(ctx, a.AdminClient, bucket)
 }
 
 // newBucketClientGetter returns a buckets.ClientGetter bound to the live

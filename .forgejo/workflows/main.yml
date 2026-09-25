@@ -205,7 +205,7 @@ jobs:
       - name: Reset toolchain caches
         run: rm -rf /work/ci-cache
       - id: arm64
-        uses: ci/actions/select-arm64-builder@v1
+        uses: https://git.tumidanski/ci/actions/select-arm64-builder@v1
       - name: Selected arm64 builder
         run: echo "arm64 builder host=${{ steps.arm64.outputs.host }} endpoint=${{ steps.arm64.outputs.endpoint }} preferred=${{ steps.arm64.outputs.preferred }}"
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0

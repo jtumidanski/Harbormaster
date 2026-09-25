@@ -14,6 +14,8 @@ import (
 // names for a bucket's usage row (rustfs/rustfs#7985). Each pair is
 // merged by preferring whichever is non-zero.
 type usageRow struct {
+	// Size is emitted under this one name by both MinIO and RustFS (observed
+	// on RustFS 1.0.0), so unlike the other fields it has no snake_case pair.
 	Size          uint64 `json:"size"`
 	ObjectsCount  uint64 `json:"objectsCount"`
 	ObjectsCount2 uint64 `json:"objects_count"`

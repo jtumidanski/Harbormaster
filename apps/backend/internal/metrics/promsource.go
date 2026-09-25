@@ -22,6 +22,9 @@ import (
 // 1.0.0: status_class lives on the request-duration histogram count (the
 // plain requests counter only carries method); drive runtime state is a
 // per-state gauge. The family list is the contract.
+//
+// The offline count counts every drive not in the "online" state, so it also
+// picks up "returning", "suspect", and "unknown" — not just "offline".
 var promQueries = map[string]string{
 	"minio_s3_requests_total":                   `sum(rustfs_http_server_requests_total)`,
 	"minio_s3_requests_4xx_errors_total":        `sum(rustfs_http_server_request_duration_seconds_count{status_class="4xx"})`,
@@ -31,7 +34,7 @@ var promQueries = map[string]string{
 	"minio_cluster_capacity_usable_total_bytes": `sum(rustfs_cluster_drive_total_bytes)`,
 	"minio_cluster_capacity_usable_free_bytes":  `sum(rustfs_cluster_drive_free_bytes)`,
 	"minio_cluster_drive_online_total":          `sum(rustfs_cluster_drive_runtime_state{state="online"})`,
-	"minio_cluster_drive_offline_total":         `sum(rustfs_cluster_drive_runtime_state{state="offline"})`,
+	"minio_cluster_drive_offline_total":         `sum(rustfs_cluster_drive_runtime_state{state!="online"})`,
 }
 
 // clusterFamilies are served by ClusterMetrics; the rest by ResourceMetrics.

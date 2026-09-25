@@ -89,7 +89,9 @@ func stubMinIOServer(t *testing.T) *httptest.Server {
 			_, _ = w.Write([]byte(minioInfoBody))
 			return
 		}
-		t.Fatalf("unexpected request to %s; the /health/ready fallback must stay dormant when the primary admin info call already has version/servers data", r.URL.Path)
+		t.Errorf("unexpected request to %s; the /health/ready fallback must stay dormant when the primary admin info call already has version/servers data", r.URL.Path)
+		w.WriteHeader(http.StatusNotFound)
+		return
 	}))
 }
 

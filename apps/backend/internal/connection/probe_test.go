@@ -1,4 +1,4 @@
-package connection_test
+package connection
 
 import (
 	"context"
@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
+	madmin "github.com/minio/madmin-go/v4"
 	"github.com/stretchr/testify/require"
 
 	"github.com/jtumidanski/Harbormaster/internal/apierror"
-	"github.com/jtumidanski/Harbormaster/internal/connection"
 )
 
 // TestProbe_RejectsMalformedEndpointURL verifies that a missing or
@@ -33,7 +33,7 @@ func TestProbe_RejectsMalformedEndpointURL(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 
-			_, ae := connection.Probe(ctx, connection.SubmitInput{
+			_, ae := Probe(ctx, SubmitInput{
 				EndpointURL: tc.endpoint,
 				AccessKey:   "ak",
 				SecretKey:   "sk",
@@ -58,7 +58,7 @@ func TestProbe_TCPConnectFailure(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, ae := connection.Probe(ctx, connection.SubmitInput{
+	_, ae := Probe(ctx, SubmitInput{
 		EndpointURL: "http://" + addr,
 		AccessKey:   "ak",
 		SecretKey:   "sk",
@@ -72,4 +72,24 @@ func TestProbe_TCPConnectFailure(t *testing.T) {
 	var unwrapped *apierror.Error
 	require.True(t, errors.As(error(ae), &unwrapped))
 	require.Equal(t, "minio_unreachable", unwrapped.Code)
+}
+
+func TestServerVersion_BareSemver(t *testing.T) {
+	info := madmin.InfoMessage{Servers: []madmin.ServerProperties{{Version: "1.0.0"}}}
+	if got := serverVersion(info); got != "1.0.0" {
+		t.Errorf("want 1.0.0, got %q", got)
+	}
+}
+
+func TestServerVersion_NoServersFallsBackToMode(t *testing.T) {
+	info := madmin.InfoMessage{Mode: "online"}
+	if got := serverVersion(info); got != "online" {
+		t.Errorf("want mode fallback, got %q", got)
+	}
+}
+
+func TestServerVersion_Empty(t *testing.T) {
+	if got := serverVersion(madmin.InfoMessage{}); got != "unknown" {
+		t.Errorf("want \"unknown\" for an empty banner, got %q", got)
+	}
 }

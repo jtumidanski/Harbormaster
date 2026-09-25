@@ -96,7 +96,7 @@ func runServe(ctx context.Context, _ io.Writer) error {
 	// --- E10 wiring: metrics store, collector, poller, retention sweeper --
 	// pool is declared above; the poller goroutines exit when ctx is cancelled.
 	metricsStore := metrics.NewStore(gdb)
-	metricsCollector := metrics.NewCollector(newMetricsSourceGetter(pool))
+	metricsCollector := metrics.NewCollector(newMetricsSourceGetter(pool, cfg.PrometheusURL))
 	metricsProc := metrics.NewProcessor(metricsStore, cfg.MetricsPollInterval)
 	metrics.StartPoller(ctx, metricsCollector, metricsStore, cfg.MetricsPollInterval)
 	metrics.StartRetentionSweeper(ctx, metricsStore, cfg.MetricsRetention, 24*time.Hour)
@@ -274,7 +274,7 @@ func runServe(ctx context.Context, _ io.Writer) error {
 		StreamingAPIRoutes: []func(chi.Router){streamingRoutes},
 		Ready:              ready,
 	})
-	logger.Info().Str("addr", cfg.ListenAddr).Msg("harbormaster started")
+	logger.Info().Str("addr", cfg.ListenAddr).Str("prometheus_url", cfg.PrometheusURL).Msg("harbormaster started")
 	return s.Run(ctx)
 }
 

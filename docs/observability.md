@@ -189,6 +189,13 @@ second goroutine
 (`StartRetentionSweeper`) deletes samples older than
 `HARBORMASTER_METRICS_RETENTION` (default 8 days) once a day.
 
+With `HARBORMASTER_PROMETHEUS_URL` set, `promsource.go` replaces the admin
+client: one PromQL instant query per tracked family (table in that file)
+against the configured Prometheus, results emitted under the same
+`minio_*` family names so nothing downstream changes. This is the path for
+RustFS targets, which export OTLP to Prometheus and expose no scrape
+endpoint. An empty vector for a family produces no sample for that poll.
+
 **What it collects is an explicit allowlist**, `trackedMetrics` in
 `collector.go` — nine families, S3 request counts, 4xx/5xx counts, traffic
 bytes, cluster usable/free capacity, and drive online/offline counts. Anything

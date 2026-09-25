@@ -66,15 +66,12 @@ type bucketAdminAdapter struct {
 	*madmin.AdminClient
 }
 
-// BucketUsageInfo returns the usage row for bucket. A missing bucket
-// surfaces as the zero value plus nil error so the processor's tolerant
-// usage-fetch path treats it as "scanner has not seen this bucket yet".
+// BucketUsageInfo delegates to hmminio.BucketUsage, which tolerates both
+// MinIO's camelCase and RustFS's snake_case census. A missing bucket surfaces
+// as the zero value plus nil error so the processor's tolerant usage-fetch
+// path treats it as "scanner has not seen this bucket yet".
 func (a bucketAdminAdapter) BucketUsageInfo(ctx context.Context, bucket string) (madmin.BucketUsageInfo, error) {
-	info, err := a.DataUsageInfo(ctx)
-	if err != nil {
-		return madmin.BucketUsageInfo{}, err
-	}
-	return info.BucketsUsage[bucket], nil
+	return hmminio.BucketUsage(ctx, a.AdminClient, bucket)
 }
 
 // newBucketClientGetter returns a buckets.ClientGetter bound to the live
@@ -333,6 +330,35 @@ func (a dashboardPoolAdapter) ServerInfo(ctx context.Context) (dashboard.ServerI
 		}
 	}
 
+	// RustFS's admin "info" endpoint reports neither a version nor any
+	// servers[] entries (verified live against RustFS 1.0.0: 200 OK with
+	// bucket/object/usage counts only). When ServerInfo comes back empty
+	// this way, fall back to the target's public /health/ready endpoint,
+	// synthesising a single-node NodeStatus from its readiness flags so
+	// the dashboard still reports a version and a drive-online count
+	// instead of going blank. MinIO always populates info.Servers, so this
+	// path is a no-op for MinIO targets.
+	if version == "" && info.Mode == "" && len(info.Servers) == 0 {
+		if hv, herr := a.pool.ServerHealth(ctx); herr == nil {
+			version = hv.Version
+			state := "offline"
+			healthy := 0
+			if hv.StorageReady {
+				healthy = 1
+			}
+			if hv.Ready {
+				state = "online"
+			} else {
+				warnings = append(warnings, "node reported not ready via /health/ready")
+			}
+			nodes = append(nodes, dashboard.NodeStatus{
+				Endpoint: a.pool.EndpointHost(),
+				State:    state,
+				Drives:   dashboard.DriveCount{Total: 1, Healthy: healthy, Unhealthy: 1 - healthy},
+			})
+		}
+	}
+
 	return dashboard.ServerInfo{
 		Version:        version,
 		DeploymentMode: info.Mode,
@@ -348,10 +374,16 @@ func newDashboardPoolGetter(pool *hmminio.Pool) dashboard.PoolGetter {
 	return dashboardPoolAdapter{pool: pool}
 }
 
-// newMetricsSourceGetter returns a metrics.SourceGetter bound to the live
-// pool. Each call builds a fresh madmin MetricsClient (cheap; re-reads creds
-// + transport) so credential rotations are picked up automatically.
-func newMetricsSourceGetter(pool *hmminio.Pool) metrics.SourceGetter {
+// newMetricsSourceGetter picks the dashboard's series source. With a
+// Prometheus URL configured the pool is not consulted at all: the series
+// come from PromQL over the target's exported metrics (RustFS pushes OTLP
+// and has no scrape endpoint). Otherwise the madmin metrics client scrapes
+// /minio/v2/metrics on the live connection, as before.
+func newMetricsSourceGetter(pool *hmminio.Pool, prometheusURL string) metrics.SourceGetter {
+	if prometheusURL != "" {
+		src := metrics.NewPrometheusSource(prometheusURL, nil)
+		return func(ctx context.Context) (metrics.MetricsSource, error) { return src, nil }
+	}
 	return func(ctx context.Context) (metrics.MetricsSource, error) {
 		return pool.NewMetricsClient(ctx)
 	}

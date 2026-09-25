@@ -26,7 +26,9 @@ services:
   #   docker compose --profile with-minio up
   # Do NOT enable in production — bake your own MinIO cluster.
   minio:
-    image: minio/minio:RELEASE.2025-01-01T00-00-00Z
+    # pgsty/minio: the community fork of MinIO. Upstream minio/minio images
+    # are no longer pullable (401 on docker.io and quay.io).
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
     profiles: ["with-minio"]
     command: server /data --console-address ":9001"
     environment:

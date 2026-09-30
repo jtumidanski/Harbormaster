@@ -49,11 +49,11 @@ plan had said.
 
 ### 1. Reproduce — stay in your own context
 
-Reproduction is interactive: an operator is in the loop with a live MinIO
+Reproduction is interactive: an operator is in the loop with a live object-store
 deployment and a browser, round-trip latency matters more than tokens, and each
 step depends on what the last one showed. Do this yourself. Do not delegate it.
 
-Confirm the MinIO deployment and the exact Harbormaster version before anything
+Confirm the object-store deployment and the exact Harbormaster version before anything
 else; the wrong version sends the whole investigation down the wrong path — a
 MinIO admin API response shape that differs across server releases will look
 like a Harbormaster bug and is not one.

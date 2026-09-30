@@ -1,4 +1,4 @@
-package minio_test
+package objectstore_test
 
 import (
 	"context"
@@ -6,18 +6,18 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	hmminio "github.com/jtumidanski/Harbormaster/internal/minio"
+	"github.com/jtumidanski/Harbormaster/internal/objectstore"
 )
 
 func TestPoolGetBeforeRebuild(t *testing.T) {
-	p := hmminio.NewEmpty()
+	p := objectstore.NewEmpty()
 	_, _, err := p.Get(context.Background())
-	require.ErrorIs(t, err, hmminio.ErrNotInitialized)
+	require.ErrorIs(t, err, objectstore.ErrNotInitialized)
 }
 
 func TestPoolRebuildSwapsClients(t *testing.T) {
-	p := hmminio.NewEmpty()
-	require.NoError(t, p.Rebuild(hmminio.Credentials{
+	p := objectstore.NewEmpty()
+	require.NoError(t, p.Rebuild(objectstore.Credentials{
 		EndpointURL: "https://minio.example.test:9000",
 		AccessKey:   "AKIA",
 		SecretKey:   "SECRET",

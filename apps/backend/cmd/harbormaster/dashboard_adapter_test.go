@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	hmminio "github.com/jtumidanski/Harbormaster/internal/minio"
+	"github.com/jtumidanski/Harbormaster/internal/objectstore"
 )
 
 // rustfsEmptyInfoBody mirrors the live RustFS 1.0.0 GET
@@ -42,8 +42,8 @@ func TestDashboardPoolAdapter_ServerInfo_FallsBackToHealthReadyWhenInfoEmpty(t *
 	srv := stubRustFSServer(t, rustfsEmptyInfoBody, rustfsHealthReadyBody)
 	defer srv.Close()
 
-	pool := hmminio.NewEmpty()
-	if err := pool.Rebuild(hmminio.Credentials{EndpointURL: srv.URL, AccessKey: "ak", SecretKey: "sk"}); err != nil {
+	pool := objectstore.NewEmpty()
+	if err := pool.Rebuild(objectstore.Credentials{EndpointURL: srv.URL, AccessKey: "ak", SecretKey: "sk"}); err != nil {
 		t.Fatalf("Rebuild: %v", err)
 	}
 
@@ -98,8 +98,8 @@ func TestDashboardPoolAdapter_ServerInfo_MinIOPrimaryPathNeverFallsBack(t *testi
 	srv := stubMinIOServer(t)
 	defer srv.Close()
 
-	pool := hmminio.NewEmpty()
-	if err := pool.Rebuild(hmminio.Credentials{EndpointURL: srv.URL, AccessKey: "ak", SecretKey: "sk"}); err != nil {
+	pool := objectstore.NewEmpty()
+	if err := pool.Rebuild(objectstore.Credentials{EndpointURL: srv.URL, AccessKey: "ak", SecretKey: "sk"}); err != nil {
 		t.Fatalf("Rebuild: %v", err)
 	}
 
@@ -133,8 +133,8 @@ func TestDashboardPoolAdapter_ServerInfo_NotReadyWarns(t *testing.T) {
 	srv := stubRustFSServer(t, rustfsEmptyInfoBody, notReady)
 	defer srv.Close()
 
-	pool := hmminio.NewEmpty()
-	if err := pool.Rebuild(hmminio.Credentials{EndpointURL: srv.URL, AccessKey: "ak", SecretKey: "sk"}); err != nil {
+	pool := objectstore.NewEmpty()
+	if err := pool.Rebuild(objectstore.Credentials{EndpointURL: srv.URL, AccessKey: "ak", SecretKey: "sk"}); err != nil {
 		t.Fatalf("Rebuild: %v", err)
 	}
 

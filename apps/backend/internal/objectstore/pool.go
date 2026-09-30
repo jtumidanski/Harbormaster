@@ -1,7 +1,7 @@
-// Package minio holds the cached madmin + minio-go client pair built from the
-// current decrypted connection settings. Pool.Rebuild is called by the
+// Package objectstore holds the shared admin/S3 client pool for the
+// configured object store (RustFS or MinIO). Pool.Rebuild is called by the
 // connection processor after a successful update.
-package minio
+package objectstore
 
 import (
 	"context"

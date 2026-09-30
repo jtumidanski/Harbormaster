@@ -18,7 +18,7 @@ func newAdminResetEncryptionCmd(out io.Writer) *cobra.Command {
 	var confirm bool
 	c := &cobra.Command{
 		Use:   "reset-encryption",
-		Short: "Destructive: back up DB, regenerate encryption key, clear minio_connections",
+		Short: "Destructive: back up DB, regenerate encryption key, clear connections",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if !confirm {
 				fmt.Fprintln(out, `WARNING: this is a destructive recovery operation.
@@ -26,7 +26,7 @@ It will:
   1. Back up the SQLite database to <path>.pre-reset-<unix-ts>.bak
   2. Generate a new encryption key at HARBORMASTER_ENCRYPTION_KEY_FILE
      (or <data dir>/encryption.key by default)
-  3. Truncate the minio_connections table
+  3. Truncate the connections table
   4. Clear the setup_completed flag so the first-run wizard reappears
 
 Re-run with --confirm to proceed.`)
@@ -60,7 +60,7 @@ Re-run with --confirm to proceed.`)
 			if err := db.Migrate(gdb); err != nil {
 				return err
 			}
-			if err := gdb.Exec(`DELETE FROM minio_connections`).Error; err != nil {
+			if err := gdb.Exec(`DELETE FROM connections`).Error; err != nil {
 				return err
 			}
 			if err := gdb.Exec(`DELETE FROM app_settings WHERE key IN ('setup_completed','encryption_key_fingerprint')`).Error; err != nil {

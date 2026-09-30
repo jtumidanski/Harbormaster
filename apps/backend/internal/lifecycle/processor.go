@@ -24,7 +24,7 @@ type s3API interface {
 }
 
 // ClientGetter is the concrete dependency the Processor pulls from on
-// every call. The HTTP layer adapts internal/minio.Pool to this shape
+// every call. The HTTP layer adapts internal/objectstore.Pool to this shape
 // so the package never imports the live pool type; tests inject a
 // getter that returns a hand-rolled stub satisfying s3API.
 type ClientGetter func(ctx context.Context) (s3API, error)

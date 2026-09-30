@@ -61,7 +61,7 @@ func TestSubmit_BindsPool(t *testing.T) {
 
 // TestSubmit_PersistsAdminAndConnection verifies the happy path writes both
 // the admin_users row (with a non-plaintext password hash) and the
-// minio_connections row, and flips the setup_completed flag.
+// connections row, and flips the setup_completed flag.
 func TestSubmit_PersistsAdminAndConnection(t *testing.T) {
 	p, gdb := newProcessor(t, "/nonexistent")
 	ctx := context.Background()
@@ -85,9 +85,9 @@ func TestSubmit_PersistsAdminAndConnection(t *testing.T) {
 	require.NoError(t, auth.VerifyPassword(au.PasswordHash, req.Admin.Password),
 		"stored hash must verify against the submitted password")
 
-	// minio_connections row exists with the expected endpoint.
+	// connections row exists with the expected endpoint.
 	var endpoint string
-	require.NoError(t, gdb.Table("minio_connections").
+	require.NoError(t, gdb.Table("connections").
 		Select("endpoint_url").
 		Where("singleton_guard = 1").
 		Scan(&endpoint).Error)
@@ -129,14 +129,14 @@ func TestSubmit_FromMcAlias(t *testing.T) {
 
 	require.NoError(t, p.Submit(ctx, req, "127.0.0.1"))
 
-	// minio_connections row should reflect the alias entry's endpoint and
+	// connections row should reflect the alias entry's endpoint and
 	// the tls_skip_verify=true flag from "insecure": true.
 	type row struct {
 		EndpointURL   string `gorm:"column:endpoint_url"`
 		TLSSkipVerify bool   `gorm:"column:tls_skip_verify"`
 	}
 	var r row
-	require.NoError(t, gdb.Table("minio_connections").
+	require.NoError(t, gdb.Table("connections").
 		Select("endpoint_url, tls_skip_verify").
 		Where("singleton_guard = 1").
 		Scan(&r).Error)

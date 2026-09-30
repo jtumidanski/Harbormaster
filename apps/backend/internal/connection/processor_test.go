@@ -10,7 +10,7 @@ import (
 
 	"github.com/jtumidanski/Harbormaster/internal/apierror"
 	"github.com/jtumidanski/Harbormaster/internal/connection"
-	hmminio "github.com/jtumidanski/Harbormaster/internal/minio"
+	"github.com/jtumidanski/Harbormaster/internal/objectstore"
 )
 
 // stubProbeOK is a Prober that always reports success, used to bypass the
@@ -30,7 +30,7 @@ func newProcessor(t *testing.T) (*connection.Processor, *gorm.DB) {
 	t.Helper()
 	gdb := newTestDB(t)
 	cipher := newTestCipher(t)
-	pool := hmminio.NewEmpty()
+	pool := objectstore.NewEmpty()
 	p := connection.NewProcessor(gdb, cipher, pool)
 	p.Probe = stubProbeOK
 	return p, gdb
@@ -62,7 +62,7 @@ func TestProcessor_PersistInTx_EncryptsAndGetMasks(t *testing.T) {
 		TLSSkipVerify         bool    `gorm:"column:tls_skip_verify"`
 	}
 	var raw rawRow
-	require.NoError(t, gdb.Table("minio_connections").
+	require.NoError(t, gdb.Table("connections").
 		Select("access_key_ciphertext, secret_key_ciphertext, custom_ca_pem_ciphertext, tls_skip_verify").
 		Where("singleton_guard = 1").
 		Scan(&raw).Error)
@@ -109,7 +109,7 @@ func TestProcessor_PersistInTx_StoresCustomCA(t *testing.T) {
 		CustomCAPEMCiphertext *string `gorm:"column:custom_ca_pem_ciphertext"`
 	}
 	var raw rawRow
-	require.NoError(t, gdb.Table("minio_connections").
+	require.NoError(t, gdb.Table("connections").
 		Select("custom_ca_pem_ciphertext").
 		Where("singleton_guard = 1").
 		Scan(&raw).Error)
@@ -152,7 +152,7 @@ func TestProcessor_PersistInTx_UpsertsSingleton(t *testing.T) {
 	}))
 
 	var count int64
-	require.NoError(t, gdb.Table("minio_connections").Count(&count).Error)
+	require.NoError(t, gdb.Table("connections").Count(&count).Error)
 	require.EqualValues(t, 1, count, "expected exactly one singleton row")
 
 	view, err := p.Get(ctx)

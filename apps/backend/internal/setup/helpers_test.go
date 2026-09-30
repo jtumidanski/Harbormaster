@@ -14,7 +14,7 @@ import (
 	"github.com/jtumidanski/Harbormaster/internal/connection"
 	"github.com/jtumidanski/Harbormaster/internal/crypto"
 	"github.com/jtumidanski/Harbormaster/internal/db"
-	hmminio "github.com/jtumidanski/Harbormaster/internal/minio"
+	"github.com/jtumidanski/Harbormaster/internal/objectstore"
 	"github.com/jtumidanski/Harbormaster/internal/setup"
 )
 
@@ -69,11 +69,11 @@ func newProcessor(t *testing.T, mcPath string) (*setup.Processor, *gorm.DB) {
 
 // newProcessorWithPool is newProcessor but also returns the shared MinIO
 // pool so tests can assert it is bound after Submit.
-func newProcessorWithPool(t *testing.T, mcPath string) (*setup.Processor, *gorm.DB, *hmminio.Pool) {
+func newProcessorWithPool(t *testing.T, mcPath string) (*setup.Processor, *gorm.DB, *objectstore.Pool) {
 	t.Helper()
 	gdb := newTestDB(t)
 	cipher := newTestCipher(t)
-	pool := hmminio.NewEmpty()
+	pool := objectstore.NewEmpty()
 	connProc := connection.NewProcessor(gdb, cipher, pool)
 	connProc.Probe = stubProbeOK
 	authProc := auth.NewProcessor(gdb)

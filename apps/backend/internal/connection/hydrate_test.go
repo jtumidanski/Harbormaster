@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jtumidanski/Harbormaster/internal/connection"
-	hmminio "github.com/jtumidanski/Harbormaster/internal/minio"
+	"github.com/jtumidanski/Harbormaster/internal/objectstore"
 )
 
 // TestHydratePool_BindsFromPersistedRow verifies that a freshly-booted
@@ -22,7 +22,7 @@ func TestHydratePool_BindsFromPersistedRow(t *testing.T) {
 
 	// Persist a connection row via the normal update path. Its own pool is
 	// irrelevant here — we only need the encrypted row on disk.
-	writer := connection.NewProcessor(gdb, cipher, hmminio.NewEmpty())
+	writer := connection.NewProcessor(gdb, cipher, objectstore.NewEmpty())
 	writer.Probe = stubProbeOK
 	require.NoError(t, writer.Update(ctx, connection.SubmitInput{
 		EndpointURL: "https://minio.lan:9000",
@@ -31,7 +31,7 @@ func TestHydratePool_BindsFromPersistedRow(t *testing.T) {
 	}, "admin", "127.0.0.1"))
 
 	// A second processor with a fresh empty pool simulates a process restart.
-	pool := hmminio.NewEmpty()
+	pool := objectstore.NewEmpty()
 	booted := connection.NewProcessor(gdb, cipher, pool)
 	if _, _, err := pool.Get(ctx); err == nil {
 		t.Fatal("pool must be empty before hydration")
@@ -49,7 +49,7 @@ func TestHydratePool_BindsFromPersistedRow(t *testing.T) {
 func TestHydratePool_NoRowIsNoop(t *testing.T) {
 	gdb := newTestDB(t)
 	cipher := newTestCipher(t)
-	pool := hmminio.NewEmpty()
+	pool := objectstore.NewEmpty()
 	p := connection.NewProcessor(gdb, cipher, pool)
 	ctx := context.Background()
 

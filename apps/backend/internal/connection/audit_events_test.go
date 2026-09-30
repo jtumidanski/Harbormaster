@@ -12,7 +12,7 @@ import (
 	"github.com/jtumidanski/Harbormaster/internal/apierror"
 	"github.com/jtumidanski/Harbormaster/internal/audit"
 	"github.com/jtumidanski/Harbormaster/internal/connection"
-	hmminio "github.com/jtumidanski/Harbormaster/internal/minio"
+	"github.com/jtumidanski/Harbormaster/internal/objectstore"
 )
 
 // newAuditedProcessor builds a connection.Processor wired to a fresh DB,
@@ -22,7 +22,7 @@ func newAuditedProcessor(t *testing.T) (*connection.Processor, *audit.Processor,
 	t.Helper()
 	gdb := newTestDB(t)
 	cipher := newTestCipher(t)
-	pool := hmminio.NewEmpty()
+	pool := objectstore.NewEmpty()
 	p := connection.NewProcessor(gdb, cipher, pool)
 	p.Probe = stubProbeOK
 	a := audit.NewProcessor(gdb, 90*24*time.Hour)

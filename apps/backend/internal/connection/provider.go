@@ -7,11 +7,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// ErrNoConnection is returned by getSingleton when the minio_connections
+// ErrNoConnection is returned by getSingleton when the connections
 // table is empty. Processor.Get maps this onto the appropriate apierror.
 var ErrNoConnection = errors.New("connection: no row persisted")
 
-// getSingleton returns a curried lookup for the lone minio_connections row.
+// getSingleton returns a curried lookup for the lone connections row.
 // The closure expects a context-scoped *gorm.DB from the processor and
 // returns the raw entity; the processor is responsible for decryption via
 // Make so that this layer remains side-effect-free and crypto-agnostic.

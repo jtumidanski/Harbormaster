@@ -118,7 +118,7 @@ func Probe(ctx context.Context, in SubmitInput) (TestResult, *apierror.Error) {
 			out.ListBuckets = map[string]string{"failed": msg}
 			return out, apierror.New(http.StatusUnprocessableEntity,
 				"minio_invalid_credentials",
-				"MinIO rejected the provided keys")
+				"The object store rejected the provided keys")
 		default:
 			out.ListBuckets = map[string]string{"failed": msg}
 			return out, apierror.New(http.StatusUnprocessableEntity,
@@ -144,7 +144,7 @@ func Probe(ctx context.Context, in SubmitInput) (TestResult, *apierror.Error) {
 		if strings.Contains(msg, "AccessDenied") {
 			out.AdminPing = map[string]string{"failed": msg}
 			return out, apierror.New(http.StatusUnprocessableEntity, "minio_not_admin",
-				"Provided MinIO keys lack admin capability")
+				"Provided object store keys lack admin capability")
 		}
 		out.AdminPing = map[string]string{"failed": msg}
 		return out, apierror.New(http.StatusUnprocessableEntity, "minio_unreachable",

@@ -58,7 +58,7 @@ kubectl -n harbormaster logs deploy/harbormaster -f
 ```
 
 Once the pod is ready, open the Ingress hostname in a browser and walk
-through the first-run setup wizard. Wizard answers (MinIO endpoint, root
+through the first-run setup wizard. Wizard answers (object-store endpoint, root
 credentials, operator account) are written to the encrypted SQLite DB on
 the PVC.
 
@@ -70,7 +70,7 @@ Harbormaster v1 keeps several pieces of state in-process:
   replicas would split the bucket per pod, defeating the limit.
 - The **empty-bucket worker** holds a goroutine per active job and
   streams progress to the requesting browser. A second replica would
-  double-issue MinIO delete batches.
+  double-issue object-store delete batches.
 - The **audit-retention sweeper** is a singleton background job. Two
   replicas would do duplicate retention work and potentially race.
 - The **SQLite database** on the PVC uses `ReadWriteOnce` and cannot be
@@ -136,7 +136,7 @@ kubectl -n harbormaster exec -it deploy/harbormaster -- \
 ```
 
 Re-key the encryption key (emergency rotation — destroys ALL stored
-secrets including MinIO credentials; the wizard must be re-run):
+secrets including object-store credentials; the wizard must be re-run):
 
 ```bash
 kubectl -n harbormaster exec -it deploy/harbormaster -- \

@@ -12,7 +12,7 @@
 #                                jobs against million-object buckets
 #   - PVC                      — defined in pvc.yaml; default size 1Gi
 #   - Ingress hostname + TLS   — see ingress.example.yaml
-#   - MinIO endpoint           — configured via the first-run wizard, not
+#   - Object-store endpoint    — configured via the first-run wizard, not
 #                                here. Stored in the encrypted SQLite DB on
 #                                the PVC.
 #

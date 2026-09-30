@@ -10,20 +10,20 @@ import { ObjectStoreStep, type ObjectStoreStepSubmit } from "./ObjectStoreStep";
 import { submitSetup, type SetupPayload } from "./api";
 import type { AdminInput } from "@/lib/schemas/setup";
 
-type Step = "admin" | "minio";
+type Step = "admin" | "objectStore";
 
-function buildPayload(admin: AdminInput, minio: ObjectStoreStepSubmit): SetupPayload {
+function buildPayload(admin: AdminInput, objectStore: ObjectStoreStepSubmit): SetupPayload {
   const customCaPem =
-    minio.values.customCaPem && minio.values.customCaPem.length > 0
-      ? minio.values.customCaPem
+    objectStore.values.customCaPem && objectStore.values.customCaPem.length > 0
+      ? objectStore.values.customCaPem
       : null;
-  const tlsSkipVerify = minio.values.tlsSkipVerify;
+  const tlsSkipVerify = objectStore.values.tlsSkipVerify;
 
-  if (minio.fromMcAlias) {
+  if (objectStore.fromMcAlias) {
     return {
       admin: { username: admin.username, password: admin.password },
       minio: {
-        from_mc_alias: minio.fromMcAlias,
+        from_mc_alias: objectStore.fromMcAlias,
         tls_skip_verify: tlsSkipVerify,
         custom_ca_pem: customCaPem,
       },
@@ -32,9 +32,9 @@ function buildPayload(admin: AdminInput, minio: ObjectStoreStepSubmit): SetupPay
   return {
     admin: { username: admin.username, password: admin.password },
     minio: {
-      endpoint_url: minio.values.endpointUrl,
-      access_key: minio.values.accessKey,
-      secret_key: minio.values.secretKey,
+      endpoint_url: objectStore.values.endpointUrl,
+      access_key: objectStore.values.accessKey,
+      secret_key: objectStore.values.secretKey,
       tls_skip_verify: tlsSkipVerify,
       custom_ca_pem: customCaPem,
     },
@@ -65,10 +65,10 @@ export function SetupWizard() {
 
   function handleAdminSubmit(values: AdminInput) {
     setAdmin(values);
-    setStep("minio");
+    setStep("objectStore");
   }
 
-  function handleMinioSubmit(result: ObjectStoreStepSubmit) {
+  function handleObjectStoreSubmit(result: ObjectStoreStepSubmit) {
     if (!admin) {
       setStep("admin");
       return;
@@ -93,7 +93,7 @@ export function SetupWizard() {
           ) : (
             <ObjectStoreStep
               onBack={() => setStep("admin")}
-              onSubmit={handleMinioSubmit}
+              onSubmit={handleObjectStoreSubmit}
               submitting={mutation.isPending}
             />
           )}

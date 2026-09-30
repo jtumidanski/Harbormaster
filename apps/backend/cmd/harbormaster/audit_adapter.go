@@ -75,7 +75,7 @@ func (a bucketAdminAdapter) BucketUsageInfo(ctx context.Context, bucket string) 
 }
 
 // newBucketClientGetter returns a buckets.ClientGetter bound to the live
-// MinIO pool. Each call resolves the current client pair (Get is O(1)
+// object-store pool. Each call resolves the current client pair (Get is O(1)
 // under the pool's RWMutex), wraps the admin client in the BucketUsageInfo
 // adapter, and hands the pair to buckets.NewClientGetter which adapts the
 // public AdminClient / S3Client interfaces onto the unexported pair the
@@ -154,7 +154,7 @@ func (a objectS3Adapter) ListObjectVersions(ctx context.Context, bucket, key str
 }
 
 // newObjectClientGetter returns an objects.ClientGetter bound to the live
-// MinIO pool. Each call resolves the current client, wraps it in
+// object-store pool. Each call resolves the current client, wraps it in
 // objectS3Adapter so ListObjectsV2 routes through miniogo.Core, and hands
 // the wrapper to objects.NewClientGetter which adapts the exported
 // S3Client interface onto the unexported s3API the processor consumes.
@@ -178,7 +178,7 @@ type lifecycleS3Adapter struct {
 }
 
 // newLifecycleClientGetter returns a lifecycle.ClientGetter bound to the
-// live MinIO pool. Each call resolves the current client and hands it to
+// live object-store pool. Each call resolves the current client and hands it to
 // lifecycle.NewClientGetter which adapts the exported S3Client interface
 // onto the unexported s3API used inside the package.
 func newLifecycleClientGetter(pool *objectstore.Pool) lifecycle.ClientGetter {
@@ -213,7 +213,7 @@ func (a bucketLifecycleAdapter) Create(ctx context.Context, bucket string, days 
 }
 
 // newUsersClientGetter returns a users.ClientGetter bound to the live
-// MinIO pool. The live *madmin.AdminClient satisfies users.AdminClient by
+// object-store pool. The live *madmin.AdminClient satisfies users.AdminClient by
 // structural typing, so no per-method adapter is needed.
 func newUsersClientGetter(pool *objectstore.Pool) users.ClientGetter {
 	return users.NewClientGetter(func(ctx context.Context) (users.AdminClient, error) {
@@ -226,7 +226,7 @@ func newUsersClientGetter(pool *objectstore.Pool) users.ClientGetter {
 }
 
 // newSAClientGetter returns a users.SAClientGetter bound to the live
-// MinIO pool. As above, the live *madmin.AdminClient satisfies
+// object-store pool. As above, the live *madmin.AdminClient satisfies
 // users.SAAdminClient directly.
 func newSAClientGetter(pool *objectstore.Pool) users.SAClientGetter {
 	return users.NewSAClientGetter(func(ctx context.Context) (users.SAAdminClient, error) {
@@ -239,7 +239,7 @@ func newSAClientGetter(pool *objectstore.Pool) users.SAClientGetter {
 }
 
 // newPoliciesClientGetter returns a policies.ClientGetter bound to the live
-// MinIO pool. The live *madmin.AdminClient satisfies policies.AdminClient by
+// object-store pool. The live *madmin.AdminClient satisfies policies.AdminClient by
 // structural typing, so no per-method adapter is needed.
 func newPoliciesClientGetter(pool *objectstore.Pool) policies.ClientGetter {
 	return policies.NewClientGetter(func(ctx context.Context) (policies.AdminClient, error) {
@@ -262,7 +262,7 @@ var (
 )
 
 // dashboardPoolAdapter satisfies dashboard.PoolGetter by translating the
-// live MinIO pool's madmin.ServerInfo response into the small dashboard
+// live object-store pool's madmin.ServerInfo response into the small dashboard
 // view types. It owns the policy decisions for what counts as a
 // "warning" so the dashboard processor stays storage-agnostic.
 type dashboardPoolAdapter struct {
@@ -367,7 +367,7 @@ func (a dashboardPoolAdapter) ServerInfo(ctx context.Context) (dashboard.ServerI
 }
 
 // newDashboardPoolGetter returns a dashboard.PoolGetter bound to the
-// live MinIO pool. The adapter type owns the per-call ServerInfo RPC and
+// live object-store pool. The adapter type owns the per-call ServerInfo RPC and
 // the warning-policy translation; the dashboard processor only sees the
 // small dashboard view types.
 func newDashboardPoolGetter(pool *objectstore.Pool) dashboard.PoolGetter {

@@ -1,7 +1,7 @@
 # Harbormaster
 
-Harbormaster is a self-hosted MinIO admin UI for homelab and small-cluster
-operators.
+Harbormaster is a self-hosted admin UI for S3 object stores (MinIO, RustFS)
+for homelab and small-cluster operators.
 
 - `apps/backend` — a single Go module (`cmd/`, `internal/`, `migrations/`,
   `Makefile`, `.golangci.yml`). There is no `go.work`; every Go change is

@@ -67,7 +67,7 @@ func (p *Pool) Get(ctx context.Context) (*madmin.AdminClient, *miniogo.Client, e
 }
 
 // ErrNotInitialized is returned by Get when the pool has no active connection.
-var ErrNotInitialized = errors.New("minio pool: connection not yet configured")
+var ErrNotInitialized = errors.New("object store pool: connection not yet configured")
 
 // EndpointHost returns the active connection's host:port, or "" if the
 // pool has not been Rebuild'd yet. Used by adapters that need a label for

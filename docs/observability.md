@@ -17,7 +17,7 @@ The signal surface is four things:
 | Structured logs | `apps/backend/internal/observability/log` (zerolog) | the container's stderr |
 | One line per HTTP request | `apps/backend/internal/observability/middleware.go` | same stream, `msg=http_request` |
 | Liveness / readiness | `apps/backend/internal/server/health.go` | `GET /healthz`, `GET /readyz` |
-| MinIO cluster metrics | `apps/backend/internal/metrics` | the local SQLite DB, served at `GET /api/v1/metrics` |
+| Object store cluster metrics | `apps/backend/internal/metrics` | the local SQLite DB, served at `GET /api/v1/metrics` |
 
 For the configuration knobs themselves,
 [`docs/operator/configuration.md`](operator/configuration.md) is the reference
@@ -104,21 +104,21 @@ output is its most expensive instance.
 ### Reading `/readyz` correctly
 
 `GET /readyz` reports **only whether the local database answers a ping.** It is
-deliberately *not* coupled to MinIO reachability: readiness gates Service
-membership, so wiring MinIO into it would let a MinIO outage withdraw the pod
-and 503 every route — including the login page an operator needs in order to
-fix a bad connection. See the comment on `dbReadiness` in
+deliberately *not* coupled to object-store reachability: readiness gates Service
+membership, so wiring the object store into it would let an object-store outage
+withdraw the pod and 503 every route — including the login page an operator
+needs in order to fix a bad connection. See the comment on `dbReadiness` in
 `apps/backend/cmd/harbormaster/serve.go`.
 
 The diagnostic consequences:
 
 - `/readyz` returning 503 with `{"error":{"code":"not_ready", ...}}` means the
-  **local DB**, not MinIO. Look at the data volume and the DB file.
-- `/readyz` returning 200 while every bucket listing fails means **MinIO**.
-  Look for `connection: failed to hydrate minio pool at boot` in the logs — a
-  bad or undecryptable stored connection is logged as a warning and is
-  deliberately non-fatal, so the process starts healthy and only the MinIO-backed
-  routes fail.
+  **local DB**, not the object store. Look at the data volume and the DB file.
+- `/readyz` returning 200 while every bucket listing fails means **the object
+  store**. Look for `connection: failed to hydrate object-store pool at boot`
+  in the logs — a bad or undecryptable stored connection is logged as a
+  warning and is deliberately non-fatal, so the process starts healthy and
+  only the object-store-backed routes fail.
 - `/healthz` is unconditional. It proves the process is serving HTTP and
   nothing else. It cannot tell you anything about state.
 
@@ -228,15 +228,15 @@ change what a chart means:
   empty; polling much more often just discards samples at downsample time.
 - **Rates divide by the step, not by the actual sample spacing**, and a gap in
   the samples resets rate continuity rather than interpolating across it. A
-  restart, or a stretch where MinIO was unreachable, shows as a hole — not as
-  a spike on either side of one.
-- **A negative delta is clamped to zero**, because it means the MinIO counter
-  reset. A MinIO restart therefore reads as a flat zero interval, not as a
-  negative rate. Do not read that zero as "no traffic."
+  restart, or a stretch where the object store was unreachable, shows as a
+  hole — not as a spike on either side of one.
+- **A negative delta is clamped to zero**, because it means the object-store
+  counter reset. An object-store restart therefore reads as a flat zero
+  interval, not as a negative rate. Do not read that zero as "no traffic."
 
 `Collected: false` in the response means no samples matched the window at all
-— usually metrics have simply not been polled yet, or MinIO was never
-reachable. It is not an error.
+— usually metrics have simply not been polled yet, or the object store was
+never reachable. It is not an error.
 
 ### Three knobs that are read but not wired
 

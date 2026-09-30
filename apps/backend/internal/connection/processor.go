@@ -37,11 +37,11 @@ func sanitizeEndpointForAudit(raw string) string {
 type Prober func(ctx context.Context, in SubmitInput) (TestResult, *apierror.Error)
 
 // Processor coordinates reads and writes for the connections
-// singleton, the validation probe, and the live MinIO client pool.
+// singleton, the validation probe, and the live object-store client pool.
 //
 // Wiring (set in cmd/harbormaster): DB is the migrated *gorm.DB; Cipher is
 // the AES-256-GCM cipher constructed from the master key; Pool is the
-// shared *minio.Pool that downstream domains read from. The Probe field
+// shared *objectstore.Pool that downstream domains read from. The Probe field
 // defaults to the package-level Probe and may be overridden for tests.
 type Processor struct {
 	DB     *gorm.DB
@@ -104,7 +104,7 @@ func (p *Processor) PersistInTx(ctx context.Context, tx *gorm.DB, in SubmitInput
 
 // Update is the public mutation used by PUT /api/v1/connection. It runs
 // Validate (probe), then writes in a single transaction, then rebuilds the
-// live MinIO client pool. Pool.Rebuild happens *after* commit so a probe
+// live object-store client pool. Pool.Rebuild happens *after* commit so a probe
 // success followed by a write failure does not leave the live pool pointing
 // at credentials that were never persisted.
 //
@@ -150,7 +150,7 @@ func (p *Processor) Update(ctx context.Context, in SubmitInput, actor, sourceIP 
 		// on-disk record valid but the in-process pool stale; report as
 		// an internal error so the operator retries. The next process
 		// boot will rebuild from the persisted row.
-		return failAudit(apierror.Internal("failed to rebuild minio client pool: " + err.Error()))
+		return failAudit(apierror.Internal("failed to rebuild object store client pool: " + err.Error()))
 	}
 	p.recordAudit(ctx, audit.Event{
 		Actor:          actor,
@@ -164,7 +164,7 @@ func (p *Processor) Update(ctx context.Context, in SubmitInput, actor, sourceIP 
 }
 
 // poolCredsFromSubmit maps a SubmitInput's plaintext fields onto the
-// minio.Pool credential struct.
+// objectstore.Pool credential struct.
 func poolCredsFromSubmit(in SubmitInput) objectstore.Credentials {
 	skipVerify := false
 	if in.TLSSkipVerify != nil {
@@ -179,7 +179,7 @@ func poolCredsFromSubmit(in SubmitInput) objectstore.Credentials {
 	}
 }
 
-// BindPool rebuilds the live MinIO client pool from in's plaintext
+// BindPool rebuilds the live object-store client pool from in's plaintext
 // credentials. It is exposed so the first-run setup bootstrap can bind the
 // pool in-process immediately after persisting the connection — mirroring the
 // post-commit Rebuild that Update performs. Without this, the freshly-created

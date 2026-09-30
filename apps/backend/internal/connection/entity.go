@@ -37,7 +37,7 @@ type plainCreds struct {
 
 // Make decrypts e using cipher and returns (Connection, plainCreds). The
 // Connection is the safe read view (masked access key, *Present flags);
-// plainCreds holds the values needed to rebuild the live MinIO client pair.
+// plainCreds holds the values needed to rebuild the live object-store client pair.
 //
 // Errors are returned as soon as any column fails to decrypt — partial
 // returns would mask a key-mismatch from the caller.

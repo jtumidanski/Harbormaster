@@ -25,7 +25,7 @@ func main() {
 func newRootCmd(out io.Writer) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "harbormaster",
-		Short: "Self-hosted MinIO admin UI",
+		Short: "Self-hosted admin UI for S3 object stores (MinIO, RustFS)",
 	}
 	root.SetOut(out)
 	root.AddCommand(

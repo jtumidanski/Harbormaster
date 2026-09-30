@@ -103,12 +103,12 @@ func runServe(ctx context.Context, _ io.Writer) error {
 	connProc := connection.NewProcessor(gdb, cipher, pool)
 	connProc.Audit = auditProc
 	// The in-memory pool starts empty on every boot. Rebuild it from the
-	// persisted connection (if setup has run) so a restart serves MinIO-backed
+	// persisted connection (if setup has run) so a restart serves object-store-backed
 	// requests without waiting for a PUT /connection. A failure here is logged,
-	// not fatal: readiness no longer depends on MinIO, so a bad/undecryptable
+	// not fatal: readiness no longer depends on the object store, so a bad/undecryptable
 	// connection must not brick the server — the operator can re-configure it.
 	if err := connProc.HydratePool(ctx); err != nil {
-		logger.Warn().Err(err).Msg("connection: failed to hydrate minio pool at boot; MinIO features unavailable until reconfigured")
+		logger.Warn().Err(err).Msg("connection: failed to hydrate object-store pool at boot; object-store features unavailable until reconfigured")
 	}
 	setupProc := &setup.Processor{
 		DB:       gdb,
@@ -262,9 +262,9 @@ func runServe(ctx context.Context, _ io.Writer) error {
 	}
 
 	// Readiness reflects only this instance's ability to serve HTTP and reach
-	// its own database — deliberately NOT MinIO. A MinIO outage must never
-	// pull the pod from the Service and lock operators out of the login page;
-	// MinIO health is surfaced on the dashboard instead.
+	// its own database — deliberately NOT the object store. An object-store
+	// outage must never pull the pod from the Service and lock operators out
+	// of the login page; object-store health is surfaced on the dashboard instead.
 	ready := dbReadiness(sdb)
 
 	// TODO(T2.17): add E2E test once setup.Probe is stubbable.
@@ -279,8 +279,8 @@ func runServe(ctx context.Context, _ io.Writer) error {
 }
 
 // dbReadiness returns a server.Deps.Ready snapshot that reports success iff
-// the local database answers a ping. It intentionally takes no MinIO pool:
-// readiness gates Service membership, and coupling it to MinIO reachability
+// the local database answers a ping. It intentionally takes no object-store pool:
+// readiness gates Service membership, and coupling it to object-store reachability
 // would let a downstream outage withdraw the pod and 503 every route —
 // including the login page used to fix a bad connection.
 func dbReadiness(sdb *sql.DB) func(context.Context) (bool, string) {

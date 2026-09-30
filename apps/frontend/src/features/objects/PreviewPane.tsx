@@ -53,7 +53,7 @@ const TEXT_EXTENSIONS = new Set([
   "xml",
 ]);
 
-// MinIO often stores objects with an empty or octet-stream content type, so we
+// Object stores often report an empty or octet-stream content type, so we
 // fall back to the file extension to recognise images/PDFs that would otherwise
 // be treated as un-previewable binaries.
 const IMAGE_EXTENSIONS = new Set([
@@ -98,7 +98,7 @@ const KIND_LABELS: Record<PreviewKind, string> = {
   binary: "Binary file",
 };
 
-// MinIO frequently reports an empty or generic octet-stream content type even
+// Object stores frequently report an empty or generic octet-stream content type even
 // for files we render fine. Rather than the unhelpful "unknown content type",
 // show the real MIME type when it's meaningful, otherwise a label for the kind
 // we actually detected (and will render).

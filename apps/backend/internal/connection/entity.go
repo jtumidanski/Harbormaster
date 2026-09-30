@@ -7,28 +7,28 @@ import (
 	"github.com/jtumidanski/Harbormaster/internal/crypto"
 )
 
-// connectionEntity is the GORM persistence struct for minio_connections.
+// connectionEntity is the GORM persistence struct for connections.
 // Ciphertext columns hold base64(nonce || ct || tag) envelopes produced by
 // crypto.Cipher.Encrypt. They never leave the package as plaintext except
 // via the in-process plainCreds value built from Make.
 type connectionEntity struct {
-	ID                     uint    `gorm:"column:id;primaryKey;autoIncrement"`
-	SingletonGuard         int     `gorm:"column:singleton_guard;not null;default:1;uniqueIndex"`
-	EndpointURL            string  `gorm:"column:endpoint_url;not null"`
-	TLSSkipVerify          bool    `gorm:"column:tls_skip_verify;not null;default:false"`
-	AccessKeyCiphertext    string  `gorm:"column:access_key_ciphertext;not null"`
-	SecretKeyCiphertext    string  `gorm:"column:secret_key_ciphertext;not null"`
-	CustomCAPEMCiphertext  *string `gorm:"column:custom_ca_pem_ciphertext"`
-	CreatedAt              string  `gorm:"column:created_at;not null"`
-	UpdatedAt              string  `gorm:"column:updated_at;not null"`
+	ID                    uint    `gorm:"column:id;primaryKey;autoIncrement"`
+	SingletonGuard        int     `gorm:"column:singleton_guard;not null;default:1;uniqueIndex"`
+	EndpointURL           string  `gorm:"column:endpoint_url;not null"`
+	TLSSkipVerify         bool    `gorm:"column:tls_skip_verify;not null;default:false"`
+	AccessKeyCiphertext   string  `gorm:"column:access_key_ciphertext;not null"`
+	SecretKeyCiphertext   string  `gorm:"column:secret_key_ciphertext;not null"`
+	CustomCAPEMCiphertext *string `gorm:"column:custom_ca_pem_ciphertext"`
+	CreatedAt             string  `gorm:"column:created_at;not null"`
+	UpdatedAt             string  `gorm:"column:updated_at;not null"`
 }
 
 // TableName satisfies gorm.Tabler.
-func (connectionEntity) TableName() string { return "minio_connections" }
+func (connectionEntity) TableName() string { return "connections" }
 
 // plainCreds carries the decrypted credential trio alongside the masked
 // view. It is package-private; only Processor.Update hands the values to
-// minio.Pool.Rebuild before letting them fall out of scope.
+// objectstore.Pool.Rebuild before letting them fall out of scope.
 type plainCreds struct {
 	AccessKey       string
 	SecretKey       string

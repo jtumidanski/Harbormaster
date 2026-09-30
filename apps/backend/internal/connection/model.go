@@ -5,20 +5,20 @@
 // The plaintext access key, secret key, and custom CA PEM are encrypted at
 // rest via internal/crypto.Cipher and never leave the package as anything
 // but a masked / *Present view. The cached MinIO client pair in
-// internal/minio.Pool is rebuilt after every successful Update.
+// internal/objectstore.Pool is rebuilt after every successful Update.
 package connection
 
-// Connection is the immutable read view of the singleton minio_connections
+// Connection is the immutable read view of the singleton connections
 // row. Plaintext secrets are deliberately absent: GET /api/v1/connection
 // returns only a masked access key prefix and presence flags for the
 // secret key and the optional custom CA PEM.
 type Connection struct {
-	id                  uint
-	endpointURL         string
-	tlsSkipVerify       bool
-	accessKeyMasked     string
-	secretKeyPresent    bool
-	customCAPEMPresent  bool
+	id                 uint
+	endpointURL        string
+	tlsSkipVerify      bool
+	accessKeyMasked    string
+	secretKeyPresent   bool
+	customCAPEMPresent bool
 }
 
 // ID returns the database primary key. Always 1 in v1 (singleton).

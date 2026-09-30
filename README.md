@@ -1,9 +1,9 @@
 # Harbormaster
 
-> Self-hosted MinIO admin UI for homelab and small-cluster operators.
+> Self-hosted admin UI for S3 object stores (MinIO, RustFS).
 
 Harbormaster is a single-binary administrative web app for a **single**
-MinIO deployment. It serves a REST/JSON:API backend and an embedded
+object store deployment. It serves a REST/JSON:API backend and an embedded
 React/TypeScript SPA from one Go process, stores its state in an
 embedded SQLite database, and ships as a multi-arch
 (`linux/amd64`, `linux/arm64`) container image on GHCR. The goal is to
@@ -44,7 +44,7 @@ open http://localhost:8080
 docker compose -f deploy/docker/docker-compose.yml logs -f harbormaster
 ```
 
-For production: point at your own MinIO cluster (drop the
+For production: point at your own object store (drop the
 `--profile with-minio` flag and the `minio:` service from the compose
 file), and override sensitive defaults via env vars.
 
@@ -104,10 +104,10 @@ Sources, highest priority first:
 | `HARBORMASTER_TRUSTED_PROXIES`            | (empty)                          | CSV of CIDRs. Set to your reverse proxy's networks to derive client IPs from `X-Forwarded-For`; empty means forwarding headers are ignored. |
 | `HARBORMASTER_UPLOAD_MAX_BYTES`           | `104857600` (100 MiB)            | Hard cap on per-request upload size.                                                          |
 | `HARBORMASTER_SHARE_LINK_MAX_TTL`         | `168h` (7 days)                  | Upper bound an operator may pick for object share-link expiry.                                |
-| `HARBORMASTER_DOWNLOAD_PROXY_MODE`        | `proxy`                          | `proxy` streams via Harbormaster; `direct` returns a presigned MinIO URL (MinIO must be reachable from the browser). |
+| `HARBORMASTER_DOWNLOAD_PROXY_MODE`        | `proxy`                          | `proxy` streams via Harbormaster; `direct` returns a presigned object store URL (the object store must be reachable from the browser). |
 | `HARBORMASTER_MC_CONFIG_PATH`             | `/root/.mc/config.json`          | Read **only** during first-run setup. Bind-mount your host `~/.mc/config.json` here to opt in (see below). |
 | `HARBORMASTER_TLS_CERT_FILE` / `_KEY_FILE`| (empty)                          | If both set, Harbormaster serves HTTPS directly.                                              |
-| `HARBORMASTER_ENCRYPTION_KEY_FILE`        | `${DATA_DIR}/encryption.key`     | 32-byte key file used to encrypt sensitive columns (MinIO secret, custom CA). Auto-generated `0600` on first start if absent. |
+| `HARBORMASTER_ENCRYPTION_KEY_FILE`        | `${DATA_DIR}/encryption.key`     | 32-byte key file used to encrypt sensitive columns (object store secret, custom CA). Auto-generated `0600` on first start if absent. |
 | `HARBORMASTER_METRICS_ENABLED`            | `false`                          | Enables the Prometheus listener.                                                              |
 | `HARBORMASTER_METRICS_LISTEN_ADDR`        | `:9090`                          | Bind address for the metrics listener.                                                        |
 | `HARBORMASTER_OTEL_EXPORTER_OTLP_ENDPOINT`| (empty)                          | If set, the OTLP-HTTP trace exporter is enabled.                                              |
@@ -119,7 +119,7 @@ lives in [`docs/operator/configuration.md`](docs/operator/configuration.md).
 
 ## Security model
 
-- **Encryption at rest.** MinIO credentials and (optional) custom CA
+- **Encryption at rest.** Object store credentials and (optional) custom CA
   PEMs are encrypted with AES-256-GCM and stored in SQLite. The 32-byte
   key file (`encryption.key`) lives in `DATA_DIR` with `0600` perms; its
   SHA-256 fingerprint is recorded in `app_settings` and re-checked on
@@ -149,7 +149,7 @@ Full threat-model and operational guidance:
 ## Importing from `mc` config
 
 The first-run setup wizard can read your existing `~/.mc/config.json`
-to pre-fill the MinIO connection form (endpoint, access key, secret
+to pre-fill the object store connection form (endpoint, access key, secret
 key, TLS flags). It is **opt-in** and **never used after setup**.
 
 To enable, bind-mount your host config read-only:
@@ -182,9 +182,9 @@ kubectl -n harbormaster exec -it deploy/harbormaster -- \
 
 ### Rotate / recover the encryption key
 
-`reset-encryption --confirm` destroys all encrypted columns (MinIO
+`reset-encryption --confirm` destroys all encrypted columns (object store
 credentials, custom CA). The admin account and audit history are
-**preserved**. You'll need to re-run the MinIO connection wizard
+**preserved**. You'll need to re-run the object store connection wizard
 afterwards.
 
 ```bash
@@ -215,7 +215,7 @@ can `docker pull`. This only needs to happen once.
 
 ### Goals
 
-- Intuitive web UI for the common MinIO workflows (bucket CRUD; object
+- Intuitive web UI for the common object store workflows (bucket CRUD; object
   browse/upload/download; user + access-key management; template-driven
   policies; simple lifecycle rules) so an operator can avoid routine
   `mc` usage.

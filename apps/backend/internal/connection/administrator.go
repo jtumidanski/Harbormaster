@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// upsertSingleton writes the singleton minio_connections row. If a row
+// upsertSingleton writes the singleton connections row. If a row
 // already exists (singleton_guard = 1), every mutable column is updated
 // in place and CreatedAt is preserved from the prior row; otherwise the
 // row in e (CreatedAt == UpdatedAt) is inserted as-is.

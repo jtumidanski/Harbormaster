@@ -11,7 +11,7 @@ export function fetchMcAliases() {
   return api.get<{ aliases: McAlias[] }>("/api/v1/setup/mc-aliases");
 }
 
-export type SetupExplicitMinIO = {
+export type SetupExplicitObjectStore = {
   endpoint_url: string;
   access_key: string;
   secret_key: string;
@@ -19,7 +19,7 @@ export type SetupExplicitMinIO = {
   custom_ca_pem: string | null;
 };
 
-export type SetupAliasMinIO = {
+export type SetupAliasObjectStore = {
   from_mc_alias: string;
   tls_skip_verify: boolean;
   custom_ca_pem: string | null;
@@ -27,7 +27,8 @@ export type SetupAliasMinIO = {
 
 export type SetupPayload = {
   admin: { username: string; password: string };
-  minio: SetupExplicitMinIO | SetupAliasMinIO;
+  // wire name kept for the backend contract
+  minio: SetupExplicitObjectStore | SetupAliasObjectStore;
 };
 
 export function submitSetup(payload: SetupPayload) {

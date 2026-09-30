@@ -68,8 +68,8 @@ import (
 	"github.com/jtumidanski/Harbormaster/internal/db"
 	"github.com/jtumidanski/Harbormaster/internal/jobs/bucketempty"
 	"github.com/jtumidanski/Harbormaster/internal/lifecycle"
-	hmminio "github.com/jtumidanski/Harbormaster/internal/minio"
 	"github.com/jtumidanski/Harbormaster/internal/objects"
+	"github.com/jtumidanski/Harbormaster/internal/objectstore"
 	"github.com/jtumidanski/Harbormaster/internal/policies"
 	"github.com/jtumidanski/Harbormaster/internal/users"
 )
@@ -153,7 +153,7 @@ func rustfsImageFor() string {
 // processors a test needs. Each *_integration_test.go file calls setup()
 // and uses the returned env to drive a happy-path scenario.
 type TestEnv struct {
-	Pool *hmminio.Pool
+	Pool *objectstore.Pool
 
 	// MC and Adm are exposed for the rare test that needs to assert
 	// MinIO-side state directly (e.g. confirming an object was actually
@@ -231,7 +231,7 @@ func startMinIOContainer(ctx context.Context, t *testing.T, image string) minioS
 		t.Fatalf("get MinIO connection string: %v", err)
 	}
 	// container.ConnectionString returns "host:port" on this module
-	// version; normalise to a full http URL so hmminio.Pool's URL
+	// version; normalise to a full http URL so objectstore.Pool's URL
 	// parser accepts it.
 	rawURL := normaliseEndpoint(t, endpoint)
 	return minioServer{EndpointURL: rawURL, AccessKey: container.Username, SecretKey: container.Password}
@@ -454,8 +454,8 @@ func setup(t *testing.T) (*TestEnv, context.Context) {
 
 	srv := startTarget(ctx, t)
 
-	pool := hmminio.NewEmpty()
-	if err := pool.Rebuild(hmminio.Credentials{
+	pool := objectstore.NewEmpty()
+	if err := pool.Rebuild(objectstore.Credentials{
 		EndpointURL: srv.EndpointURL,
 		AccessKey:   srv.AccessKey,
 		SecretKey:   srv.SecretKey,
@@ -546,7 +546,7 @@ func setup(t *testing.T) (*TestEnv, context.Context) {
 // newUsersClientGetter mirrors cmd/harbormaster.newUsersClientGetter:
 // the live *madmin.AdminClient satisfies users.AdminClient by structural
 // typing, so no per-method adapter is needed.
-func newUsersClientGetter(pool *hmminio.Pool) users.ClientGetter {
+func newUsersClientGetter(pool *objectstore.Pool) users.ClientGetter {
 	return users.NewClientGetter(func(ctx context.Context) (users.AdminClient, error) {
 		madm, _, err := pool.Get(ctx)
 		if err != nil {
@@ -557,7 +557,7 @@ func newUsersClientGetter(pool *hmminio.Pool) users.ClientGetter {
 }
 
 // newSAClientGetter mirrors cmd/harbormaster.newSAClientGetter.
-func newSAClientGetter(pool *hmminio.Pool) users.SAClientGetter {
+func newSAClientGetter(pool *objectstore.Pool) users.SAClientGetter {
 	return users.NewSAClientGetter(func(ctx context.Context) (users.SAAdminClient, error) {
 		madm, _, err := pool.Get(ctx)
 		if err != nil {
@@ -598,16 +598,16 @@ type integrationBucketAdmin struct {
 	*madmin.AdminClient
 }
 
-// BucketUsageInfo delegates to hmminio.BucketUsage, which tolerates both
+// BucketUsageInfo delegates to objectstore.BucketUsage, which tolerates both
 // MinIO's camelCase and RustFS's snake_case census. A missing bucket surfaces
 // as the zero value plus nil error so the processor's tolerant usage-fetch
 // path treats it as "scanner has not seen this bucket yet".
 func (a integrationBucketAdmin) BucketUsageInfo(ctx context.Context, bucket string) (madmin.BucketUsageInfo, error) {
-	return hmminio.BucketUsage(ctx, a.AdminClient, bucket)
+	return objectstore.BucketUsage(ctx, a.AdminClient, bucket)
 }
 
 // newBucketClientGetter mirrors cmd/harbormaster.newBucketClientGetter.
-func newBucketClientGetter(pool *hmminio.Pool) buckets.ClientGetter {
+func newBucketClientGetter(pool *objectstore.Pool) buckets.ClientGetter {
 	return buckets.NewClientGetter(func(ctx context.Context) (buckets.AdminClient, buckets.S3Client, error) {
 		madm, mc, err := pool.Get(ctx)
 		if err != nil {
@@ -664,7 +664,7 @@ func (a integrationObjectS3) ListObjectVersions(ctx context.Context, bucket, key
 }
 
 // newObjectClientGetter mirrors cmd/harbormaster.newObjectClientGetter.
-func newObjectClientGetter(pool *hmminio.Pool) objects.ClientGetter {
+func newObjectClientGetter(pool *objectstore.Pool) objects.ClientGetter {
 	return objects.NewClientGetter(func(ctx context.Context) (objects.S3Client, error) {
 		_, mc, err := pool.Get(ctx)
 		if err != nil {
@@ -680,7 +680,7 @@ type integrationLifecycleS3 struct {
 }
 
 // newLifecycleClientGetter mirrors cmd/harbormaster.newLifecycleClientGetter.
-func newLifecycleClientGetter(pool *hmminio.Pool) lifecycle.ClientGetter {
+func newLifecycleClientGetter(pool *objectstore.Pool) lifecycle.ClientGetter {
 	return lifecycle.NewClientGetter(func(ctx context.Context) (lifecycle.S3Client, error) {
 		_, mc, err := pool.Get(ctx)
 		if err != nil {

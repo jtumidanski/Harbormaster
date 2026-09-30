@@ -57,8 +57,8 @@ export function DeleteUserDialog({ open, onOpenChange, accessKey }: DeleteUserDi
         <DialogHeader>
           <DialogTitle>Delete user</DialogTitle>
           <DialogDescription>
-            This permanently removes the user from MinIO. Service accounts owned by this user will
-            also be revoked. This cannot be undone.
+            This permanently removes the user from the object store. Service accounts owned by this
+            user will also be revoked. This cannot be undone.
           </DialogDescription>
         </DialogHeader>
         <form

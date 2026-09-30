@@ -36,7 +36,7 @@ type Result struct {
 	ErrorMessage string
 }
 
-// PoolGetter is the subset of internal/minio.Pool the service uses. Keeping
+// PoolGetter is the subset of internal/objectstore.Pool the service uses. Keeping
 // it as an interface lets tests inject a stub without importing the real
 // pool package.
 type PoolGetter interface {

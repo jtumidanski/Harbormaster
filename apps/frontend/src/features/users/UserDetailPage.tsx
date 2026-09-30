@@ -168,7 +168,7 @@ export function UserDetailPage() {
         <CardContent>
           {user.other_policies.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No other MinIO policies attached outside of Harbormaster templates.
+              No other object store policies attached outside of Harbormaster templates.
             </p>
           ) : (
             <>

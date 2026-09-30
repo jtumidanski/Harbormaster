@@ -14,8 +14,8 @@ import (
 	"github.com/jtumidanski/Harbormaster/internal/jobs/bucketempty"
 	"github.com/jtumidanski/Harbormaster/internal/lifecycle"
 	"github.com/jtumidanski/Harbormaster/internal/metrics"
-	hmminio "github.com/jtumidanski/Harbormaster/internal/minio"
 	"github.com/jtumidanski/Harbormaster/internal/objects"
+	"github.com/jtumidanski/Harbormaster/internal/objectstore"
 	"github.com/jtumidanski/Harbormaster/internal/policies"
 	"github.com/jtumidanski/Harbormaster/internal/users"
 )
@@ -66,12 +66,12 @@ type bucketAdminAdapter struct {
 	*madmin.AdminClient
 }
 
-// BucketUsageInfo delegates to hmminio.BucketUsage, which tolerates both
+// BucketUsageInfo delegates to objectstore.BucketUsage, which tolerates both
 // MinIO's camelCase and RustFS's snake_case census. A missing bucket surfaces
 // as the zero value plus nil error so the processor's tolerant usage-fetch
 // path treats it as "scanner has not seen this bucket yet".
 func (a bucketAdminAdapter) BucketUsageInfo(ctx context.Context, bucket string) (madmin.BucketUsageInfo, error) {
-	return hmminio.BucketUsage(ctx, a.AdminClient, bucket)
+	return objectstore.BucketUsage(ctx, a.AdminClient, bucket)
 }
 
 // newBucketClientGetter returns a buckets.ClientGetter bound to the live
@@ -80,7 +80,7 @@ func (a bucketAdminAdapter) BucketUsageInfo(ctx context.Context, bucket string) 
 // adapter, and hands the pair to buckets.NewClientGetter which adapts the
 // public AdminClient / S3Client interfaces onto the unexported pair the
 // processor consumes.
-func newBucketClientGetter(pool *hmminio.Pool) buckets.ClientGetter {
+func newBucketClientGetter(pool *objectstore.Pool) buckets.ClientGetter {
 	return buckets.NewClientGetter(func(ctx context.Context) (buckets.AdminClient, buckets.S3Client, error) {
 		madm, mc, err := pool.Get(ctx)
 		if err != nil {
@@ -158,7 +158,7 @@ func (a objectS3Adapter) ListObjectVersions(ctx context.Context, bucket, key str
 // objectS3Adapter so ListObjectsV2 routes through miniogo.Core, and hands
 // the wrapper to objects.NewClientGetter which adapts the exported
 // S3Client interface onto the unexported s3API the processor consumes.
-func newObjectClientGetter(pool *hmminio.Pool) objects.ClientGetter {
+func newObjectClientGetter(pool *objectstore.Pool) objects.ClientGetter {
 	return objects.NewClientGetter(func(ctx context.Context) (objects.S3Client, error) {
 		_, mc, err := pool.Get(ctx)
 		if err != nil {
@@ -181,7 +181,7 @@ type lifecycleS3Adapter struct {
 // live MinIO pool. Each call resolves the current client and hands it to
 // lifecycle.NewClientGetter which adapts the exported S3Client interface
 // onto the unexported s3API used inside the package.
-func newLifecycleClientGetter(pool *hmminio.Pool) lifecycle.ClientGetter {
+func newLifecycleClientGetter(pool *objectstore.Pool) lifecycle.ClientGetter {
 	return lifecycle.NewClientGetter(func(ctx context.Context) (lifecycle.S3Client, error) {
 		_, mc, err := pool.Get(ctx)
 		if err != nil {
@@ -215,7 +215,7 @@ func (a bucketLifecycleAdapter) Create(ctx context.Context, bucket string, days 
 // newUsersClientGetter returns a users.ClientGetter bound to the live
 // MinIO pool. The live *madmin.AdminClient satisfies users.AdminClient by
 // structural typing, so no per-method adapter is needed.
-func newUsersClientGetter(pool *hmminio.Pool) users.ClientGetter {
+func newUsersClientGetter(pool *objectstore.Pool) users.ClientGetter {
 	return users.NewClientGetter(func(ctx context.Context) (users.AdminClient, error) {
 		madm, _, err := pool.Get(ctx)
 		if err != nil {
@@ -228,7 +228,7 @@ func newUsersClientGetter(pool *hmminio.Pool) users.ClientGetter {
 // newSAClientGetter returns a users.SAClientGetter bound to the live
 // MinIO pool. As above, the live *madmin.AdminClient satisfies
 // users.SAAdminClient directly.
-func newSAClientGetter(pool *hmminio.Pool) users.SAClientGetter {
+func newSAClientGetter(pool *objectstore.Pool) users.SAClientGetter {
 	return users.NewSAClientGetter(func(ctx context.Context) (users.SAAdminClient, error) {
 		madm, _, err := pool.Get(ctx)
 		if err != nil {
@@ -241,7 +241,7 @@ func newSAClientGetter(pool *hmminio.Pool) users.SAClientGetter {
 // newPoliciesClientGetter returns a policies.ClientGetter bound to the live
 // MinIO pool. The live *madmin.AdminClient satisfies policies.AdminClient by
 // structural typing, so no per-method adapter is needed.
-func newPoliciesClientGetter(pool *hmminio.Pool) policies.ClientGetter {
+func newPoliciesClientGetter(pool *objectstore.Pool) policies.ClientGetter {
 	return policies.NewClientGetter(func(ctx context.Context) (policies.AdminClient, error) {
 		madm, _, err := pool.Get(ctx)
 		if err != nil {
@@ -266,7 +266,7 @@ var (
 // view types. It owns the policy decisions for what counts as a
 // "warning" so the dashboard processor stays storage-agnostic.
 type dashboardPoolAdapter struct {
-	pool *hmminio.Pool
+	pool *objectstore.Pool
 }
 
 // ServerInfo issues a single madmin.ServerInfo RPC, then translates the
@@ -370,7 +370,7 @@ func (a dashboardPoolAdapter) ServerInfo(ctx context.Context) (dashboard.ServerI
 // live MinIO pool. The adapter type owns the per-call ServerInfo RPC and
 // the warning-policy translation; the dashboard processor only sees the
 // small dashboard view types.
-func newDashboardPoolGetter(pool *hmminio.Pool) dashboard.PoolGetter {
+func newDashboardPoolGetter(pool *objectstore.Pool) dashboard.PoolGetter {
 	return dashboardPoolAdapter{pool: pool}
 }
 
@@ -379,7 +379,7 @@ func newDashboardPoolGetter(pool *hmminio.Pool) dashboard.PoolGetter {
 // come from PromQL over the target's exported metrics (RustFS pushes OTLP
 // and has no scrape endpoint). Otherwise the madmin metrics client scrapes
 // /minio/v2/metrics on the live connection, as before.
-func newMetricsSourceGetter(pool *hmminio.Pool, prometheusURL string) metrics.SourceGetter {
+func newMetricsSourceGetter(pool *objectstore.Pool, prometheusURL string) metrics.SourceGetter {
 	if prometheusURL != "" {
 		src := metrics.NewPrometheusSource(prometheusURL, nil)
 		return func(ctx context.Context) (metrics.MetricsSource, error) { return src, nil }

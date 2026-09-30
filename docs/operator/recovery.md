@@ -21,7 +21,7 @@ Resets the password for an existing local admin user. The username must
 already exist; the command does not create new admins.
 
 What it preserves: the admin row, all sessions for other admins (if
-any), the MinIO connection, audit history, encryption key.
+any), the object store connection, audit history, encryption key.
 
 What it changes: the password hash for the named admin. All sessions
 for that admin are invalidated on next request (the next login issues
@@ -56,8 +56,8 @@ kubectl -n harbormaster exec -it \
 
 ## `admin reset-encryption --confirm`
 
-Generates a new encryption key file and forgets every MinIO connection
-that was encrypted with the old key. Required when the previous key file
+Generates a new encryption key file and forgets every object store
+connection that was encrypted with the old key. Required when the previous key file
 was lost, corrupted, or the host filesystem was restored from a backup
 that doesn't include the key.
 
@@ -82,9 +82,10 @@ that doesn't include the key.
 
 ### What's lost
 
-- Every row in `minio_connections` — the MinIO endpoint URL, access
-  key, secret key, custom CA, and `tls_skip_verify` flag must be
-  re-entered through the setup wizard.
+- Every row in `connections` (formerly `minio_connections`, renamed by
+  migration 0008) — the object store endpoint URL, access key, secret
+  key, custom CA, and `tls_skip_verify` flag must be re-entered through
+  the setup wizard.
 
 ### Docker
 
@@ -138,7 +139,7 @@ Verify the operation succeeded:
 
 - After `reset-password`, log in with the new password.
 - After `reset-encryption`, the setup wizard appears on first visit;
-  re-enter the MinIO endpoint and credentials, then log in with the
+  re-enter the object store endpoint and credentials, then log in with the
   preserved admin password.
 
 If anything looks wrong, the `.pre-reset-<unix-ts>.bak` files in the

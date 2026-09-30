@@ -91,7 +91,7 @@ describe("SetupWizard", () => {
     cleanup();
   });
 
-  it("renders the admin step first and advances to the MinIO step on valid submit", async () => {
+  it("renders the admin step first and advances to the object store step on valid submit", async () => {
     installFetch([
       {
         match: (u) => u.includes("/api/v1/setup/mc-aliases"),
@@ -107,12 +107,12 @@ describe("SetupWizard", () => {
     );
 
     expect(screen.getByLabelText(/admin username/i)).toBeInTheDocument();
-    expect(screen.queryByLabelText(/minio endpoint url/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/object store endpoint url/i)).not.toBeInTheDocument();
 
     await fillAdminAndContinue(user);
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/minio endpoint url/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/object store endpoint url/i)).toBeInTheDocument();
     });
     expect(screen.queryByLabelText(/admin username/i)).not.toBeInTheDocument();
   });
@@ -125,8 +125,8 @@ describe("SetupWizard", () => {
           json({
             aliases: [
               {
-                name: "myminio",
-                endpoint: "https://minio.lan:9000",
+                name: "myobjectstore",
+                endpoint: "https://s3.lan:9000",
                 access_key: "AKIAEXAMPLE",
                 tls_skip_verify: false,
               },
@@ -146,13 +146,13 @@ describe("SetupWizard", () => {
 
     const trigger = await screen.findByLabelText(/import from mc alias/i);
     await user.click(trigger);
-    const option = await screen.findByRole("option", { name: /myminio/i });
+    const option = await screen.findByRole("option", { name: /myobjectstore/i });
     await user.click(option);
 
-    const endpoint = screen.getByLabelText<HTMLInputElement>(/minio endpoint url/i);
+    const endpoint = screen.getByLabelText<HTMLInputElement>(/object store endpoint url/i);
     const accessKey = screen.getByLabelText<HTMLInputElement>(/access key/i);
     await waitFor(() => {
-      expect(endpoint.value).toBe("https://minio.lan:9000");
+      expect(endpoint.value).toBe("https://s3.lan:9000");
       expect(accessKey.value).toBe("AKIAEXAMPLE");
     });
   });
@@ -168,7 +168,7 @@ describe("SetupWizard", () => {
         response: () =>
           new Response(
             JSON.stringify({
-              errors: [{ code: "minio_unreachable", detail: "MinIO endpoint unreachable" }],
+              errors: [{ code: "minio_unreachable", detail: "Endpoint unreachable" }],
             }),
             {
               status: 422,
@@ -187,7 +187,10 @@ describe("SetupWizard", () => {
 
     await fillAdminAndContinue(user);
 
-    await user.type(await screen.findByLabelText(/minio endpoint url/i), "https://minio.lan:9000");
+    await user.type(
+      await screen.findByLabelText(/object store endpoint url/i),
+      "https://s3.lan:9000",
+    );
     await user.type(screen.getByLabelText(/access key/i), "AKIA-EXAMPLE");
     await user.type(screen.getByLabelText(/secret key/i), "supersecretvalue");
     await user.click(screen.getByRole("button", { name: /finish setup/i }));
@@ -213,7 +216,7 @@ describe("SetupWizard", () => {
     expect(body).toEqual({
       admin: { username: "admin", password: "correcthorsebattery!" },
       minio: {
-        endpoint_url: "https://minio.lan:9000",
+        endpoint_url: "https://s3.lan:9000",
         access_key: "AKIA-EXAMPLE",
         secret_key: "supersecretvalue",
         tls_skip_verify: false,
@@ -229,8 +232,8 @@ describe("SetupWizard", () => {
       expect(text.toLowerCase()).toContain("minio");
     });
 
-    // Still on MinIO step.
-    expect(screen.getByLabelText(/minio endpoint url/i)).toBeInTheDocument();
+    // Still on the object store step.
+    expect(screen.getByLabelText(/object store endpoint url/i)).toBeInTheDocument();
   });
 
   it("on 201 success, invalidates setupStatus and navigates to /login", async () => {
@@ -254,7 +257,10 @@ describe("SetupWizard", () => {
     );
 
     await fillAdminAndContinue(user);
-    await user.type(await screen.findByLabelText(/minio endpoint url/i), "https://minio.lan:9000");
+    await user.type(
+      await screen.findByLabelText(/object store endpoint url/i),
+      "https://s3.lan:9000",
+    );
     await user.type(screen.getByLabelText(/access key/i), "AKIA-EXAMPLE");
     await user.type(screen.getByLabelText(/secret key/i), "supersecretvalue");
     await user.click(screen.getByRole("button", { name: /finish setup/i }));

@@ -23,8 +23,8 @@ import (
 	"github.com/jtumidanski/Harbormaster/internal/jobs/bucketempty"
 	"github.com/jtumidanski/Harbormaster/internal/lifecycle"
 	"github.com/jtumidanski/Harbormaster/internal/metrics"
-	hmminio "github.com/jtumidanski/Harbormaster/internal/minio"
 	"github.com/jtumidanski/Harbormaster/internal/objects"
+	"github.com/jtumidanski/Harbormaster/internal/objectstore"
 	"github.com/jtumidanski/Harbormaster/internal/observability/log"
 	"github.com/jtumidanski/Harbormaster/internal/policies"
 	"github.com/jtumidanski/Harbormaster/internal/server"
@@ -91,7 +91,7 @@ func runServe(ctx context.Context, _ io.Writer) error {
 	// --- M2 wiring: auth, connection pool, setup --------------------------
 	authProc := auth.NewProcessor(gdb).WithAudit(auditProc)
 	limiter := auth.NewLoginRateLimiter(5*time.Minute, 5)
-	pool := hmminio.NewEmpty()
+	pool := objectstore.NewEmpty()
 
 	// --- E10 wiring: metrics store, collector, poller, retention sweeper --
 	// pool is declared above; the poller goroutines exit when ctx is cancelled.

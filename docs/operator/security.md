@@ -21,7 +21,7 @@ VPN. It is **not** a public-internet SaaS.
 
 | Asset                              | Defence                                                                                                  |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| MinIO admin credentials at rest    | AES-256-GCM encryption with a key file stored at `${DATA_DIR}/encryption.key` (`0600`).                  |
+| Object store admin credentials at rest | AES-256-GCM encryption with a key file stored at `${DATA_DIR}/encryption.key` (`0600`).              |
 | Local admin password               | argon2id (RFC 9106 params, `memory=64MiB`, `iterations=3`, `parallelism=2`).                             |
 | Session theft                      | HTTPOnly + Secure (behind HTTPS) + SameSite=Lax cookies; opaque server-issued IDs; `SESSION_TIMEOUT`.    |
 | CSRF                               | Synchronizer-token middleware on every non-GET; token issued at session creation.                        |
@@ -36,8 +36,8 @@ WebAuthn. See PRD §2 non-goals.
 
 ## Encryption key handling
 
-The encryption key is a 32-byte random value used to encrypt the MinIO
-secret key, the local admin's optional custom CA PEM, and any other
+The encryption key is a 32-byte random value used to encrypt the object
+store secret key, the local admin's optional custom CA PEM, and any other
 sensitive columns. Operationally:
 
 - **File:** `${DATA_DIR}/encryption.key` by default; override with
@@ -55,7 +55,7 @@ sensitive columns. Operationally:
   are a matched pair. Restoring the DB without the key (or vice versa)
   produces an unusable installation; the recovery path is
   `admin reset-encryption --confirm`, which destroys all encrypted
-  columns and forces the MinIO connection wizard to re-run.
+  columns and forces the object store connection wizard to re-run.
 - **Rotation:** v1 does not support online rotation. Use
   `admin reset-encryption --confirm` (see `recovery.md`).
 
@@ -93,13 +93,13 @@ The 5-10 s gap during upgrade is by design. HA is a v2 conversation
 
 ## Share-link non-revocability (R17)
 
-Object share links are minted by Harbormaster as presigned MinIO URLs
-with an operator-chosen TTL (bounded by
+Object share links are minted by Harbormaster as presigned URLs from the
+object store with an operator-chosen TTL (bounded by
 `HARBORMASTER_SHARE_LINK_MAX_TTL`, default 7 days). **Once issued, a
 share link cannot be revoked from Harbormaster.** It is signed by the
-MinIO root credentials we stored at setup; the only way to invalidate
-in-flight links is to rotate the MinIO root credentials themselves
-(MinIO docs: `mc admin user svcacct edit`).
+object store's root credentials we stored at setup; the only way to
+invalidate in-flight links is to rotate the object store's root
+credentials themselves (MinIO docs: `mc admin user svcacct edit`).
 
 The audit event for share-link creation records bucket, key, and TTL
 so an incident response has the exposure window in one place. The UI
@@ -108,7 +108,7 @@ modal that mints a link spells this out before the operator confirms.
 ## `mc` config exposure (R18)
 
 The first-run setup wizard can read your host `~/.mc/config.json` to
-pre-fill the MinIO connection form. **The secret key in `~/.mc/config.json`
+pre-fill the object store connection form. **The secret key in `~/.mc/config.json`
 is plaintext.** Bind-mounting it widens the blast radius of a
 compromised Harbormaster container: an attacker with code execution in
 the container can read every alias's secret, not just the one the

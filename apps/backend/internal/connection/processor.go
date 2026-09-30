@@ -13,7 +13,7 @@ import (
 	"github.com/jtumidanski/Harbormaster/internal/apierror"
 	"github.com/jtumidanski/Harbormaster/internal/audit"
 	"github.com/jtumidanski/Harbormaster/internal/crypto"
-	minioPool "github.com/jtumidanski/Harbormaster/internal/minio"
+	"github.com/jtumidanski/Harbormaster/internal/objectstore"
 )
 
 // sanitizeEndpointForAudit returns a credential-free rendering of raw that
@@ -36,7 +36,7 @@ func sanitizeEndpointForAudit(raw string) string {
 // inject a stub to avoid hitting the network.
 type Prober func(ctx context.Context, in SubmitInput) (TestResult, *apierror.Error)
 
-// Processor coordinates reads and writes for the minio_connections
+// Processor coordinates reads and writes for the connections
 // singleton, the validation probe, and the live MinIO client pool.
 //
 // Wiring (set in cmd/harbormaster): DB is the migrated *gorm.DB; Cipher is
@@ -46,14 +46,14 @@ type Prober func(ctx context.Context, in SubmitInput) (TestResult, *apierror.Err
 type Processor struct {
 	DB     *gorm.DB
 	Cipher *crypto.Cipher
-	Pool   *minioPool.Pool
+	Pool   *objectstore.Pool
 	Probe  Prober
 	Audit  *audit.Processor // optional; nil disables audit emission
 }
 
 // NewProcessor returns a Processor with the default network probe wired up.
 // Override .Probe after construction for tests.
-func NewProcessor(db *gorm.DB, c *crypto.Cipher, p *minioPool.Pool) *Processor {
+func NewProcessor(db *gorm.DB, c *crypto.Cipher, p *objectstore.Pool) *Processor {
 	return &Processor{
 		DB:     db,
 		Cipher: c,
@@ -165,12 +165,12 @@ func (p *Processor) Update(ctx context.Context, in SubmitInput, actor, sourceIP 
 
 // poolCredsFromSubmit maps a SubmitInput's plaintext fields onto the
 // minio.Pool credential struct.
-func poolCredsFromSubmit(in SubmitInput) minioPool.Credentials {
+func poolCredsFromSubmit(in SubmitInput) objectstore.Credentials {
 	skipVerify := false
 	if in.TLSSkipVerify != nil {
 		skipVerify = *in.TLSSkipVerify
 	}
-	return minioPool.Credentials{
+	return objectstore.Credentials{
 		EndpointURL:     in.EndpointURL,
 		AccessKey:       in.AccessKey,
 		SecretKey:       in.SecretKey,
@@ -205,7 +205,7 @@ func (p *Processor) HydratePool(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return p.Pool.Rebuild(minioPool.Credentials{
+	return p.Pool.Rebuild(objectstore.Credentials{
 		EndpointURL:     e.EndpointURL,
 		AccessKey:       creds.AccessKey,
 		SecretKey:       creds.SecretKey,

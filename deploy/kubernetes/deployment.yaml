@@ -58,7 +58,7 @@ spec:
           # registry.tumidanski is the self-hosted zot registry. Pull is
           # anonymous and every k3s node already trusts the internal CA via
           # /etc/rancher/k3s/registries.yaml, so no imagePullSecret is needed.
-          image: registry.tumidanski/jtumidanski/harbormaster:sha-23da73e
+          image: registry.tumidanski/jtumidanski/harbormaster:sha-42d7065
           imagePullPolicy: IfNotPresent
           args: ["serve"]
           ports:

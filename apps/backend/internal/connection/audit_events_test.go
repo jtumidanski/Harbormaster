@@ -133,7 +133,7 @@ func TestAuditEvent_ConnectionTestFailureRecorded(t *testing.T) {
 				TCPConnect:  "ok",
 				ListBuckets: map[string]string{"failed": "InvalidAccessKeyId"},
 			},
-			apierror.New(422, "minio_invalid_credentials", "MinIO rejected the provided keys")
+			apierror.New(422, "minio_invalid_credentials", "The object store rejected the provided keys")
 	}
 
 	in := connection.SubmitInput{

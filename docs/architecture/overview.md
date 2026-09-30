@@ -18,7 +18,7 @@ apps/
       auth/               Sessions, login, CSRF, rate-limit, admin entity
       buckets/            Bucket DDD context (CRUD, settings)
       config/             Viper-backed config loader
-      connection/         Encrypted MinIO connection settings
+      connection/         Encrypted object store connection settings
       crypto/             AES-256-GCM helpers; key file load + fingerprint
       dashboard/          Aggregate dashboard read-model
       db/                 GORM open, PRAGMAs, migrate driver
@@ -26,14 +26,14 @@ apps/
       jobs/bucketempty/   Empty-bucket background worker + SSE
       jsonapi/            Hand-rolled JSON:API encoder/decoder
       lifecycle/          Bucket lifecycle-rule DDD context
-      minio/              MinIO admin + S3 client pool
+      objectstore/        Object store admin + S3 client pool
       objects/            Object browse/upload/download DDD context
       observability/      zerolog wrapper + Prometheus + OTLP plumbing
       policies/           Policy templates + materializer
       server/             chi router, middleware, SPA embed, health
       setup/              First-run wizard state machine
       sse/                Server-Sent-Events writer
-      users/              MinIO users + service accounts DDD contexts
+      users/              Object store users + service accounts DDD contexts
     migrations/           Embedded SQL migrations (golang-migrate iofs)
   frontend/               React 18 + Vite 5 + TS 5 (strict)
     src/                  components/, features/, lib/api/, hooks/, pages/
@@ -56,7 +56,7 @@ shape (per the backend-dev-guidelines skill):
 - **`model.go`** — immutable domain model, constructor validates.
 - **`entity.go`** — GORM entity (DB row shape); never escapes its package.
 - **`builder.go`** — entity ↔ model conversion.
-- **`administrator.go`** — interface that wraps MinIO operations.
+- **`administrator.go`** — interface that wraps object-store operations.
 - **`processor.go`** — orchestrates administrator + audit + side-effects;
   this is the public entry point handlers call.
 - **`provider.go`** — wires processor to runtime dependencies.
@@ -69,9 +69,9 @@ The v1 contexts are: `auth`, `buckets`, `objects`, `lifecycle`,
 `connection`, `setup`, `dashboard`, `audit`, `jobs/bucketempty`.
 
 Cross-cutting (not full DDD contexts): `config`, `crypto`, `db`,
-`minio`, `jsonapi`, `sse`, `server`, `apierror`, `observability`.
+`objectstore`, `jsonapi`, `sse`, `server`, `apierror`, `observability`.
 
-## Request lifecycle (HTTP → MinIO)
+## Request lifecycle (HTTP → object store)
 
 A typical state-changing request — e.g. `POST /api/v1/buckets` to
 create a bucket — flows through these layers:
@@ -98,12 +98,12 @@ Handler (internal/buckets/handler.go)
   │  - call processor
   ▼
 Processor (internal/buckets/processor.go)
-  │  - resolves MinIO client via internal/minio.Pool
+  │  - resolves object-store client via internal/objectstore.Pool
   │  - calls administrator (MakeBucket, EnableVersioning, ...)
   │  - records audit event via internal/audit
   │  - optionally enqueues lifecycle creation
   ▼
-MinIO (madmin-go / minio-go)
+Object store (madmin-go / minio-go)
   ▲
   │  S3 / admin API response
   │

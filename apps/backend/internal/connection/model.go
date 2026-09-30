@@ -1,10 +1,10 @@
-// Package connection owns the singleton MinIO connection record:
+// Package connection owns the singleton object store connection record:
 // persistence, validation probe, and the action-style HTTP surface for
 // reading and rotating the endpoint configuration.
 //
 // The plaintext access key, secret key, and custom CA PEM are encrypted at
 // rest via internal/crypto.Cipher and never leave the package as anything
-// but a masked / *Present view. The cached MinIO client pair in
+// but a masked / *Present view. The cached object-store client pair in
 // internal/objectstore.Pool is rebuilt after every successful Update.
 package connection
 
@@ -24,7 +24,7 @@ type Connection struct {
 // ID returns the database primary key. Always 1 in v1 (singleton).
 func (c Connection) ID() uint { return c.id }
 
-// EndpointURL returns the MinIO endpoint URL (http(s)://host:port).
+// EndpointURL returns the object store endpoint URL (http(s)://host:port).
 func (c Connection) EndpointURL() string { return c.endpointURL }
 
 // TLSSkipVerify reports whether the operator chose to skip TLS verification.

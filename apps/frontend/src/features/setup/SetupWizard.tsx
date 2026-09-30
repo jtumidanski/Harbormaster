@@ -6,13 +6,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { authKeys } from "@/lib/api/keys";
 import { AppError } from "@/lib/api/errors";
 import { AdminStep } from "./AdminStep";
-import { MinIOStep, type MinIOStepSubmit } from "./MinIOStep";
+import { ObjectStoreStep, type ObjectStoreStepSubmit } from "./ObjectStoreStep";
 import { submitSetup, type SetupPayload } from "./api";
 import type { AdminInput } from "@/lib/schemas/setup";
 
 type Step = "admin" | "minio";
 
-function buildPayload(admin: AdminInput, minio: MinIOStepSubmit): SetupPayload {
+function buildPayload(admin: AdminInput, minio: ObjectStoreStepSubmit): SetupPayload {
   const customCaPem =
     minio.values.customCaPem && minio.values.customCaPem.length > 0
       ? minio.values.customCaPem
@@ -68,7 +68,7 @@ export function SetupWizard() {
     setStep("minio");
   }
 
-  function handleMinioSubmit(result: MinIOStepSubmit) {
+  function handleMinioSubmit(result: ObjectStoreStepSubmit) {
     if (!admin) {
       setStep("admin");
       return;
@@ -84,14 +84,14 @@ export function SetupWizard() {
           <CardDescription>
             {step === "admin"
               ? "Step 1 of 2 — Create the Harbormaster admin account."
-              : "Step 2 of 2 — Connect Harbormaster to your MinIO cluster."}
+              : "Step 2 of 2 — Connect Harbormaster to your object store."}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {step === "admin" ? (
             <AdminStep {...(admin ? { defaultValues: admin } : {})} onSubmit={handleAdminSubmit} />
           ) : (
-            <MinIOStep
+            <ObjectStoreStep
               onBack={() => setStep("admin")}
               onSubmit={handleMinioSubmit}
               submitting={mutation.isPending}

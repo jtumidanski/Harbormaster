@@ -56,7 +56,7 @@ function detailStub(): StubResponse {
     match: (u, init) => u.endsWith("/api/v1/connection") && (init?.method ?? "GET") === "GET",
     response: () =>
       json({
-        endpoint_url: "https://minio.lan:9000",
+        endpoint_url: "https://s3.lan:9000",
         tls_skip_verify: false,
         access_key_masked: "AKIA****PLE",
         secret_key_present: true,
@@ -87,7 +87,7 @@ function Wrapper({ children, qc }: PropsWithChildren<{ qc: QueryClient }>) {
 async function clickEdit(user: ReturnType<typeof userEvent.setup>) {
   const editBtn = await screen.findByRole("button", { name: /^edit$/i });
   await user.click(editBtn);
-  await screen.findByLabelText(/minio endpoint url/i);
+  await screen.findByLabelText(/object store endpoint url/i);
 }
 
 describe("ConnectionSettingsPage", () => {
@@ -112,7 +112,7 @@ describe("ConnectionSettingsPage", () => {
     await waitFor(() => {
       expect(screen.getByText("AKIA****PLE")).toBeInTheDocument();
     });
-    expect(screen.getByText("https://minio.lan:9000")).toBeInTheDocument();
+    expect(screen.getByText("https://s3.lan:9000")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
   });
 
@@ -128,12 +128,12 @@ describe("ConnectionSettingsPage", () => {
 
     await clickEdit(user);
 
-    const endpoint = screen.getByLabelText<HTMLInputElement>(/minio endpoint url/i);
+    const endpoint = screen.getByLabelText<HTMLInputElement>(/object store endpoint url/i);
     const accessKey = screen.getByLabelText<HTMLInputElement>(/access key/i);
     const secretKey = screen.getByLabelText<HTMLInputElement>(/secret key/i);
     const tls = screen.getByLabelText<HTMLInputElement>(/skip tls verification/i);
 
-    expect(endpoint.value).toBe("https://minio.lan:9000");
+    expect(endpoint.value).toBe("https://s3.lan:9000");
     expect(tls.checked).toBe(false);
     expect(accessKey.value).toBe("");
     expect(secretKey.value).toBe("");
@@ -181,7 +181,7 @@ describe("ConnectionSettingsPage", () => {
     const init = putCall[1] as RequestInit;
     const body = JSON.parse(init.body as string) as Record<string, unknown>;
     expect(body).toEqual({
-      endpoint_url: "https://minio.lan:9000",
+      endpoint_url: "https://s3.lan:9000",
       access_key: "AKIA-EXAMPLE",
       secret_key: "supersecretvalue",
       tls_skip_verify: false,
@@ -196,7 +196,7 @@ describe("ConnectionSettingsPage", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
     });
-    expect(screen.queryByLabelText(/minio endpoint url/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/object store endpoint url/i)).not.toBeInTheDocument();
   });
 
   it("Test connection while editing POSTs to /api/v1/connection/test and renders three booleans + version", async () => {
@@ -247,7 +247,7 @@ describe("ConnectionSettingsPage", () => {
     const init = postCall[1] as RequestInit;
     const body = JSON.parse(init.body as string) as Record<string, unknown>;
     expect(body).toEqual({
-      endpoint_url: "https://minio.lan:9000",
+      endpoint_url: "https://s3.lan:9000",
       access_key: "AKIA-EXAMPLE",
       secret_key: "supersecretvalue",
       tls_skip_verify: false,
@@ -268,10 +268,7 @@ describe("ConnectionSettingsPage", () => {
       {
         match: (u, init) => u.endsWith("/api/v1/connection") && (init?.method ?? "GET") === "PUT",
         response: () =>
-          jsonapi(
-            { errors: [{ code: "minio_unreachable", detail: "MinIO endpoint unreachable" }] },
-            422,
-          ),
+          jsonapi({ errors: [{ code: "minio_unreachable", detail: "Endpoint unreachable" }] }, 422),
       },
     ]);
     const user = userEvent.setup();
@@ -295,7 +292,7 @@ describe("ConnectionSettingsPage", () => {
     });
 
     // Still in edit mode.
-    expect(screen.getByLabelText(/minio endpoint url/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/object store endpoint url/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^edit$/i })).not.toBeInTheDocument();
   });
 });

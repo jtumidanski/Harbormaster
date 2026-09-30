@@ -122,7 +122,7 @@ export function ShareLinkDialog({ open, onOpenChange, bucket, objectKey }: Share
           <AlertTitle>Warning: this link cannot be revoked</AlertTitle>
           <AlertDescription>
             Anyone with the URL can access the object until it expires. If shared by mistake, you
-            can disable the connection or rotate MinIO credentials.
+            can disable the connection or rotate object store credentials.
           </AlertDescription>
         </Alert>
 

@@ -40,7 +40,7 @@ type DeleteState =
 
 function OriginBadge({ origin }: { origin: Policy["origin"] }) {
   const label: Record<Policy["origin"], string> = {
-    "minio-builtin": "MinIO built-in",
+    "minio-builtin": "Built-in",
     "harbormaster-template": "Template",
     custom: "Custom",
   };

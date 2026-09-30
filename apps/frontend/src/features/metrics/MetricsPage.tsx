@@ -416,7 +416,8 @@ export function MetricsPage() {
         <Alert>
           <AlertTitle>Metrics collection paused</AlertTitle>
           <AlertDescription>
-            No recent samples. This is normal on a fresh install or when MinIO is unreachable.
+            No recent samples. This is normal on a fresh install or when the object store is
+            unreachable.
           </AlertDescription>
         </Alert>
       ) : (

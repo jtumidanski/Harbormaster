@@ -21,38 +21,38 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { minioSchema, type MinIOInput } from "@/lib/schemas/setup";
+import { objectStoreSchema, type ObjectStoreInput } from "@/lib/schemas/setup";
 import { authKeys } from "@/lib/api/keys";
 import { fetchMcAliases, type McAlias } from "./api";
 
-export type MinIOStepSubmit = {
-  values: MinIOInput;
+export type ObjectStoreStepSubmit = {
+  values: ObjectStoreInput;
   /** Name of mc alias to use server-side; only set when alias was selected and not edited away from. */
   fromMcAlias: string | null;
 };
 
-export type MinIOStepProps = {
+export type ObjectStoreStepProps = {
   onBack: () => void;
-  onSubmit: (result: MinIOStepSubmit) => void;
+  onSubmit: (result: ObjectStoreStepSubmit) => void;
   submitting?: boolean;
 };
 
-const EMPTY_DEFAULTS: MinIOInput = {
+const EMPTY_DEFAULTS: ObjectStoreInput = {
   endpointUrl: "",
   accessKey: "",
   secretKey: "",
   tlsSkipVerify: false,
 };
 
-export function MinIOStep({ onBack, onSubmit, submitting }: MinIOStepProps) {
+export function ObjectStoreStep({ onBack, onSubmit, submitting }: ObjectStoreStepProps) {
   const aliasesQuery = useQuery({
     queryKey: authKeys.mcAliases(),
     queryFn: fetchMcAliases,
     retry: false,
   });
 
-  const form = useForm<MinIOInput>({
-    resolver: zodResolver(minioSchema),
+  const form = useForm<ObjectStoreInput>({
+    resolver: zodResolver(objectStoreSchema),
     defaultValues: EMPTY_DEFAULTS,
     mode: "onSubmit",
   });
@@ -109,7 +109,7 @@ export function MinIOStep({ onBack, onSubmit, submitting }: MinIOStepProps) {
     if (alias) applyAlias(alias);
   }
 
-  function handleSubmit(values: MinIOInput) {
+  function handleSubmit(values: ObjectStoreInput) {
     onSubmit({
       values,
       fromMcAlias: selectedAlias ? selectedAlias.name : null,
@@ -152,11 +152,11 @@ export function MinIOStep({ onBack, onSubmit, submitting }: MinIOStepProps) {
             name="endpointUrl"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>MinIO endpoint URL</FormLabel>
+                <FormLabel>Object store endpoint URL</FormLabel>
                 <FormControl>
                   <Input
                     type="url"
-                    placeholder="https://minio.lan:9000"
+                    placeholder="https://s3.lan:9000"
                     autoComplete="off"
                     spellCheck={false}
                     {...field}

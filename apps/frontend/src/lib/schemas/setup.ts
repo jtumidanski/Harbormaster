@@ -15,7 +15,7 @@ export const adminSchema = z
     message: "passwords must match",
   });
 
-export const minioSchema = z.object({
+export const objectStoreSchema = z.object({
   fromMcAlias: z.string().optional(),
   endpointUrl: z.string().url(),
   accessKey: z.string().min(1),
@@ -25,4 +25,4 @@ export const minioSchema = z.object({
 });
 
 export type AdminInput = z.infer<typeof adminSchema>;
-export type MinIOInput = z.infer<typeof minioSchema>;
+export type ObjectStoreInput = z.infer<typeof objectStoreSchema>;

@@ -169,7 +169,7 @@ export function CreateBucketDialog({ open, onOpenChange }: CreateBucketDialogPro
         <DialogHeader>
           <DialogTitle>Create bucket</DialogTitle>
           <DialogDescription>
-            Create a new bucket on the configured MinIO endpoint.
+            Create a new bucket on the configured object store endpoint.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>

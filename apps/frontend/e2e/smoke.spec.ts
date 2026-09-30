@@ -13,7 +13,7 @@ test("setup -> login -> buckets golden path", async ({ page }) => {
   await page.getByLabel("Confirm password").fill("correct horse battery staple!");
   await page.getByRole("button", { name: /next/i }).click();
 
-  // Setup wizard: MinIO step
+  // Setup wizard: object store step
   await page.getByLabel("Endpoint URL").fill("http://minio:9000");
   await page.getByLabel("Access key").fill("admin");
   await page.getByLabel("Secret key").fill("admin12345");

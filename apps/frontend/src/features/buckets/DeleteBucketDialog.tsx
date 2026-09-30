@@ -71,7 +71,7 @@ export function DeleteBucketDialog({
         <DialogHeader>
           <DialogTitle>Delete bucket</DialogTitle>
           <DialogDescription>
-            This permanently removes the bucket from MinIO. This cannot be undone.
+            This permanently removes the bucket from the object store. This cannot be undone.
           </DialogDescription>
         </DialogHeader>
         <form

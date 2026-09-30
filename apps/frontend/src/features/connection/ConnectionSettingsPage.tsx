@@ -160,11 +160,11 @@ function EditForm({ detail, onCancel, onSaved }: EditFormProps) {
           name="endpointUrl"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>MinIO endpoint URL</FormLabel>
+              <FormLabel>Object store endpoint URL</FormLabel>
               <FormControl>
                 <Input
                   type="url"
-                  placeholder="https://minio.lan:9000"
+                  placeholder="https://s3.lan:9000"
                   autoComplete="off"
                   spellCheck={false}
                   {...field}
@@ -253,8 +253,8 @@ function EditForm({ detail, onCancel, onSaved }: EditFormProps) {
               <CardTitle className="text-base">Test results</CardTitle>
               <CardDescription>
                 {testResult.minio_version
-                  ? `MinIO version: ${testResult.minio_version}`
-                  : "MinIO version: unknown"}
+                  ? `Server version: ${testResult.minio_version}`
+                  : "Server version: unknown"}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
@@ -308,9 +308,9 @@ export function ConnectionSettingsPage() {
     <div className="mx-auto max-w-xl p-6">
       <Card className="w-full">
         <CardHeader>
-          <CardTitle>MinIO connection</CardTitle>
+          <CardTitle>Object store connection</CardTitle>
           <CardDescription>
-            View and update Harbormaster&apos;s connection to your MinIO cluster.
+            View and update Harbormaster&apos;s connection to your object store.
           </CardDescription>
         </CardHeader>
         <CardContent>

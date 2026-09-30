@@ -162,7 +162,7 @@ export function CreateUserDialog({ open, onOpenChange }: CreateUserDialogProps) 
             <DialogHeader>
               <DialogTitle>Create user</DialogTitle>
               <DialogDescription>
-                Create a new MinIO IAM user with optional policy templates.
+                Create a new IAM user on the object store with optional policy templates.
               </DialogDescription>
             </DialogHeader>
             <Form {...form}>
@@ -184,7 +184,7 @@ export function CreateUserDialog({ open, onOpenChange }: CreateUserDialogProps) 
                       <FormControl>
                         <Input autoComplete="off" {...field} />
                       </FormControl>
-                      <FormDescription>The MinIO IAM username (3–64 characters).</FormDescription>
+                      <FormDescription>The IAM username (3–64 characters).</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

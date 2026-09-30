@@ -28,7 +28,7 @@ func (connectionEntity) TableName() string { return "connections" }
 
 // plainCreds carries the decrypted credential trio alongside the masked
 // view. It is package-private; only Processor.Update hands the values to
-// minio.Pool.Rebuild before letting them fall out of scope.
+// objectstore.Pool.Rebuild before letting them fall out of scope.
 type plainCreds struct {
 	AccessKey       string
 	SecretKey       string

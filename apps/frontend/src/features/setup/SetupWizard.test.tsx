@@ -168,9 +168,7 @@ describe("SetupWizard", () => {
         response: () =>
           new Response(
             JSON.stringify({
-              errors: [
-                { code: "object_store_unreachable", detail: "Object store unreachable" },
-              ],
+              errors: [{ code: "object_store_unreachable", detail: "Object store unreachable" }],
             }),
             {
               status: 422,

@@ -47,8 +47,12 @@ function collectedView(): MetricsView {
         { t: "2026-01-01T00:00:00Z", v: 512.0 },
         { t: "2026-01-01T00:01:00Z", v: 768.0 },
       ],
-      objectstore_cluster_capacity_usable_total_bytes: [{ t: "2026-01-01T00:00:00Z", v: 1_000_000_000 }],
-      objectstore_cluster_capacity_usable_free_bytes: [{ t: "2026-01-01T00:00:00Z", v: 600_000_000 }],
+      objectstore_cluster_capacity_usable_total_bytes: [
+        { t: "2026-01-01T00:00:00Z", v: 1_000_000_000 },
+      ],
+      objectstore_cluster_capacity_usable_free_bytes: [
+        { t: "2026-01-01T00:00:00Z", v: 600_000_000 },
+      ],
       objectstore_cluster_drive_online_total: [{ t: "2026-01-01T00:00:00Z", v: 4 }],
       objectstore_cluster_drive_offline_total: [{ t: "2026-01-01T00:00:00Z", v: 0 }],
     },

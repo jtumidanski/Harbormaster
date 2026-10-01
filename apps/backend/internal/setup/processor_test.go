@@ -14,7 +14,7 @@ import (
 	"github.com/jtumidanski/Harbormaster/internal/setup"
 )
 
-// validRequest returns a Request carrying explicit MinIO credentials.
+// validRequest returns a Request carrying explicit object store credentials.
 // Helper used to keep the per-test body short.
 func validRequest() setup.Request {
 	var req setup.Request

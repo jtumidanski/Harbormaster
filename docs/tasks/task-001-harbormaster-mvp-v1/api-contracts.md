@@ -65,8 +65,9 @@ mc-alias form (server re-reads the mc config to fetch the secret):
 ```
 
 The block was named `minio` before 2026-10-01. `minio` is still accepted in
-place of `object_store` (used only when `object_store` is absent) until the
-release after 2026-10-01, then removed.
+place of `object_store` — used whenever `object_store` has neither
+`endpoint_url` nor `from_mc_alias` set — until the release after 2026-10-01,
+then removed.
 
 When `from_mc_alias` is present, all other `object_store.*` fields are ignored except `tls_skip_verify` and `custom_ca_pem`, which may be overridden by the caller.
 

@@ -373,7 +373,7 @@ func (p *Processor) clients(ctx context.Context) (s3API, error) {
 	s3, err := p.Clients(ctx)
 	if err != nil {
 		return nil, apierror.New(http.StatusBadGateway,
-			"minio_unavailable", "MinIO client is not available: "+err.Error())
+			"object_store_unavailable", "the object store client is not available: "+err.Error())
 	}
 	return s3, nil
 }
@@ -439,6 +439,6 @@ func mapClientError(err error, hint string) error {
 	if errors.As(err, &ae) {
 		return ae
 	}
-	return apierror.New(http.StatusBadGateway, "minio_unavailable",
+	return apierror.New(http.StatusBadGateway, "object_store_unavailable",
 		hint+": "+err.Error())
 }

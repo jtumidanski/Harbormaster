@@ -100,7 +100,7 @@ func (p *Processor) clients(ctx context.Context) (adminAPI, error) {
 	adm, err := p.Clients(ctx)
 	if err != nil {
 		return nil, apierror.New(http.StatusServiceUnavailable,
-			"minio_unavailable", "MinIO client is not available: "+err.Error())
+			"object_store_unavailable", "the object store client is not available: "+err.Error())
 	}
 	return adm, nil
 }
@@ -115,7 +115,7 @@ func mapClientError(err error, fallback string) *apierror.Error {
 	if errors.As(err, &ae) {
 		return ae
 	}
-	return apierror.New(http.StatusBadGateway, "minio_error", fallback+": "+err.Error())
+	return apierror.New(http.StatusBadGateway, "object_store_error", fallback+": "+err.Error())
 }
 
 // policyFailAudit is a helper for CRUD failure paths. It records a failure
@@ -202,7 +202,7 @@ func (p *Processor) Get(ctx context.Context, name string) (PolicyDetail, error) 
 //  2. Reserved name (builtin or template-prefixed) — 409 policy_name_reserved.
 //  3. Document JSON validity — 422 invalid_policy_json.
 //  4. Document structure — 422 invalid_policy_structure.
-//  5. MinIO rejection — 422 minio_rejected_policy.
+//  5. Object store rejection — 422 object_store_rejected_policy.
 func (p *Processor) Create(ctx context.Context, name string, doc []byte, actor, sourceIP string) (Policy, error) {
 	failAudit := func(err error) error {
 		return p.policyFailAudit(ctx, audit.ActionPolicyCreate, name, actor, sourceIP, err)
@@ -216,7 +216,7 @@ func (p *Processor) Create(ctx context.Context, name string, doc []byte, actor, 
 	}
 	if err := adm.AddCannedPolicy(ctx, name, doc); err != nil {
 		return Policy{}, failAudit(apierror.New(http.StatusUnprocessableEntity,
-			"minio_rejected_policy", "MinIO rejected the policy: "+err.Error()))
+			"object_store_rejected_policy", "the object store rejected the policy: "+err.Error()))
 	}
 	p.recordAudit(ctx, audit.Event{
 		Actor:      actor,
@@ -257,7 +257,7 @@ func (p *Processor) Update(ctx context.Context, name string, doc []byte, actor, 
 	}
 	if err := adm.AddCannedPolicy(ctx, name, doc); err != nil {
 		return failAudit(apierror.New(http.StatusUnprocessableEntity,
-			"minio_rejected_policy", "MinIO rejected the policy: "+err.Error()))
+			"object_store_rejected_policy", "the object store rejected the policy: "+err.Error()))
 	}
 	p.recordAudit(ctx, audit.Event{
 		Actor:      actor,

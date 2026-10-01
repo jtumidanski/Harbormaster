@@ -712,7 +712,7 @@ func (p *Processor) clients(ctx context.Context) (adminAPI, s3API, error) {
 	adm, s3, err := p.Clients(ctx)
 	if err != nil {
 		return nil, nil, apierror.New(http.StatusServiceUnavailable,
-			"minio_unavailable", "MinIO client is not available: "+err.Error())
+			"object_store_unavailable", "the object store client is not available: "+err.Error())
 	}
 	return adm, s3, nil
 }
@@ -729,7 +729,7 @@ func mapClientError(err error, fallback string) *apierror.Error {
 	if errors.As(err, &ae) {
 		return ae
 	}
-	return apierror.New(http.StatusBadGateway, "minio_error", fallback+": "+err.Error())
+	return apierror.New(http.StatusBadGateway, "object_store_error", fallback+": "+err.Error())
 }
 
 // drain consumes the remaining items on a ListObjects channel so the

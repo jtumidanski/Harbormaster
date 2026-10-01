@@ -162,7 +162,7 @@ func TestBulkDelete_ListError_502(t *testing.T) {
 	s3 := &stubS3{bulkListErr: errFailing}
 	p, _ := newTestProcessor(t, s3, ProcessorConfig{})
 	_, err := p.BulkDelete(context.Background(), "b", nil, []string{"photos/"}, false, "alice", "1.2.3.4")
-	requireAPIError(t, err, 502, "minio_error")
+	requireAPIError(t, err, 502, "object_store_error")
 }
 
 func TestBulkDelete_DryRun_NoDeleteCalls(t *testing.T) {

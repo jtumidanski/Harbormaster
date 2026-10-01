@@ -1,6 +1,9 @@
 package metrics
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // viewResponse is the plain-JSON shape returned by GET /api/v1/metrics.
 type viewResponse struct {
@@ -26,6 +29,17 @@ func toResponse(v View) viewResponse {
 			wire[i] = pointWire{T: p.T.UTC().Format(time.RFC3339), V: p.V}
 		}
 		series[metric] = wire
+	}
+	// Legacy name accepted until the release after 2026-10-01; remove then.
+	// Cached browser bundles built before the rename read the minio_ keys.
+	names := make([]string, 0, len(series))
+	for metric := range series {
+		names = append(names, metric)
+	}
+	for _, metric := range names {
+		if rest, ok := strings.CutPrefix(metric, "objectstore_"); ok {
+			series["minio_"+rest] = series[metric]
+		}
 	}
 	return viewResponse{
 		Window:      string(v.Window),

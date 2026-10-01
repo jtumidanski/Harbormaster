@@ -2,6 +2,7 @@ package connection
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -16,7 +17,7 @@ import (
 
 // TestProbe_RejectsMalformedEndpointURL verifies that a missing or
 // scheme-less URL fails fast on the URL parse step with the documented
-// "minio_unreachable" code. No network I/O is attempted.
+// "object_store_unreachable" code. No network I/O is attempted.
 func TestProbe_RejectsMalformedEndpointURL(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -40,13 +41,13 @@ func TestProbe_RejectsMalformedEndpointURL(t *testing.T) {
 			})
 			require.NotNil(t, ae, "expected an apierror for %q", tc.endpoint)
 			require.Equal(t, http.StatusUnprocessableEntity, ae.HTTPStatus)
-			require.Equal(t, "minio_unreachable", ae.Code)
+			require.Equal(t, "object_store_unreachable", ae.Code)
 		})
 	}
 }
 
 // TestProbe_TCPConnectFailure verifies that a closed-port endpoint
-// surfaces a TCP-step failure with the "minio_unreachable" code. The
+// surfaces a TCP-step failure with the "object_store_unreachable" code. The
 // listener is bound to 127.0.0.1:0 and then closed so the OS frees the
 // port before Probe attempts to dial it, ensuring a deterministic ECONNREFUSED.
 func TestProbe_TCPConnectFailure(t *testing.T) {
@@ -65,13 +66,13 @@ func TestProbe_TCPConnectFailure(t *testing.T) {
 	})
 	require.NotNil(t, ae)
 	require.Equal(t, http.StatusUnprocessableEntity, ae.HTTPStatus)
-	require.Equal(t, "minio_unreachable", ae.Code)
+	require.Equal(t, "object_store_unreachable", ae.Code)
 	require.NotNil(t, ae.Details, "expected underlying detail on dial failure")
 
 	// Sanity-check: the typed error survives errors.As round-trips.
 	var unwrapped *apierror.Error
 	require.True(t, errors.As(error(ae), &unwrapped))
-	require.Equal(t, "minio_unreachable", unwrapped.Code)
+	require.Equal(t, "object_store_unreachable", unwrapped.Code)
 }
 
 func TestServerVersion_BareSemver(t *testing.T) {
@@ -92,4 +93,15 @@ func TestServerVersion_Empty(t *testing.T) {
 	if got := serverVersion(madmin.InfoMessage{}); got != "unknown" {
 		t.Errorf("want \"unknown\" for an empty banner, got %q", got)
 	}
+}
+
+// TestProbeResult_EmitsServerVersionAndLegacyKey verifies that the success
+// path's version banner is serialised under both server_version and the
+// legacy minio_version key.
+func TestProbeResult_EmitsServerVersionAndLegacyKey(t *testing.T) {
+	out := withServerVersion(TestResult{TCPConnect: "ok", ListBuckets: "ok", AdminPing: "ok"}, "1.0.0")
+	raw, err := json.Marshal(out)
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"server_version":"1.0.0"`)
+	require.Contains(t, string(raw), `"minio_version":"1.0.0"`)
 }

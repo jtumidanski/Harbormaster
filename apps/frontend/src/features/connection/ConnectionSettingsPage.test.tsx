@@ -210,7 +210,7 @@ describe("ConnectionSettingsPage", () => {
             tcp_connect: "ok",
             list_buckets: "ok",
             admin_ping: { failed: "permission denied" },
-            minio_version: "RELEASE.2024-01-01T00-00-00Z",
+            server_version: "RELEASE.2024-01-01T00-00-00Z",
           }),
       },
     ]);
@@ -262,13 +262,16 @@ describe("ConnectionSettingsPage", () => {
     expect(screen.getByText(/RELEASE\.2024-01-01T00-00-00Z/)).toBeInTheDocument();
   });
 
-  it("422 with minio_unreachable shows toast and stays in edit mode", async () => {
+  it("422 with object_store_unreachable shows toast and stays in edit mode", async () => {
     installFetch([
       detailStub(),
       {
         match: (u, init) => u.endsWith("/api/v1/connection") && (init?.method ?? "GET") === "PUT",
         response: () =>
-          jsonapi({ errors: [{ code: "minio_unreachable", detail: "Endpoint unreachable" }] }, 422),
+          jsonapi(
+            { errors: [{ code: "object_store_unreachable", detail: "Object store unreachable" }] },
+            422,
+          ),
       },
     ]);
     const user = userEvent.setup();
@@ -288,7 +291,7 @@ describe("ConnectionSettingsPage", () => {
     await waitFor(() => {
       const statuses = Array.from(document.querySelectorAll("[data-sonner-toast]"));
       const text = statuses.map((n) => n.textContent ?? "").join(" ");
-      expect(text.toLowerCase()).toContain("minio");
+      expect(text.toLowerCase()).toContain("object store");
     });
 
     // Still in edit mode.

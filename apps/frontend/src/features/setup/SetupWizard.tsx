@@ -22,7 +22,7 @@ function buildPayload(admin: AdminInput, objectStore: ObjectStoreStepSubmit): Se
   if (objectStore.fromMcAlias) {
     return {
       admin: { username: admin.username, password: admin.password },
-      minio: {
+      object_store: {
         from_mc_alias: objectStore.fromMcAlias,
         tls_skip_verify: tlsSkipVerify,
         custom_ca_pem: customCaPem,
@@ -31,7 +31,7 @@ function buildPayload(admin: AdminInput, objectStore: ObjectStoreStepSubmit): Se
   }
   return {
     admin: { username: admin.username, password: admin.password },
-    minio: {
+    object_store: {
       endpoint_url: objectStore.values.endpointUrl,
       access_key: objectStore.values.accessKey,
       secret_key: objectStore.values.secretKey,

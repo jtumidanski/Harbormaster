@@ -615,7 +615,7 @@ func (p *Processor) clients(ctx context.Context) (adminAPI, error) {
 	adm, err := p.Clients(ctx)
 	if err != nil {
 		return nil, apierror.New(http.StatusServiceUnavailable,
-			"minio_unavailable", "MinIO client is not available: "+err.Error())
+			"object_store_unavailable", "the object store client is not available: "+err.Error())
 	}
 	return adm, nil
 }
@@ -630,7 +630,7 @@ func mapClientError(err error, fallback string) *apierror.Error {
 	if errors.As(err, &ae) {
 		return ae
 	}
-	return apierror.New(http.StatusBadGateway, "minio_error", fallback+": "+err.Error())
+	return apierror.New(http.StatusBadGateway, "object_store_error", fallback+": "+err.Error())
 }
 
 // templateNames extracts the canonical names from a TemplateRef slice for

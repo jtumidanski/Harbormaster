@@ -157,7 +157,7 @@ describe("SetupWizard", () => {
     });
   });
 
-  it("POSTs combined payload to /api/v1/setup and shows a toast on 422 minio_unreachable (stays on step 2)", async () => {
+  it("POSTs combined payload to /api/v1/setup and shows a toast on 422 object_store_unreachable (stays on step 2)", async () => {
     const spy = installFetch([
       {
         match: (u) => u.includes("/api/v1/setup/mc-aliases"),
@@ -168,7 +168,7 @@ describe("SetupWizard", () => {
         response: () =>
           new Response(
             JSON.stringify({
-              errors: [{ code: "minio_unreachable", detail: "Endpoint unreachable" }],
+              errors: [{ code: "object_store_unreachable", detail: "Object store unreachable" }],
             }),
             {
               status: 422,
@@ -215,7 +215,7 @@ describe("SetupWizard", () => {
     const body = JSON.parse(init.body as string) as Record<string, unknown>;
     expect(body).toEqual({
       admin: { username: "admin", password: "correcthorsebattery!" },
-      minio: {
+      object_store: {
         endpoint_url: "https://s3.lan:9000",
         access_key: "AKIA-EXAMPLE",
         secret_key: "supersecretvalue",
@@ -229,7 +229,7 @@ describe("SetupWizard", () => {
     await waitFor(() => {
       const statuses = Array.from(document.querySelectorAll("[data-sonner-toast]"));
       const text = statuses.map((n) => n.textContent ?? "").join(" ");
-      expect(text.toLowerCase()).toContain("minio");
+      expect(text.toLowerCase()).toContain("object store");
     });
 
     // Still on the object store step.

@@ -40,9 +40,11 @@ type DeleteState =
 
 function OriginBadge({ origin }: { origin: Policy["origin"] }) {
   const label: Record<Policy["origin"], string> = {
-    "minio-builtin": "Built-in",
+    "server-builtin": "Built-in",
     "harbormaster-template": "Template",
     custom: "Custom",
+    // Legacy name accepted until the release after 2026-10-01; remove then.
+    "minio-builtin": "Built-in",
   };
   return <Badge variant="outline">{label[origin]}</Badge>;
 }

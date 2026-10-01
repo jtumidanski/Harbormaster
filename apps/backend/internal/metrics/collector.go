@@ -4,34 +4,34 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/prometheus/prom2json"
 )
 
-// trackedMetrics is the set of Prometheus family names the dashboard stores,
-// mapped to nothing (presence = tracked). Names verified against MinIO's
-// cluster/resource subsystems (design §5.1); confirmed in the integration
-// test. Keep this list as the single source of truth for the series.
+// trackedMetrics is the set of series names the dashboard stores, mapped to
+// nothing (presence = tracked); the RustFS PromQL behind each lives in
+// promsource.go. Keep this list as the single source of truth for the series.
 var trackedMetrics = map[string]struct{}{
-	"minio_s3_requests_total":                   {},
-	"minio_s3_requests_4xx_errors_total":        {},
-	"minio_s3_requests_5xx_errors_total":        {},
-	"minio_s3_traffic_received_bytes":           {},
-	"minio_s3_traffic_sent_bytes":               {},
-	"minio_cluster_capacity_usable_total_bytes": {},
-	"minio_cluster_capacity_usable_free_bytes":  {},
-	"minio_cluster_drive_online_total":          {},
-	"minio_cluster_drive_offline_total":         {},
+	"objectstore_s3_requests_total":                   {},
+	"objectstore_s3_requests_4xx_errors_total":        {},
+	"objectstore_s3_requests_5xx_errors_total":        {},
+	"objectstore_s3_traffic_received_bytes":           {},
+	"objectstore_s3_traffic_sent_bytes":               {},
+	"objectstore_cluster_capacity_usable_total_bytes": {},
+	"objectstore_cluster_capacity_usable_free_bytes":  {},
+	"objectstore_cluster_drive_online_total":          {},
+	"objectstore_cluster_drive_offline_total":         {},
 }
 
 // counterMetrics is the subset of trackedMetrics that are counters (rates
 // derived at query time). Everything else is a gauge (passed through).
 var counterMetrics = map[string]struct{}{
-	"minio_s3_requests_total":            {},
-	"minio_s3_requests_4xx_errors_total": {},
-	"minio_s3_requests_5xx_errors_total": {},
-	"minio_s3_traffic_received_bytes":    {},
-	"minio_s3_traffic_sent_bytes":        {},
+	"objectstore_s3_requests_total":            {},
+	"objectstore_s3_requests_4xx_errors_total": {},
+	"objectstore_s3_requests_5xx_errors_total": {},
+	"objectstore_s3_traffic_received_bytes":    {},
+	"objectstore_s3_traffic_sent_bytes":        {},
 }
 
 // MetricsSource is the minimal client the collector needs (lets tests stub
@@ -81,7 +81,8 @@ func flattenFamilies(families []*prom2json.Family) map[string]float64 {
 		if fam == nil {
 			continue
 		}
-		if _, ok := trackedMetrics[fam.Name]; !ok {
+		name := seriesName(fam.Name)
+		if _, ok := trackedMetrics[name]; !ok {
 			continue
 		}
 		var sum float64
@@ -96,7 +97,22 @@ func flattenFamilies(families []*prom2json.Family) map[string]float64 {
 			}
 			sum += v
 		}
-		out[fam.Name] = sum
+		out[name] = sum
 	}
 	return out
+}
+
+// scrapedFamilyPrefix is the family-name prefix MinIO's own Prometheus
+// endpoint uses. The madmin scrape path (no Prometheus URL configured)
+// returns families under it; seriesName maps them onto the vendor-neutral
+// series names in trackedMetrics. PromQL-sourced families already carry the
+// series names and pass through unchanged.
+const scrapedFamilyPrefix = "minio_"
+
+// seriesName maps a scraped Prometheus family name to its series name.
+func seriesName(family string) string {
+	if rest, ok := strings.CutPrefix(family, scrapedFamilyPrefix); ok {
+		return "objectstore_" + rest
+	}
+	return family
 }

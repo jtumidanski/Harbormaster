@@ -26,24 +26,24 @@ import (
 // The offline count counts every drive not in the "online" state, so it also
 // picks up "returning", "suspect", and "unknown" — not just "offline".
 var promQueries = map[string]string{
-	"minio_s3_requests_total":                   `sum(rustfs_http_server_requests_total)`,
-	"minio_s3_requests_4xx_errors_total":        `sum(rustfs_http_server_request_duration_seconds_count{status_class="4xx"})`,
-	"minio_s3_requests_5xx_errors_total":        `sum(rustfs_http_server_request_duration_seconds_count{status_class="5xx"})`,
-	"minio_s3_traffic_received_bytes":           `sum(rustfs_http_server_request_body_bytes_total)`,
-	"minio_s3_traffic_sent_bytes":               `sum(rustfs_http_server_response_body_bytes_total)`,
-	"minio_cluster_capacity_usable_total_bytes": `sum(rustfs_cluster_drive_total_bytes)`,
-	"minio_cluster_capacity_usable_free_bytes":  `sum(rustfs_cluster_drive_free_bytes)`,
-	"minio_cluster_drive_online_total":          `sum(rustfs_cluster_drive_runtime_state{state="online"})`,
-	"minio_cluster_drive_offline_total":         `sum(rustfs_cluster_drive_runtime_state{state!="online"})`,
+	"objectstore_s3_requests_total":                   `sum(rustfs_http_server_requests_total)`,
+	"objectstore_s3_requests_4xx_errors_total":        `sum(rustfs_http_server_request_duration_seconds_count{status_class="4xx"})`,
+	"objectstore_s3_requests_5xx_errors_total":        `sum(rustfs_http_server_request_duration_seconds_count{status_class="5xx"})`,
+	"objectstore_s3_traffic_received_bytes":           `sum(rustfs_http_server_request_body_bytes_total)`,
+	"objectstore_s3_traffic_sent_bytes":               `sum(rustfs_http_server_response_body_bytes_total)`,
+	"objectstore_cluster_capacity_usable_total_bytes": `sum(rustfs_cluster_drive_total_bytes)`,
+	"objectstore_cluster_capacity_usable_free_bytes":  `sum(rustfs_cluster_drive_free_bytes)`,
+	"objectstore_cluster_drive_online_total":          `sum(rustfs_cluster_drive_runtime_state{state="online"})`,
+	"objectstore_cluster_drive_offline_total":         `sum(rustfs_cluster_drive_runtime_state{state!="online"})`,
 }
 
 // clusterFamilies are served by ClusterMetrics; the rest by ResourceMetrics.
 // The split only mirrors the madmin client's two calls; Collect concatenates.
 var clusterFamilies = map[string]bool{
-	"minio_cluster_capacity_usable_total_bytes": true,
-	"minio_cluster_capacity_usable_free_bytes":  true,
-	"minio_cluster_drive_online_total":          true,
-	"minio_cluster_drive_offline_total":         true,
+	"objectstore_cluster_capacity_usable_total_bytes": true,
+	"objectstore_cluster_capacity_usable_free_bytes":  true,
+	"objectstore_cluster_drive_online_total":          true,
+	"objectstore_cluster_drive_offline_total":         true,
 }
 
 // PrometheusSource is a MetricsSource that reads from a Prometheus HTTP

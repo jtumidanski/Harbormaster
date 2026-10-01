@@ -166,11 +166,40 @@ func TestRoutes_PostSetupAliasNotFound(t *testing.T) {
 	var req setup.Request
 	req.Admin.Username = "admin"
 	req.Admin.Password = "pw"
-	req.MinIO.FromMcAlias = "missing"
+	req.ObjectStore.FromMcAlias = "missing"
 	body, err := json.Marshal(req)
 	require.NoError(t, err)
 
 	httpReq := httptest.NewRequest(http.MethodPost, "/api/v1/setup", bytes.NewReader(body))
+	httpReq.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, httpReq)
+	require.Equal(t, http.StatusUnprocessableEntity, w.Code)
+
+	var env struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &env))
+	require.Equal(t, "mc_alias_not_found", env.Error.Code)
+}
+
+// TestRoutes_PostSetupLegacyMinioFieldAliasNotFound asserts that the legacy
+// "minio" field name (in place of "object_store") is still accepted
+// end-to-end through the handler: a raw body using "minio" reaches the same
+// 422 mc_alias_not_found path as "object_store" would.
+func TestRoutes_PostSetupLegacyMinioFieldAliasNotFound(t *testing.T) {
+	dir := t.TempDir()
+	mcPath := filepath.Join(dir, "config.json")
+	require.NoError(t, os.WriteFile(mcPath, []byte(`{"version":"10","aliases":{}}`), 0o600))
+
+	p, _ := newProcessor(t, mcPath)
+	srv := newRouter(p)
+
+	rawBody := []byte(`{"admin":{"username":"a","password":"Password123!"},"minio":{"from_mc_alias":"missing"}}`)
+
+	httpReq := httptest.NewRequest(http.MethodPost, "/api/v1/setup", bytes.NewReader(rawBody))
 	httpReq.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, httpReq)

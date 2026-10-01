@@ -500,7 +500,7 @@ func (p *Processor) clients(ctx context.Context) (s3API, error) {
 	s3, err := p.Clients(ctx)
 	if err != nil {
 		return nil, apierror.New(http.StatusServiceUnavailable,
-			"minio_unavailable", "MinIO client is not available: "+err.Error())
+			"object_store_unavailable", "the object store client is not available: "+err.Error())
 	}
 	return s3, nil
 }
@@ -517,7 +517,7 @@ func mapClientError(err error, fallback string) *apierror.Error {
 	if errors.As(err, &ae) {
 		return ae
 	}
-	return apierror.New(http.StatusBadGateway, "minio_error", fallback+": "+err.Error())
+	return apierror.New(http.StatusBadGateway, "object_store_error", fallback+": "+err.Error())
 }
 
 // ---------------------------------------------------------------------------
@@ -795,7 +795,7 @@ func findNextNonMarker(infos []miniogo.ObjectInfo, excludeVersionID string) Obje
 // issued without a version ID (delete marker on a versioned bucket,
 // permanent removal otherwise), per-key failures are aggregated into
 // Failures[] without aborting, a listing/transport error aborts with a
-// 502 minio_error envelope, and exactly one audit event is recorded.
+// 502 object_store_error envelope, and exactly one audit event is recorded.
 func (p *Processor) BulkDelete(ctx context.Context, bucket string, keys, prefixes []string, dryRun bool, actor, sourceIP string) (BulkDeleteResult, error) {
 	if len(keys) == 0 && len(prefixes) == 0 {
 		return BulkDeleteResult{}, apierror.New(http.StatusBadRequest, "bad_request",

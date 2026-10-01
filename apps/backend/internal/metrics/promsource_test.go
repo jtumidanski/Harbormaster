@@ -41,10 +41,10 @@ func familyValue(fams []*prom2json.Family, name string) (string, bool) {
 
 func TestPrometheusSource_MapsTrackedFamilies(t *testing.T) {
 	srv := fakeProm(t, map[string]string{
-		promQueries["minio_s3_requests_total"]:                   "1500",
-		promQueries["minio_s3_requests_5xx_errors_total"]:        "3",
-		promQueries["minio_cluster_capacity_usable_total_bytes"]: "107374182400",
-		promQueries["minio_cluster_drive_online_total"]:          "1",
+		promQueries["objectstore_s3_requests_total"]:                   "1500",
+		promQueries["objectstore_s3_requests_5xx_errors_total"]:        "3",
+		promQueries["objectstore_cluster_capacity_usable_total_bytes"]: "107374182400",
+		promQueries["objectstore_cluster_drive_online_total"]:          "1",
 	})
 	defer srv.Close()
 
@@ -60,10 +60,10 @@ func TestPrometheusSource_MapsTrackedFamilies(t *testing.T) {
 	all := append(cluster, resource...)
 
 	for name, want := range map[string]string{
-		"minio_s3_requests_total":                   "1500",
-		"minio_s3_requests_5xx_errors_total":        "3",
-		"minio_cluster_capacity_usable_total_bytes": "107374182400",
-		"minio_cluster_drive_online_total":          "1",
+		"objectstore_s3_requests_total":                   "1500",
+		"objectstore_s3_requests_5xx_errors_total":        "3",
+		"objectstore_cluster_capacity_usable_total_bytes": "107374182400",
+		"objectstore_cluster_drive_online_total":          "1",
 	} {
 		got, ok := familyValue(all, name)
 		if !ok || got != want {
@@ -71,7 +71,7 @@ func TestPrometheusSource_MapsTrackedFamilies(t *testing.T) {
 		}
 	}
 	// A family with an empty vector is omitted, not emitted as zero.
-	if _, ok := familyValue(all, "minio_s3_requests_4xx_errors_total"); ok {
+	if _, ok := familyValue(all, "objectstore_s3_requests_4xx_errors_total"); ok {
 		t.Error("empty vector must not produce a family")
 	}
 	// Every emitted family is one the collector tracks.
@@ -83,7 +83,7 @@ func TestPrometheusSource_MapsTrackedFamilies(t *testing.T) {
 }
 
 func TestPrometheusSource_FlattensThroughCollector(t *testing.T) {
-	srv := fakeProm(t, map[string]string{promQueries["minio_s3_requests_total"]: "42"})
+	srv := fakeProm(t, map[string]string{promQueries["objectstore_s3_requests_total"]: "42"})
 	defer srv.Close()
 	src := NewPrometheusSource(srv.URL, srv.Client())
 	c := NewCollector(func(ctx context.Context) (MetricsSource, error) { return src, nil })
@@ -91,8 +91,8 @@ func TestPrometheusSource_FlattensThroughCollector(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
-	if got["minio_s3_requests_total"] != 42 {
-		t.Errorf("want 42, got %v", got["minio_s3_requests_total"])
+	if got["objectstore_s3_requests_total"] != 42 {
+		t.Errorf("want 42, got %v", got["objectstore_s3_requests_total"])
 	}
 }
 

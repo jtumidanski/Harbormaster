@@ -121,7 +121,7 @@ function RequestRateChart({
   series: MetricsView["series"];
   metricsWindow: MetricsWindow;
 }) {
-  const points = series["minio_s3_requests_total"] ?? [];
+  const points = series["objectstore_s3_requests_total"] ?? [];
   const data = toRechartsDatum(points, "requests", metricsWindow);
 
   const config: ChartConfig = {
@@ -165,8 +165,8 @@ function ErrorRatesChart({
   series: MetricsView["series"];
   metricsWindow: MetricsWindow;
 }) {
-  const errors4xx = series["minio_s3_requests_4xx_errors_total"] ?? [];
-  const errors5xx = series["minio_s3_requests_5xx_errors_total"] ?? [];
+  const errors4xx = series["objectstore_s3_requests_4xx_errors_total"] ?? [];
+  const errors5xx = series["objectstore_s3_requests_5xx_errors_total"] ?? [];
   const data = mergeSeries(errors4xx, "errors4xx", errors5xx, "errors5xx", metricsWindow);
 
   const config: ChartConfig = {
@@ -217,8 +217,8 @@ function ThroughputChart({
   series: MetricsView["series"];
   metricsWindow: MetricsWindow;
 }) {
-  const received = series["minio_s3_traffic_received_bytes"] ?? [];
-  const sent = series["minio_s3_traffic_sent_bytes"] ?? [];
+  const received = series["objectstore_s3_traffic_received_bytes"] ?? [];
+  const sent = series["objectstore_s3_traffic_sent_bytes"] ?? [];
   const data = mergeSeries(received, "received", sent, "sent", metricsWindow);
 
   const config: ChartConfig = {
@@ -271,10 +271,10 @@ function CapacityAndDrivesChart({
   series: MetricsView["series"];
   metricsWindow: MetricsWindow;
 }) {
-  const total = series["minio_cluster_capacity_usable_total_bytes"] ?? [];
-  const free = series["minio_cluster_capacity_usable_free_bytes"] ?? [];
-  const online = series["minio_cluster_drive_online_total"] ?? [];
-  const offline = series["minio_cluster_drive_offline_total"] ?? [];
+  const total = series["objectstore_cluster_capacity_usable_total_bytes"] ?? [];
+  const free = series["objectstore_cluster_capacity_usable_free_bytes"] ?? [];
+  const online = series["objectstore_cluster_drive_online_total"] ?? [];
+  const offline = series["objectstore_cluster_drive_offline_total"] ?? [];
 
   const capacityData = mergeSeries(total, "total", free, "free", metricsWindow);
   const driveData = mergeSeries(online, "online", offline, "offline", metricsWindow);

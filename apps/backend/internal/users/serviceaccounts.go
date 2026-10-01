@@ -111,7 +111,7 @@ func (p *ServiceAccountProcessor) clients(ctx context.Context) (saAdminAPI, erro
 	adm, err := p.Clients(ctx)
 	if err != nil {
 		return nil, apierror.New(http.StatusServiceUnavailable,
-			"minio_unavailable", "MinIO client is not available: "+err.Error())
+			"object_store_unavailable", "the object store client is not available: "+err.Error())
 	}
 	return adm, nil
 }

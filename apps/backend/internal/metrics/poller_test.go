@@ -22,15 +22,15 @@ func (f *fakeCollector) Collect(_ context.Context) (map[string]float64, error) {
 func TestPollOnce_SuccessWritesSample(t *testing.T) {
 	st := newTestStore(t)
 	at := time.Now().UTC()
-	c := &fakeCollector{values: map[string]float64{"minio_s3_requests_total": 42}}
+	c := &fakeCollector{values: map[string]float64{"objectstore_s3_requests_total": 42}}
 
 	err := pollOnce(context.Background(), c, st, at)
 	require.NoError(t, err)
 
-	pts, err := st.Query(context.Background(), []string{"minio_s3_requests_total"}, at.Add(-time.Second))
+	pts, err := st.Query(context.Background(), []string{"objectstore_s3_requests_total"}, at.Add(-time.Second))
 	require.NoError(t, err)
-	require.Len(t, pts["minio_s3_requests_total"], 1)
-	require.InDelta(t, 42.0, pts["minio_s3_requests_total"][0].V, 0.001)
+	require.Len(t, pts["objectstore_s3_requests_total"], 1)
+	require.InDelta(t, 42.0, pts["objectstore_s3_requests_total"][0].V, 0.001)
 }
 
 func TestPollOnce_ErrorWritesNothing(t *testing.T) {
@@ -41,7 +41,7 @@ func TestPollOnce_ErrorWritesNothing(t *testing.T) {
 	err := pollOnce(context.Background(), c, st, at)
 	require.Error(t, err)
 
-	pts, err := st.Query(context.Background(), []string{"minio_s3_requests_total"}, at.Add(-time.Second))
+	pts, err := st.Query(context.Background(), []string{"objectstore_s3_requests_total"}, at.Add(-time.Second))
 	require.NoError(t, err)
 	require.Empty(t, pts)
 }

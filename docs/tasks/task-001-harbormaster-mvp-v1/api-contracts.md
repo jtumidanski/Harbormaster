@@ -45,7 +45,7 @@ Explicit-credentials form:
 ```json
 {
   "admin": { "username": "admin", "password": "correct horse battery staple!" },
-  "minio": {
+  "object_store": {
     "endpoint_url": "https://minio.lan:9000",
     "access_key": "AKIA...",
     "secret_key": "abcd1234...",
@@ -60,11 +60,16 @@ mc-alias form (server re-reads the mc config to fetch the secret):
 ```json
 {
   "admin": { "username": "admin", "password": "correct horse battery staple!" },
-  "minio": { "from_mc_alias": "myminio" }
+  "object_store": { "from_mc_alias": "myminio" }
 }
 ```
 
-When `from_mc_alias` is present, all other `minio.*` fields are ignored except `tls_skip_verify` and `custom_ca_pem`, which may be overridden by the caller.
+The block was named `minio` before 2026-10-01. `minio` is still accepted in
+place of `object_store` — used whenever `object_store` has neither
+`endpoint_url` nor `from_mc_alias` set — until the release after 2026-10-01,
+then removed.
+
+When `from_mc_alias` is present, all other `object_store.*` fields are ignored except `tls_skip_verify` and `custom_ca_pem`, which may be overridden by the caller.
 
 Success `201`:
 
@@ -77,8 +82,8 @@ Failure `422`:
 ```json
 {
   "error": {
-    "code": "minio_unreachable",
-    "message": "MinIO admin API ping failed",
+    "code": "object_store_unreachable",
+    "message": "admin ping failed",
     "details": { "underlying": "Get \"https://minio.lan:9000/minio/admin/v3/info\": x509: ..." }
   }
 }
@@ -150,7 +155,7 @@ Also sets `harbormaster_csrf` cookie if missing.
 
 ### `PUT /api/v1/connection`
 
-Request: same shape as `POST /api/v1/setup`'s `minio` block. Validates before persisting; failure returns 422 with the same `code` taxonomy as setup.
+Request: same shape as `POST /api/v1/setup`'s `object_store` block. Validates before persisting; failure returns 422 with the same `code` taxonomy as setup.
 
 ### `POST /api/v1/connection/test`
 
@@ -161,9 +166,14 @@ Request: same shape. Validate-only; no persistence. Response:
   "tcp_connect": "ok",
   "list_buckets": "ok",
   "admin_ping": "ok",
+  "server_version": "RELEASE.2026-04-30T12-00-00Z",
   "minio_version": "RELEASE.2026-04-30T12-00-00Z"
 }
 ```
+
+`server_version` is the object store's version banner. `minio_version` is a
+legacy duplicate of it, emitted until the release after 2026-10-01; read
+`server_version`.
 
 Any non-`ok` value carries a `failed: { reason }` shape:
 
@@ -724,6 +734,29 @@ Filter keys: `action`, `target_type`, `target_id`, `outcome`, `from` (RFC 3339),
 
 ---
 
+## Metrics
+
+### `GET /api/v1/metrics`
+
+Series keys use the `objectstore_` prefix:
+
+- `objectstore_s3_requests_total`
+- `objectstore_s3_requests_4xx_errors_total`
+- `objectstore_s3_requests_5xx_errors_total`
+- `objectstore_s3_traffic_received_bytes`
+- `objectstore_s3_traffic_sent_bytes`
+- `objectstore_cluster_capacity_usable_total_bytes`
+- `objectstore_cluster_capacity_usable_free_bytes`
+- `objectstore_cluster_drive_online_total`
+- `objectstore_cluster_drive_offline_total`
+
+`minio_*`-prefixed aliases of the same nine keys are emitted alongside them
+for one release; read the `objectstore_*` keys.
+
+**Policy origin:** policy `origin` values are `server-builtin | harbormaster-template | custom`.
+
+---
+
 ## Error code reference (non-exhaustive)
 
 | Code | HTTP | Meaning |
@@ -735,9 +768,12 @@ Filter keys: `action`, `target_type`, `target_id`, `outcome`, `from` (RFC 3339),
 | `already_initialized`       | 409 | `/setup` called after first success |
 | `weak_password`             | 422 | New password fails policy |
 | `mc_alias_not_found`        | 422 | `/setup` referenced an unknown mc alias |
-| `minio_unreachable`         | 422 | Setup / connection-test failed at TCP / TLS layer |
-| `minio_invalid_credentials` | 422 | MinIO rejected the provided keys |
-| `minio_not_admin`           | 422 | Provided MinIO keys lack admin capability |
+| `object_store_unreachable`  | 422 | Setup / connection-test could not reach the object store (TCP / TLS / network layer) |
+| `object_store_invalid_credentials` | 422 | The object store rejected the provided keys |
+| `object_store_not_admin`    | 422 | The provided keys lack admin capability on the object store |
+| `object_store_unavailable`  | 502 | Lifecycle-rule operation could not reach the object store |
+| `object_store_error`        | 502 | Unexpected error from an object store operation (buckets, objects, users, policies) |
+| `object_store_rejected_policy` | 422 | The object store rejected a policy document on create/update |
 | `invalid_bucket_name`       | 422 | Bucket name violates MinIO rules |
 | `bucket_not_empty`          | 409 | Delete attempted on a non-empty bucket (no force flag in v1; use Empty-bucket first) |
 | `invalid_quota`             | 422 | Quota payload missing or non-positive `bytes` |

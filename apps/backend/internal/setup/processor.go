@@ -37,36 +37,48 @@ type Request struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	} `json:"admin"`
-	MinIO connection.SubmitInput `json:"minio"`
+	ObjectStore connection.SubmitInput `json:"object_store"`
+	// LegacyMinIO is the pre-rename field name.
+	// Legacy name accepted until the release after 2026-10-01; remove then.
+	LegacyMinIO *connection.SubmitInput `json:"minio,omitempty"`
+}
+
+// normalize copies the legacy "minio" block into ObjectStore when the caller
+// did not send "object_store".
+func (r *Request) normalize() {
+	if r.LegacyMinIO != nil && r.ObjectStore.EndpointURL == "" && r.ObjectStore.FromMcAlias == "" {
+		r.ObjectStore = *r.LegacyMinIO
+	}
 }
 
 // Submit performs the first-run sequence and is idempotent — it returns
 // ErrAlreadyInitialized on the second call. The sourceIP is accepted for
 // the audit hook that will be wired once internal/audit is reachable here.
 func (p *Processor) Submit(ctx context.Context, req Request, sourceIP string) error {
+	req.normalize()
 	if p.isInitialized(ctx) {
 		return ErrAlreadyInitialized
 	}
-	if req.MinIO.FromMcAlias != "" {
-		secret, err := ReadMcAliasSecret(p.McPath, req.MinIO.FromMcAlias)
+	if req.ObjectStore.FromMcAlias != "" {
+		secret, err := ReadMcAliasSecret(p.McPath, req.ObjectStore.FromMcAlias)
 		if err != nil {
 			return ErrMcAliasNotFound
 		}
-		req.MinIO.SecretKey = secret
+		req.ObjectStore.SecretKey = secret
 		aliases, _, _ := ReadMcAliases(p.McPath)
 		for _, a := range aliases {
-			if a.Name == req.MinIO.FromMcAlias {
-				req.MinIO.EndpointURL = a.Endpoint
-				req.MinIO.AccessKey = a.AccessKey
-				if req.MinIO.TLSSkipVerify == nil {
+			if a.Name == req.ObjectStore.FromMcAlias {
+				req.ObjectStore.EndpointURL = a.Endpoint
+				req.ObjectStore.AccessKey = a.AccessKey
+				if req.ObjectStore.TLSSkipVerify == nil {
 					v := a.TLSSkipVerify
-					req.MinIO.TLSSkipVerify = &v
+					req.ObjectStore.TLSSkipVerify = &v
 				}
 				break
 			}
 		}
 	}
-	if err := p.ConnProc.Validate(ctx, req.MinIO); err != nil {
+	if err := p.ConnProc.Validate(ctx, req.ObjectStore); err != nil {
 		return err
 	}
 	hash, err := auth.HashPassword(req.Admin.Password)
@@ -79,7 +91,7 @@ func (p *Processor) Submit(ctx context.Context, req Request, sourceIP string) er
 			req.Admin.Username, hash, now, now).Error; err != nil {
 			return err
 		}
-		if err := p.ConnProc.PersistInTx(ctx, tx, req.MinIO); err != nil {
+		if err := p.ConnProc.PersistInTx(ctx, tx, req.ObjectStore); err != nil {
 			return err
 		}
 		if err := tx.Exec(`INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?,?,?)`,
@@ -94,7 +106,7 @@ func (p *Processor) Submit(ctx context.Context, req Request, sourceIP string) er
 	// persisted. Skipping this is what produced the onboarding 503: the pool
 	// stayed empty, the readiness probe's pool.Get failed, and the pod was
 	// pulled from the Service before the operator could reach the login page.
-	if err := p.ConnProc.BindPool(req.MinIO); err != nil {
+	if err := p.ConnProc.BindPool(req.ObjectStore); err != nil {
 		return err
 	}
 	_ = sourceIP // audit hook added once audit.Processor is wired here

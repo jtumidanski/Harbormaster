@@ -51,10 +51,10 @@ func newTestCipher(t *testing.T) *crypto.Cipher {
 // network probe during Submit tests.
 func stubProbeOK(_ context.Context, _ connection.SubmitInput) (connection.TestResult, *apierror.Error) {
 	return connection.TestResult{
-		TCPConnect:   "ok",
-		ListBuckets:  "ok",
-		AdminPing:    "ok",
-		MinIOVersion: "RELEASE.2026-01-01T00-00-00Z",
+		TCPConnect:    "ok",
+		ListBuckets:   "ok",
+		AdminPing:     "ok",
+		ServerVersion: "RELEASE.2026-01-01T00-00-00Z",
 	}, nil
 }
 

@@ -27,8 +27,7 @@ export type SetupAliasObjectStore = {
 
 export type SetupPayload = {
   admin: { username: string; password: string };
-  // wire name kept for the backend contract
-  minio: SetupExplicitObjectStore | SetupAliasObjectStore;
+  object_store: SetupExplicitObjectStore | SetupAliasObjectStore;
 };
 
 export function submitSetup(payload: SetupPayload) {

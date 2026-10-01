@@ -5,7 +5,7 @@ import "encoding/json"
 // Origin classifies a canned policy by provenance. Only custom policies are
 // editable/deletable through Harbormaster.
 const (
-	OriginBuiltin  = "minio-builtin"
+	OriginBuiltin  = "server-builtin"
 	OriginTemplate = "harbormaster-template"
 	OriginCustom   = "custom"
 )

@@ -229,7 +229,7 @@ func TestSetPublicAccessReadWriteRequiresConfirm(t *testing.T) {
 
 // TestGetReturnsNotFoundWhenBucketAbsent verifies the Get path translates
 // a missing-bucket presence probe into the typed 404 envelope rather than
-// leaking a generic minio_error 502. The stub's BucketExists is wired to
+// leaking a generic object_store_error 502. The stub's BucketExists is wired to
 // return (false, nil); the call must surface apierror.NotFound("bucket").
 func TestGetReturnsNotFoundWhenBucketAbsent(t *testing.T) {
 	p, _, s3 := newTestProcessor(t, nil, nil)

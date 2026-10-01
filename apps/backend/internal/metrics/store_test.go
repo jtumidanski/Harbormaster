@@ -38,14 +38,14 @@ func newTestStore(t *testing.T) *Store {
 func TestStoreInsertAndQueryWindow(t *testing.T) {
 	st := newTestStore(t)
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	_ = st.Insert(context.Background(), base, map[string]float64{"minio_s3_requests_total": 100})
-	_ = st.Insert(context.Background(), base.Add(time.Minute), map[string]float64{"minio_s3_requests_total": 110})
-	pts, err := st.Query(context.Background(), []string{"minio_s3_requests_total"}, base.Add(-time.Hour))
+	_ = st.Insert(context.Background(), base, map[string]float64{"objectstore_s3_requests_total": 100})
+	_ = st.Insert(context.Background(), base.Add(time.Minute), map[string]float64{"objectstore_s3_requests_total": 110})
+	pts, err := st.Query(context.Background(), []string{"objectstore_s3_requests_total"}, base.Add(-time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(pts["minio_s3_requests_total"]) != 2 {
-		t.Fatalf("expected 2 samples, got %d", len(pts["minio_s3_requests_total"]))
+	if len(pts["objectstore_s3_requests_total"]) != 2 {
+		t.Fatalf("expected 2 samples, got %d", len(pts["objectstore_s3_requests_total"]))
 	}
 }
 

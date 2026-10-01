@@ -1,4 +1,9 @@
-export type PolicyOrigin = "minio-builtin" | "harbormaster-template" | "custom";
+export type PolicyOrigin =
+  | "server-builtin"
+  | "harbormaster-template"
+  | "custom"
+  // Legacy name accepted until the release after 2026-10-01; remove then.
+  | "minio-builtin";
 
 export type Policy = {
   name: string;

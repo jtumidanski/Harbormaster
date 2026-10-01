@@ -70,7 +70,7 @@ function policiesStub(): StubResponse {
             id: "readonly",
             attributes: {
               name: "readonly",
-              origin: "minio-builtin",
+              origin: "server-builtin",
               editable: false,
               statement_summary: "Built-in readonly",
             },

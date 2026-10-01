@@ -37,7 +37,7 @@ const customPolicy: Policy = {
 
 const builtinPolicy: Policy = {
   name: "readwrite",
-  origin: "minio-builtin",
+  origin: "server-builtin",
   editable: false,
   statement_summary: "MinIO built-in ReadWrite",
 };
@@ -54,7 +54,7 @@ describe("PoliciesPage", () => {
   });
 
   describe("editable-gating", () => {
-    it("shows Edit/Delete buttons only for editable (custom) policies, not for minio-builtin", async () => {
+    it("shows Edit/Delete buttons only for editable (custom) policies, not for server-builtin", async () => {
       vi.spyOn(policiesApi, "listPolicies").mockResolvedValue([customPolicy, builtinPolicy]);
       const qc = makeQueryClient();
       render(

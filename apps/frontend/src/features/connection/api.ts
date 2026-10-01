@@ -22,7 +22,7 @@ export type ConnectionTestResult = {
   tcp_connect: ConnectionCheck;
   list_buckets: ConnectionCheck;
   admin_ping: ConnectionCheck;
-  minio_version: string | null;
+  server_version: string | null;
 };
 
 export function fetchConnection() {

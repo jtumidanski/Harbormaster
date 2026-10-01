@@ -29,28 +29,28 @@ function collectedView(): MetricsView {
     step_seconds: 60,
     collected: true,
     series: {
-      minio_s3_requests_total: [
+      objectstore_s3_requests_total: [
         { t: "2026-01-01T00:00:00Z", v: 1.2 },
         { t: "2026-01-01T00:01:00Z", v: 1.5 },
         { t: "2026-01-01T00:02:00Z", v: 0.8 },
       ],
-      minio_s3_requests_4xx_errors_total: [
+      objectstore_s3_requests_4xx_errors_total: [
         { t: "2026-01-01T00:00:00Z", v: 0.1 },
         { t: "2026-01-01T00:01:00Z", v: 0.0 },
       ],
-      minio_s3_requests_5xx_errors_total: [],
-      minio_s3_traffic_received_bytes: [
+      objectstore_s3_requests_5xx_errors_total: [],
+      objectstore_s3_traffic_received_bytes: [
         { t: "2026-01-01T00:00:00Z", v: 1024.0 },
         { t: "2026-01-01T00:01:00Z", v: 2048.0 },
       ],
-      minio_s3_traffic_sent_bytes: [
+      objectstore_s3_traffic_sent_bytes: [
         { t: "2026-01-01T00:00:00Z", v: 512.0 },
         { t: "2026-01-01T00:01:00Z", v: 768.0 },
       ],
-      minio_cluster_capacity_usable_total_bytes: [{ t: "2026-01-01T00:00:00Z", v: 1_000_000_000 }],
-      minio_cluster_capacity_usable_free_bytes: [{ t: "2026-01-01T00:00:00Z", v: 600_000_000 }],
-      minio_cluster_drive_online_total: [{ t: "2026-01-01T00:00:00Z", v: 4 }],
-      minio_cluster_drive_offline_total: [{ t: "2026-01-01T00:00:00Z", v: 0 }],
+      objectstore_cluster_capacity_usable_total_bytes: [{ t: "2026-01-01T00:00:00Z", v: 1_000_000_000 }],
+      objectstore_cluster_capacity_usable_free_bytes: [{ t: "2026-01-01T00:00:00Z", v: 600_000_000 }],
+      objectstore_cluster_drive_online_total: [{ t: "2026-01-01T00:00:00Z", v: 4 }],
+      objectstore_cluster_drive_offline_total: [{ t: "2026-01-01T00:00:00Z", v: 0 }],
     },
   };
 }

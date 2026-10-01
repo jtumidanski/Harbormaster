@@ -252,8 +252,8 @@ function EditForm({ detail, onCancel, onSaved }: EditFormProps) {
             <CardHeader>
               <CardTitle className="text-base">Test results</CardTitle>
               <CardDescription>
-                {testResult.minio_version
-                  ? `Server version: ${testResult.minio_version}`
+                {testResult.server_version
+                  ? `Server version: ${testResult.server_version}`
                   : "Server version: unknown"}
               </CardDescription>
             </CardHeader>

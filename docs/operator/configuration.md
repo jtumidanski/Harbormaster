@@ -96,3 +96,53 @@ audit_retention: "2160h"
 The `minio_connections` table is now `connections` (migration 0008). The
 rename runs automatically on the next start; no operator action is
 required.
+
+## Renamed in 2026-10
+
+Wire-level names changed:
+
+- `minio` request field → `object_store` (legacy `minio` shim accepted for one release)
+- `minio_version` response field → `server_version` (legacy `minio_version` emitted alongside it for one release)
+- `minio_*` metric series keys → `objectstore_*` (legacy `minio_*` aliases emitted for one release)
+- `minio-builtin` policy origin → `server-builtin`
+- `minio_unreachable` error code → `object_store_unreachable`
+- `minio_invalid_credentials` error code → `object_store_invalid_credentials`
+- `minio_not_admin` error code → `object_store_not_admin`
+- `minio_unavailable` error code → `object_store_unavailable`
+- `minio_error` error code → `object_store_error`
+- `minio_rejected_policy` error code → `object_store_rejected_policy`
+
+Migration 0009 renames the `minio_`-prefixed rows in `metrics_samples` to
+their `objectstore_` equivalents, in one transaction, at startup. No
+operator action is required.
+
+### Rolling back to an image older than this release
+
+The previous image (`sha-42d7065`, golang-migrate v4) refuses to start
+against a database at schema version 9 — it exits with "no migration found
+for version 9". Rolling back requires manually unwinding the schema version
+before deploying the older image.
+
+1. Take a Longhorn snapshot of the `harbormaster-data` PVC first, so you
+   have a restore point if any of the following steps go wrong.
+2. Scale the Deployment to 0 (see `docs/operator/recovery.md` for the
+   `kubectl ... scale deployment/harbormaster --replicas=0` form).
+3. Run a one-shot debug pod that mounts the same PVC — the same pattern
+   used for `admin reset-encryption` in
+   [`docs/operator/recovery.md`](recovery.md#admin-reset-encryption---confirm),
+   substituting `sqlite3` for the `harbormaster` binary as the pod's
+   command — and against the DB file on the PVC run the statement from
+   `apps/backend/migrations/0009_rename_metric_names.down.sql`, followed
+   by:
+
+   ```sql
+   UPDATE schema_migrations SET version = 8, dirty = 0;
+   ```
+
+4. Deploy the previous image.
+
+Skipping the `metrics_samples` rewrite and only resetting
+`schema_migrations.version` is possible, but the `objectstore_*`-keyed rows
+written since the upgrade won't match the older image's `minio_*`-only
+queries — pre-rollback history disappears from the dashboard until
+retention clears those rows.

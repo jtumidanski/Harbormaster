@@ -734,6 +734,29 @@ Filter keys: `action`, `target_type`, `target_id`, `outcome`, `from` (RFC 3339),
 
 ---
 
+## Metrics
+
+### `GET /api/v1/metrics`
+
+Series keys use the `objectstore_` prefix:
+
+- `objectstore_s3_requests_total`
+- `objectstore_s3_requests_4xx_errors_total`
+- `objectstore_s3_requests_5xx_errors_total`
+- `objectstore_s3_traffic_received_bytes`
+- `objectstore_s3_traffic_sent_bytes`
+- `objectstore_cluster_capacity_usable_total_bytes`
+- `objectstore_cluster_capacity_usable_free_bytes`
+- `objectstore_cluster_drive_online_total`
+- `objectstore_cluster_drive_offline_total`
+
+`minio_*`-prefixed aliases of the same nine keys are emitted alongside them
+for one release; read the `objectstore_*` keys.
+
+**Policy origin:** policy `origin` values are `server-builtin | harbormaster-template | custom`.
+
+---
+
 ## Error code reference (non-exhaustive)
 
 | Code | HTTP | Meaning |
@@ -748,6 +771,9 @@ Filter keys: `action`, `target_type`, `target_id`, `outcome`, `from` (RFC 3339),
 | `object_store_unreachable`  | 422 | Setup / connection-test could not reach the object store (TCP / TLS / network layer) |
 | `object_store_invalid_credentials` | 422 | The object store rejected the provided keys |
 | `object_store_not_admin`    | 422 | The provided keys lack admin capability on the object store |
+| `object_store_unavailable`  | 502 | Lifecycle-rule operation could not reach the object store |
+| `object_store_error`        | 502 | Unexpected error from an object store operation (buckets, objects, users, policies) |
+| `object_store_rejected_policy` | 422 | The object store rejected a policy document on create/update |
 | `invalid_bucket_name`       | 422 | Bucket name violates MinIO rules |
 | `bucket_not_empty`          | 409 | Delete attempted on a non-empty bucket (no force flag in v1; use Empty-bucket first) |
 | `invalid_quota`             | 422 | Quota payload missing or non-positive `bytes` |

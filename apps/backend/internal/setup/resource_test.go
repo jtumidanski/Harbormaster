@@ -166,7 +166,7 @@ func TestRoutes_PostSetupAliasNotFound(t *testing.T) {
 	var req setup.Request
 	req.Admin.Username = "admin"
 	req.Admin.Password = "pw"
-	req.MinIO.FromMcAlias = "missing"
+	req.ObjectStore.FromMcAlias = "missing"
 	body, err := json.Marshal(req)
 	require.NoError(t, err)
 

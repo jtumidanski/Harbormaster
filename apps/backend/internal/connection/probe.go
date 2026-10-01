@@ -33,9 +33,12 @@ type SubmitInput struct {
 // POST /api/v1/connection/test. Each step is either the string "ok" or a
 // {"failed": "<reason>"} object; ServerInfo also returns the version banner.
 type TestResult struct {
-	TCPConnect   any    `json:"tcp_connect"`
-	ListBuckets  any    `json:"list_buckets"`
-	AdminPing    any    `json:"admin_ping"`
+	TCPConnect    any    `json:"tcp_connect"`
+	ListBuckets   any    `json:"list_buckets"`
+	AdminPing     any    `json:"admin_ping"`
+	ServerVersion string `json:"server_version,omitempty"`
+	// MinIOVersion duplicates ServerVersion under the pre-rename key.
+	// Legacy name accepted until the release after 2026-10-01; remove then.
 	MinIOVersion string `json:"minio_version,omitempty"`
 }
 
@@ -49,14 +52,14 @@ const probeDialTimeout = 3 * time.Second
 //  2. ListBuckets via minio-go (auth + basic data-plane access)
 //  3. ServerInfo via madmin-go (admin capability + version banner)
 //
-// On the happy path it returns (TestResult{all "ok", MinIOVersion: …}, nil).
+// On the happy path it returns (TestResult{all "ok", ServerVersion: …}, nil).
 // On any failure it returns the partially-filled TestResult and the typed
 // apierror describing the first failed step; callers map that directly to
 // a 422 response with one of the documented codes:
 //
-//   - minio_unreachable        — TCP / TLS / non-auth network errors
-//   - minio_invalid_credentials — InvalidAccessKeyId or SignatureDoesNotMatch
-//   - minio_not_admin           — AccessDenied on madmin.ServerInfo
+//   - object_store_unreachable         — TCP / TLS / non-auth network errors
+//   - object_store_invalid_credentials — InvalidAccessKeyId or SignatureDoesNotMatch
+//   - object_store_not_admin           — AccessDenied on madmin.ServerInfo
 func Probe(ctx context.Context, in SubmitInput) (TestResult, *apierror.Error) {
 	out := TestResult{}
 
@@ -67,7 +70,7 @@ func Probe(ctx context.Context, in SubmitInput) (TestResult, *apierror.Error) {
 			reason = err.Error()
 		}
 		out.TCPConnect = map[string]string{"failed": reason}
-		return out, apierror.New(http.StatusUnprocessableEntity, "minio_unreachable",
+		return out, apierror.New(http.StatusUnprocessableEntity, "object_store_unreachable",
 			"Endpoint URL is malformed").
 			WithDetails(map[string]any{"underlying": reason})
 	}
@@ -78,7 +81,7 @@ func Probe(ctx context.Context, in SubmitInput) (TestResult, *apierror.Error) {
 	conn, derr := dialer.DialContext(ctx, "tcp", host)
 	if derr != nil {
 		out.TCPConnect = map[string]string{"failed": derr.Error()}
-		return out, apierror.New(http.StatusUnprocessableEntity, "minio_unreachable",
+		return out, apierror.New(http.StatusUnprocessableEntity, "object_store_unreachable",
 			"TCP connect failed").
 			WithDetails(map[string]any{"underlying": derr.Error()})
 	}
@@ -93,7 +96,7 @@ func Probe(ctx context.Context, in SubmitInput) (TestResult, *apierror.Error) {
 	if in.CustomCAPEM != "" {
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM([]byte(in.CustomCAPEM)) {
-			return out, apierror.New(http.StatusUnprocessableEntity, "minio_unreachable",
+			return out, apierror.New(http.StatusUnprocessableEntity, "object_store_unreachable",
 				"Custom CA PEM is not valid")
 		}
 		tlsCfg.RootCAs = pool
@@ -106,7 +109,7 @@ func Probe(ctx context.Context, in SubmitInput) (TestResult, *apierror.Error) {
 		Transport: tr,
 	})
 	if err != nil {
-		return out, apierror.New(http.StatusUnprocessableEntity, "minio_unreachable",
+		return out, apierror.New(http.StatusUnprocessableEntity, "object_store_unreachable",
 			"client init failed").
 			WithDetails(map[string]any{"underlying": err.Error()})
 	}
@@ -117,12 +120,12 @@ func Probe(ctx context.Context, in SubmitInput) (TestResult, *apierror.Error) {
 			strings.Contains(msg, "SignatureDoesNotMatch"):
 			out.ListBuckets = map[string]string{"failed": msg}
 			return out, apierror.New(http.StatusUnprocessableEntity,
-				"minio_invalid_credentials",
+				"object_store_invalid_credentials",
 				"The object store rejected the provided keys")
 		default:
 			out.ListBuckets = map[string]string{"failed": msg}
 			return out, apierror.New(http.StatusUnprocessableEntity,
-				"minio_unreachable", "list buckets failed").
+				"object_store_unreachable", "list buckets failed").
 				WithDetails(map[string]any{"underlying": msg})
 		}
 	}
@@ -134,7 +137,7 @@ func Probe(ctx context.Context, in SubmitInput) (TestResult, *apierror.Error) {
 		Transport: tr,
 	})
 	if err != nil {
-		return out, apierror.New(http.StatusUnprocessableEntity, "minio_unreachable",
+		return out, apierror.New(http.StatusUnprocessableEntity, "object_store_unreachable",
 			"admin client init failed").
 			WithDetails(map[string]any{"underlying": err.Error()})
 	}
@@ -143,17 +146,25 @@ func Probe(ctx context.Context, in SubmitInput) (TestResult, *apierror.Error) {
 		msg := err.Error()
 		if strings.Contains(msg, "AccessDenied") {
 			out.AdminPing = map[string]string{"failed": msg}
-			return out, apierror.New(http.StatusUnprocessableEntity, "minio_not_admin",
+			return out, apierror.New(http.StatusUnprocessableEntity, "object_store_not_admin",
 				"Provided object store keys lack admin capability")
 		}
 		out.AdminPing = map[string]string{"failed": msg}
-		return out, apierror.New(http.StatusUnprocessableEntity, "minio_unreachable",
+		return out, apierror.New(http.StatusUnprocessableEntity, "object_store_unreachable",
 			"admin ping failed").
 			WithDetails(map[string]any{"underlying": msg})
 	}
 	out.AdminPing = "ok"
-	out.MinIOVersion = serverVersion(info)
-	return out, nil
+	return withServerVersion(out, serverVersion(info)), nil
+}
+
+// withServerVersion returns r with the version banner set under both the
+// current key and the legacy one.
+func withServerVersion(r TestResult, version string) TestResult {
+	r.ServerVersion = version
+	// Legacy name accepted until the release after 2026-10-01; remove then.
+	r.MinIOVersion = version
+	return r
 }
 
 // serverVersion picks the most useful version banner available in the

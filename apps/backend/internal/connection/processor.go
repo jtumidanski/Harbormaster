@@ -274,7 +274,7 @@ func (p *Processor) runTest(ctx context.Context, in SubmitInput) (TestResult, *a
 			return TestResult{TCPConnect: map[string]string{"failed": ae.Message}}, ae
 		}
 		return TestResult{TCPConnect: map[string]string{"failed": err.Error()}},
-			apierror.New(http.StatusUnprocessableEntity, "minio_unreachable", err.Error())
+			apierror.New(http.StatusUnprocessableEntity, "object_store_unreachable", err.Error())
 	}
 	return p.Probe(ctx, in)
 }
@@ -304,15 +304,15 @@ func stepStatus(v any) string {
 // FromMcAlias is intentionally not checked here — that's setup's concern.
 func validateSubmit(in SubmitInput) error {
 	if strings.TrimSpace(in.EndpointURL) == "" {
-		return apierror.New(http.StatusUnprocessableEntity, "minio_unreachable",
+		return apierror.New(http.StatusUnprocessableEntity, "object_store_unreachable",
 			"endpoint_url is required")
 	}
 	if in.AccessKey == "" {
-		return apierror.New(http.StatusUnprocessableEntity, "minio_invalid_credentials",
+		return apierror.New(http.StatusUnprocessableEntity, "object_store_invalid_credentials",
 			"access_key is required")
 	}
 	if in.SecretKey == "" {
-		return apierror.New(http.StatusUnprocessableEntity, "minio_invalid_credentials",
+		return apierror.New(http.StatusUnprocessableEntity, "object_store_invalid_credentials",
 			"secret_key is required")
 	}
 	return nil

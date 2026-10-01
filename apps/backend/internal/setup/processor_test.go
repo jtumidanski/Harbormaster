@@ -20,7 +20,7 @@ func validRequest() setup.Request {
 	var req setup.Request
 	req.Admin.Username = "admin"
 	req.Admin.Password = "correct horse battery staple"
-	req.MinIO = connection.SubmitInput{
+	req.ObjectStore = connection.SubmitInput{
 		EndpointURL: "https://minio.lan:9000",
 		AccessKey:   "AKIAEXAMPLE",
 		SecretKey:   "topsecretvalue",
@@ -121,7 +121,7 @@ func TestSubmit_FromMcAlias(t *testing.T) {
 	var req setup.Request
 	req.Admin.Username = "admin"
 	req.Admin.Password = "x" + "correct horse battery staple"
-	req.MinIO = connection.SubmitInput{
+	req.ObjectStore = connection.SubmitInput{
 		// EndpointURL/AccessKey deliberately empty; they must be filled
 		// from the alias entry by Submit.
 		FromMcAlias: "myminio",
@@ -173,7 +173,7 @@ func TestSubmit_McAliasNotFound(t *testing.T) {
 	var req setup.Request
 	req.Admin.Username = "admin"
 	req.Admin.Password = "pw"
-	req.MinIO.FromMcAlias = "missing"
+	req.ObjectStore.FromMcAlias = "missing"
 
 	err := p.Submit(ctx, req, "127.0.0.1")
 	require.Error(t, err)

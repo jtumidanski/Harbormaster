@@ -51,6 +51,7 @@ func (p *Processor) handleSubmit(w http.ResponseWriter, r *http.Request) {
 			"bad_request", "Invalid JSON body"))
 		return
 	}
+	body.normalize()
 	sourceIP := httpx.ClientIP(r)
 	if err := p.Submit(r.Context(), body, sourceIP); err != nil {
 		writeError(w, err)

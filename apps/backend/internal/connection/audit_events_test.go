@@ -91,7 +91,7 @@ func TestAuditEvent_ConnectionUpdateFailure(t *testing.T) {
 	// Force the probe to fail so Update returns an error.
 	p.Probe = func(_ context.Context, _ connection.SubmitInput) (connection.TestResult, *apierror.Error) {
 		return connection.TestResult{TCPConnect: map[string]string{"failed": "boom"}},
-			apierror.New(422, "minio_unreachable", "boom")
+			apierror.New(422, "object_store_unreachable", "boom")
 	}
 
 	in := connection.SubmitInput{
@@ -133,7 +133,7 @@ func TestAuditEvent_ConnectionTestFailureRecorded(t *testing.T) {
 				TCPConnect:  "ok",
 				ListBuckets: map[string]string{"failed": "InvalidAccessKeyId"},
 			},
-			apierror.New(422, "minio_invalid_credentials", "The object store rejected the provided keys")
+			apierror.New(422, "object_store_invalid_credentials", "The object store rejected the provided keys")
 	}
 
 	in := connection.SubmitInput{

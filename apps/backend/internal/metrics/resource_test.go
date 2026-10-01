@@ -27,13 +27,13 @@ func TestMetricsView_PopulatedStore(t *testing.T) {
 	// Insert two samples close to now so isFresh returns true.
 	now := time.Now().UTC()
 	values := map[string]float64{
-		"minio_s3_requests_total":                   100,
-		"minio_cluster_capacity_usable_total_bytes": 1000,
+		"objectstore_s3_requests_total":                   100,
+		"objectstore_cluster_capacity_usable_total_bytes": 1000,
 	}
 	require.NoError(t, st.Insert(context.Background(), now.Add(-30*time.Second), values))
 	require.NoError(t, st.Insert(context.Background(), now.Add(-10*time.Second), map[string]float64{
-		"minio_s3_requests_total":                   110,
-		"minio_cluster_capacity_usable_total_bytes": 1000,
+		"objectstore_s3_requests_total":                   110,
+		"objectstore_cluster_capacity_usable_total_bytes": 1000,
 	}))
 
 	rec := httptest.NewRecorder()

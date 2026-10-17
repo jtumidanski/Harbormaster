@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.27
+# syntax=docker/dockerfile:1.28
 
 # ---- Stage 1: frontend build ----
 FROM node:24.21.0-alpine AS frontend

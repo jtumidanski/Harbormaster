@@ -3,8 +3,21 @@
   // The forge-local preset already carries config:recommended and the
   // dependency dashboard, and disables the github-actions manager (action
   // pins are mirrored into the forge by hand, so they move by hand).
-  extends: ["local>renovate/presets", ":semanticCommits"],
+  // go-toolchain opts in to go directive bumps (it overrides the pin below for
+  // the directive, which pin would otherwise never move).
+  extends: ["local>renovate/presets", "local>renovate/presets:go-toolchain", ":semanticCommits"],
   rangeStrategy: "pin",
+  customManagers: [
+    {
+      customType: "regex",
+      description: "tools/toolchain.versions GO_VERSION: verify.sh exports GOTOOLCHAIN=go${GO_VERSION}, so it must move with go.mod, which CI reads via go-version-file.",
+      managerFilePatterns: ["/^tools/toolchain\\.versions$/"],
+      matchStrings: ["(?:^|\\n)GO_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      datasourceTemplate: "golang-version",
+      depNameTemplate: "go",
+      versioningTemplate: "semver",
+    },
+  ],
   packageRules: [
     {
       matchManagers: ["gomod"],
@@ -44,6 +57,15 @@
         "react-dom",
         "@tanstack/react-query",
       ],
+      automerge: false,
+    },
+    // Last so it overrides the "go modules" and "docker base images" groups:
+    // go.mod directive, toolchain.versions and the golang builder image move
+    // as one PR.
+    {
+      matchDatasources: ["golang-version", "docker"],
+      matchPackageNames: ["go", "golang"],
+      groupName: "Go toolchain",
       automerge: false,
     },
   ],

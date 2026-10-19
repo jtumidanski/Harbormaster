@@ -43,7 +43,7 @@ cd "$ROOT"
 # v2.12.2's bundled honnef.co/go/tools panics building IR for the go1.27
 # standard library; a bare `go` on PATH can resolve to 1.27 while
 # apps/backend/go.mod pins 1.25.12. CI never hits this because
-# .github/workflows/pr.yml's lint job uses actions/setup-go with
+# .forgejo/workflows/pr.yml's lint job uses actions/setup-go with
 # `go-version-file: apps/backend/go.mod` (line ~48), i.e. Go 1.25.12, with the
 # same golangci-lint version. Exporting GOTOOLCHAIN here — once, before any
 # gate runs — is what makes this script actually reproduce CI instead of
@@ -79,7 +79,7 @@ failure, naming it on stderr.
 
 Gates, in order:
 
-  toolchain drift   tools/toolchain.versions vs .github/workflows/pr.yml
+  toolchain drift   tools/toolchain.versions vs .forgejo/workflows/pr.yml
   go test -race     apps/backend   (go test without -race under --quick)
   go vet            apps/backend
   golangci-lint     apps/backend
@@ -166,7 +166,7 @@ join_labels() {
 # ------------------------------------------------------------------ gate 0
 
 # The pin exists in two places — tools/toolchain.versions (which the linter gate
-# and format-on-write.sh read) and .github/workflows/pr.yml (which CI reads).
+# and format-on-write.sh read) and .forgejo/workflows/pr.yml (which CI reads).
 # If they disagree, every downstream lint result is suspect, so this runs first
 # and cheapest. It fails loudly when it cannot find the key at all: a drift
 # check that silently matches nothing is worse than no drift check.
@@ -186,19 +186,19 @@ gate_drift() {
         found && match($0, /version:[[:space:]]*v?[0-9][0-9A-Za-z.+-]*/) {
             print substr($0, RSTART, RLENGTH); exit
         }
-    ' "$ROOT/.github/workflows/pr.yml" | sed 's/^version:[[:space:]]*//')"
+    ' "$ROOT/.forgejo/workflows/pr.yml" | sed 's/^version:[[:space:]]*//')"
     if [ -z "$actual" ]; then
-        echo "could not find the golangci-lint-action version key in .github/workflows/pr.yml" >&2
+        echo "could not find the golangci-lint-action version key in .forgejo/workflows/pr.yml" >&2
         echo "the drift check will not pass vacuously — fix the extraction or the workflow" >&2
         return 1
     fi
     if [ "$pinned" != "$actual" ]; then
         echo "golangci-lint pin drift:" >&2
         echo "  tools/toolchain.versions   = $pinned" >&2
-        echo "  .github/workflows/pr.yml   = $actual" >&2
+        echo "  .forgejo/workflows/pr.yml   = $actual" >&2
         return 1
     fi
-    echo "golangci-lint $pinned matches .github/workflows/pr.yml"
+    echo "golangci-lint $pinned matches .forgejo/workflows/pr.yml"
 }
 
 # ------------------------------------------------------------- backend gates

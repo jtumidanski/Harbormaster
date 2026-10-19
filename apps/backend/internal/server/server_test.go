@@ -67,7 +67,7 @@ func TestReadyz_NilReady_Returns200(t *testing.T) {
 	require.Contains(t, string(body), `"status":"ok"`)
 
 	cancel()
-	<-done
+	require.NoError(t, <-done)
 }
 
 // TestReadyz_ReadyFalse_Returns503 verifies that a Ready probe returning
@@ -96,7 +96,7 @@ func TestReadyz_ReadyFalse_Returns503(t *testing.T) {
 	require.Contains(t, string(body), `"minio probe stale"`)
 
 	cancel()
-	<-done
+	require.NoError(t, <-done)
 }
 
 // clientIPProbe boots a server with the given trusted-proxy CIDRs and returns
@@ -122,7 +122,10 @@ func clientIPProbe(t *testing.T, addr string, trusted []string, xff string) stri
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-done:
+		case err := <-done:
+			if err != nil {
+				t.Errorf("shutdown: %v", err)
+			}
 		case <-time.After(15 * time.Second):
 			t.Error("shutdown timed out")
 		}

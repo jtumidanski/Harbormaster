@@ -45,10 +45,16 @@ function patchedGetBoundingClientRect(this: Element): DOMRect {
 }
 Element.prototype.getBoundingClientRect = patchedGetBoundingClientRect;
 
-// @tanstack/react-virtual measures the scroll element with offsetWidth /
-// offsetHeight (not getBoundingClientRect), and jsdom hardcodes both to 0.
+// @tanstack/react-virtual measures the scroll element with clientWidth /
+// clientHeight (virtual-core >= 3.19.6; offsetWidth / offsetHeight before
+// that), not getBoundingClientRect, and jsdom hardcodes all four to 0.
 // Report the scroller's real size so rows get rendered.
-const SCROLLER_SIZE = { offsetWidth: 800, offsetHeight: 480 } as const;
+const SCROLLER_SIZE = {
+  offsetWidth: 800,
+  offsetHeight: 480,
+  clientWidth: 800,
+  clientHeight: 480,
+} as const;
 for (const [prop, size] of Object.entries(SCROLLER_SIZE)) {
   Object.defineProperty(HTMLElement.prototype, prop, {
     configurable: true,

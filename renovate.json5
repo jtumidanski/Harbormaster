@@ -7,6 +7,11 @@
   // the directive, which pin would otherwise never move).
   extends: ["local>renovate/presets", "local>renovate/presets:go-toolchain", ":semanticCommits"],
   rangeStrategy: "pin",
+  // platformAutomerge hands the merge to the forge's "merge when checks
+  // succeed": branch protection on main requires every pr.yml job, so a PR
+  // merges only once CI is green.
+  automergeType: "pr",
+  platformAutomerge: true,
   customManagers: [
     {
       customType: "regex",
@@ -39,8 +44,13 @@
       minimumReleaseAge: "7 days",
     },
     {
+      matchUpdateTypes: ["patch", "minor"],
+      automerge: true,
+    },
+    {
       matchUpdateTypes: ["major"],
       dependencyDashboardApproval: true,
+      automerge: false,
     },
     // Never auto-merge runtime / security / auth libs even on patch
     {

@@ -57,21 +57,41 @@ check() { # name want-rc [substring...]
   for s in "$@"; do assert_contains "$name: contains $s" "$s" "$OUT"; done
 }
 
+fail_line() { printf '%s\n' "$OUT" | grep '^pr-complete: FAIL' || true; }
+assert_absent() {
+  case "$3" in
+    *"$2"*) echo "FAIL - $1"; echo "        expected NOT to contain: $2"; fails=$((fails + 1)) ;;
+    *) echo "ok   - $1" ;;
+  esac
+}
+# check_fail <name> <offender...>: exit 1, and every offender is named on the
+# `pr-complete: FAIL` line (the table above it lists every job, so asserting
+# against the full output would be vacuous).
+check_fail() {
+  local name="$1" s line
+  shift
+  assert_eq "$name: exit" 1 "$RC"
+  line="$(fail_line)"
+  assert_contains "$name: has FAIL line" "pr-complete: FAIL" "$line"
+  for s in "$@"; do assert_contains "$name: FAIL line names $s" "$s" "$line"; done
+}
+
 run_case success false success;                       check "full all success" 0 "pr-complete: PASS" "Mode: full"
 run_case success true skipped;                        check "bump all skipped" 0 "pr-complete: PASS" "Mode: bump-only"
-run_case success false success gitleaks=cancelled;    check "full one cancelled" 1 gitleaks "pr-complete: FAIL"
-run_case success false success backend-test=failure;  check "full one failure" 1 backend-test
-run_case success false success frontend-build=skipped; check "full one skipped" 1 frontend-build
-run_case success true skipped dependency-scan=success; check "bump one success" 1 dependency-scan
-run_case success true skipped license-allowlist=failure; check "bump one failure" 1 license-allowlist
+run_case success false success gitleaks=cancelled;    check_fail "full one cancelled" gitleaks
+run_case success false success backend-test=failure;  check_fail "full one failure" backend-test
+run_case success false success frontend-build=skipped; check_fail "full one skipped" frontend-build
+run_case success true skipped dependency-scan=success; check_fail "bump one success" dependency-scan
+run_case success true skipped license-allowlist=failure; check_fail "bump one failure" license-allowlist
 run_case failure true skipped;                        check "changes failed" 1 "pr-complete: FAIL"
 run_case skipped false success;                       check "changes skipped" 1 "pr-complete: FAIL"
 run_case success "" skipped;                          check "empty bump-only" 1 "Mode: full"
 run_case success TRUE skipped;                        check "TRUE is not true" 1 "Mode: full"
 run_case success yes skipped;                         check "yes is not true" 1 "Mode: full"
-run_case success false success gitleaks=UNSET;        check "missing result var" 1 gitleaks
+run_case success false success gitleaks=UNSET;        check_fail "missing result var" gitleaks
 run_case success false success frontend-lint=failure backend-lint=cancelled
-check "two offenders" 1 frontend-lint backend-lint
+check_fail "two offenders" frontend-lint backend-lint
+assert_absent "two offenders: healthy job not blamed" "gitleaks" "$(fail_line)"
 
 # --list-jobs
 got="$(env -i PATH="$PATH" bash "$SCRIPT" --list-jobs)"

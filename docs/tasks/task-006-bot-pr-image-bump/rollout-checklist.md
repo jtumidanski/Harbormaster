@@ -76,16 +76,18 @@ noted, update `docs/operator/image-bump.md`.
 ## 7. Re-run `bump-manifest` (AC5)
 
 - [ ] Re-running the same job fails nothing and opens no duplicate PR.
-- [ ] `%2F`: by now the PR has merged (item 6), so the `pr` step log shows
-      `PR #N is merged` (the `echo` at `.forgejo/workflows/main.yml:473`) and
-      exits 0. The 200 from the lookup still proves `%2F` decoding. On this
-      path `pr` writes no `number`, so `automerge` is skipped; the merge
-      endpoint code is checked in item 4, not here.
+- [ ] By now the PR has merged (item 6) and `main` carries the pin, so the
+      re-run checks out `main` and the `pin` step logs
+      `already pinned to sha-<7> — nothing to bump`
+      (`.forgejo/workflows/main.yml:382`) and sets `skip=true`. The job is
+      green and no new PR is opened; the `pr` step never runs. This does not
+      exercise the PR lookup: `%2F` decoding is proven by item 4's open-PR
+      re-run.
 - [ ] Closed PRs: record whether `GET /pulls/main/<branch>` returns an
       already-closed PR. Hand-close a bump PR, re-run its `bump-manifest`, and
       note whether it is a no-op or opens a new PR. Then replace each
       "unverified forge behaviour" statement in `docs/operator/image-bump.md`
-      (failure table rows 1 and 3, and the residual-race paragraph) with the
+      (failure table rows 1, 2 and 3, and the residual-race paragraph) with the
       observed result.
 
 ## 8. Two quick merges (AC6, AC7)

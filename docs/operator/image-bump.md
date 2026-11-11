@@ -32,9 +32,11 @@ therefore goes through a PR.
    our branch exists so two bump PRs never edit the same line from the same
    base.
 4. Step `pr` looks up an existing PR for `bot/image-bump-<short-sha>`. If one
-   is open it is reused. If it is already **merged**, the log says so
-   ("PR #n is merged") and the job exits 0 without scheduling auto-merge.
-   A PR closed by hand is also not reopened. Otherwise it pushes the branch
+   is open it is reused. If it is already **merged** or closed, the log says so
+   ("PR #n is merged" / "closed") and the job exits 0 without scheduling
+   auto-merge. This path is reached only when the PR is not open and main's
+   pin still differs, for example a PR closed by hand; a normal post-merge
+   re-run never reaches it (see section 6). A closed PR is not reopened. Otherwise it pushes the branch
    (never force-pushing; an existing branch is reused), and opens the PR.
 5. Step `automerge` asks the forge to squash-merge the PR when checks succeed
    and to delete the branch afterwards. It retries up to 12 times, 10 seconds
@@ -118,9 +120,9 @@ PRs, edits PRs, pushes branches and deletes branches. This has not been
 verified for the current token. Confirm it before the rollout.
 
 A missing scope shows up in the `bump-manifest` log as an HTTP 403 with the
-forge's response body (the first 300 bytes), on whichever call needed the
-scope: a `PATCH`/`DELETE` in `supersede`, a `POST /pulls` in `pr`, or the
-branch push itself. The `automerge` step prints the status of each attempt
+forge's response body (the first 300 bytes) for API calls: a `PATCH`/`DELETE`
+in `supersede` or a `POST /pulls` in `pr`. A failed `git push` or
+`git ls-remote` shows a git authentication error instead. The `automerge` step prints the status of each attempt
 and fails after 12.
 
 ---
@@ -163,8 +165,10 @@ branch, and `409` from the merge endpoint counts as already scheduled.
 | Open bump PR that is green but not merging | Conflict: main moved under the PR (see residual race below), or auto-merge was never scheduled. | Re-run `bump-manifest` to reschedule. If the PR conflicts, the reliable ways forward are to merge it by hand while it is still open, or to let the next push to `main` produce a fresh bump PR. Closing it and re-running `bump-manifest` for the same commit is expected to do nothing (unverified forge behaviour; see the third row). |
 | `bump-manifest` red at `automerge` | The merge endpoint refused all 12 attempts. The log shows the HTTP status and body of each. | A 403 is the token scope (section 4). Otherwise fix the cause and re-run `bump-manifest`. If a PR for the branch was merged or closed by hand, the `pr` step does not reopen it, and a re-run for the same commit is expected to do nothing (unverified forge behaviour: this assumes the forge's PR lookup by branch returns closed PRs). The reliable ways forward are to merge the PR by hand if it is still open, or to let the next push to `main` produce a fresh bump PR. |
 
-Note that a re-run for a commit whose PR is already merged logs "merged" and
-exits 0 with no new PR; that is the expected result, not a failure.
+Note that a re-run for a commit whose PR is already merged checks out `main`,
+which already carries the pin, so the `pin` step logs
+`already pinned to sha-<7> — nothing to bump` and the job exits 0 with no new
+PR; that is the expected result, not a failure.
 
 **Residual race.** `supersede` closes older bump PRs just before our branch
 is created. If an older PR's auto-merge lands at that instant, our new PR no

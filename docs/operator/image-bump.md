@@ -159,9 +159,9 @@ branch, and `409` from the merge endpoint counts as already scheduled.
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| Open bump PR with a red `pr-complete` | The PR was not classified bump-only (read the `changes` job log; `classify-pr.sh` prints why to stderr), or a suite job failed. | If the diff is a pure pin, the classification reason in the log says which check failed. Fix the cause, or close the PR and delete its branch, then re-run `bump-manifest`. Or merge by hand once the checks are understood. |
-| Open bump PR that is green but not merging | Conflict: main moved under the PR (see residual race below), or auto-merge was never scheduled. | Re-run `bump-manifest` to reschedule. If the PR conflicts, close it, delete its branch, and re-run `bump-manifest`; the new branch is built from the current tip of `main`. Or merge by hand. |
-| `bump-manifest` red at `automerge` | The merge endpoint refused all 12 attempts. The log shows the HTTP status and body of each. | A 403 is the token scope (section 4). Otherwise fix the cause and re-run `bump-manifest`. If a PR for the branch was merged or closed by hand, the `pr` step does not reopen it; re-run is a no-op for that branch, so merge by hand or let the next push to `main` produce a new bump. |
+| Open bump PR with a red `pr-complete` | The PR was not classified bump-only (read the `changes` job log; `classify-pr.sh` prints why to stderr), or a suite job failed. | If the diff is a pure pin, the classification reason in the log says which check failed. Fix the cause, then merge the PR by hand once the checks are understood, or let the next push to `main` produce a fresh bump PR. Closing the PR and re-running `bump-manifest` for the same commit is expected to do nothing (unverified forge behaviour; see the third row). |
+| Open bump PR that is green but not merging | Conflict: main moved under the PR (see residual race below), or auto-merge was never scheduled. | Re-run `bump-manifest` to reschedule. If the PR conflicts, the reliable ways forward are to merge it by hand while it is still open, or to let the next push to `main` produce a fresh bump PR. Closing it and re-running `bump-manifest` for the same commit is expected to do nothing (unverified forge behaviour; see the third row). |
+| `bump-manifest` red at `automerge` | The merge endpoint refused all 12 attempts. The log shows the HTTP status and body of each. | A 403 is the token scope (section 4). Otherwise fix the cause and re-run `bump-manifest`. If a PR for the branch was merged or closed by hand, the `pr` step does not reopen it, and a re-run for the same commit is expected to do nothing (unverified forge behaviour: this assumes the forge's PR lookup by branch returns closed PRs). The reliable ways forward are to merge the PR by hand if it is still open, or to let the next push to `main` produce a fresh bump PR. |
 
 Note that a re-run for a commit whose PR is already merged logs "merged" and
 exits 0 with no new PR; that is the expected result, not a failure.
@@ -169,6 +169,7 @@ exits 0 with no new PR; that is the expected result, not a failure.
 **Residual race.** `supersede` closes older bump PRs just before our branch
 is created. If an older PR's auto-merge lands at that instant, our new PR no
 longer applies cleanly (its base value has changed) and conflicts. The
-window is a few seconds, and it is accepted. Recovery is as above: close the
-stuck PR, delete its branch, and re-run `bump-manifest`. The stale guard still
-passes on the re-run, because only `deployment.yaml` moved.
+window is a few seconds, and it is accepted. Recovery is as above: merge the
+stuck PR by hand if it is still open, or let the next push to `main` produce a
+fresh bump PR. Re-running `bump-manifest` for the same commit after closing its
+PR is expected to do nothing (unverified forge behaviour).

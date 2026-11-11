@@ -47,6 +47,19 @@ noted, update `docs/operator/image-bump.md`.
 - [ ] Push credential: `git ls-remote` and `git push` in `bump-manifest`
       authenticated with the credential `actions/checkout` persisted from
       `FORGE_PUSH_TOKEN` (no auth failure in the log).
+- [ ] Re-run `bump-manifest` once while this first bump PR is still open and
+      waiting on checks (it must happen before the PR merges). Confirm:
+      - the `pr` step logs `PR #N is open, reusing it` (the `echo` at
+        `.forgejo/workflows/main.yml:470`). The lookup only returns 200 when
+        Forgejo decodes the `%2F`-encoded branch name, so this proves `%2F`
+        decoding and that no duplicate PR was created. A first run cannot show
+        it, because the lookup returns 404 when no PR exists yet.
+      - the `automerge` step logs `auto-merge scheduled (HTTP <code>)`.
+      - record that `<code>`: the status the merge endpoint returns when
+        auto-merge is already scheduled (expected 409 or 2xx; the script
+        treats both as success).
+      If the PR merges before the re-run, record "not observed" and retry on a
+      later bump.
 
 ## 5. Branch protection (AC3)
 
@@ -63,13 +76,11 @@ noted, update `docs/operator/image-bump.md`.
 ## 7. Re-run `bump-manifest` (AC5)
 
 - [ ] Re-running the same job fails nothing and opens no duplicate PR.
-- [ ] `%2F`: the `pr` step log shows `PR #N is open, reusing it` (the
-      `echo` at `.forgejo/workflows/main.yml:470`). The lookup only returns
-      200 when Forgejo decodes the encoded branch name, so this line confirms
-      `%2F` decoding and that no duplicate PR was created. A first run cannot
-      show it, because the lookup returns 404 when no PR exists yet.
-- [ ] Merge endpoint: record the status returned when auto-merge is already
-      scheduled (expected 409 or 2xx; the script must treat it as success).
+- [ ] `%2F`: by now the PR has merged (item 6), so the `pr` step log shows
+      `PR #N is merged` (the `echo` at `.forgejo/workflows/main.yml:473`) and
+      exits 0. The 200 from the lookup still proves `%2F` decoding. On this
+      path `pr` writes no `number`, so `automerge` is skipped; the merge
+      endpoint code is checked in item 4, not here.
 - [ ] Closed PRs: record whether `GET /pulls/main/<branch>` returns an
       already-closed PR. Hand-close a bump PR, re-run its `bump-manifest`, and
       note whether it is a no-op or opens a new PR. Then replace each

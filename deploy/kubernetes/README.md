@@ -10,8 +10,11 @@ without one.
 > template. Two consequences:
 >
 > - **`deployment.yaml`'s image tag is machine-written.** The `bump-manifest`
->   job in `.github/workflows/main.yml` rewrites it to `sha-<short-sha>` on
->   every push to `main`. Do not replace it with a floating tag.
+>   job in `.forgejo/workflows/main.yml` rewrites it to `sha-<short-sha>` on
+>   every push to `main`, through an auto-merged bot PR
+>   (`bot/image-bump-<short-sha>`); see
+>   [`docs/operator/image-bump.md`](../../docs/operator/image-bump.md).
+>   Do not replace it with a floating tag.
 > - **Some values are specific to that cluster** — `storageClassName: longhorn`,
 >   the Traefik `ingress.yaml`, and `HARBORMASTER_SESSION_COOKIE_SECURE=false`
 >   (plain HTTP behind an internal Traefik route). If you are copying this

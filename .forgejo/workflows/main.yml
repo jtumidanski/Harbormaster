@@ -3,8 +3,9 @@ on:
   push:
     branches: [main]
     tags: ["v*.*.*"]
-    # Loop prevention for bump-manifest below: its commit touches only this
-    # file, which would otherwise start another build that bumps again, forever.
+    # Loop prevention for bump-manifest below: its squash-merge commit touches
+    # only this file, which would otherwise start another build that bumps
+    # again, forever.
     # (Path filters do not apply to tag pushes, which is fine — bump-manifest
     # only runs on refs/heads/main.)
     paths-ignore:
@@ -311,14 +312,19 @@ jobs:
           test "$archs" = "amd64,arm64"
 
   # Rewrites the image tag in deploy/kubernetes/deployment.yaml to the commit
-  # that produced the image, and pushes it back. Argo CD on the bee cluster
-  # watches that directory, so this is the deploy step.
+  # that produced the image, and lands it on main through a bot PR. Argo CD on
+  # the bee cluster watches that directory, so this is the deploy step.
   #
-  # Unlike the GitHub original this pushes straight to main. That version opened
-  # and merged a bot PR with the `gh` CLI, purely because GitHub's branch
-  # protection rejected a direct push; the forge repository carries no such
-  # rule, and `gh` does not speak to Forgejo. The loop prevention that matters
-  # is the paths-ignore filter above, which is unchanged.
+  # main is protected (required checks, admins enforced), and Forgejo applies
+  # required checks to pushes as well as to merges, so a direct push to main is
+  # rejected. The job therefore pushes the branch bot/image-bump-<7-char sha>,
+  # opens a PR from it, and schedules auto-merge; `pr / pr-complete` gates the
+  # merge like any other PR. Every API call and the branch push use
+  # FORGE_PUSH_TOKEN, not the run token: a PR opened with the run token
+  # triggers no pull_request workflow, so pr-complete would never report and
+  # the PR would never merge. Loop prevention is still the paths-ignore filter
+  # above: the squash-merge commit touches only deployment.yaml.
+  # Operator runbook (stuck or superseded bump PRs): docs/operator/image-bump.md.
   #
   # The tag must match what metadata-action publishes above --
   # `type=sha,prefix=sha-,format=short` yields `sha-` plus the SHORT sha
@@ -340,43 +346,205 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         # MUST be `ref: main`. The default checkout for a push event leaves a
         # detached HEAD, and `git push` from one fails outright.
+        # Full (blobless) history is for the stale guard's ancestry and diff
+        # checks. The persisted credentials are FORGE_PUSH_TOKEN's, so the
+        # branch push in the `pr` step authenticates as the bot.
         with:
           ref: main
+          fetch-depth: 0
+          filter: blob:none
+          token: ${{ secrets.FORGE_PUSH_TOKEN }}
       - name: Reset toolchain caches
         run: rm -rf /work/ci-cache
       - name: Pin image to this commit
-        env:
-          FORGE_PUSH_TOKEN: ${{ secrets.FORGE_PUSH_TOKEN }}
+        id: pin
         run: |
           set -euo pipefail
 
-          # Stale-run guard: main may have moved past the commit this run built
-          # if a later merge's bump already landed while this one was still in
-          # build/scan. Rewriting to this run's older SHA would roll the
-          # deployment backwards with every step still green.
-          tip="$(git rev-parse HEAD)"
-          if [ "$tip" != "${GITHUB_SHA}" ]; then
-            echo "main's tip is now $tip, not this run's ${GITHUB_SHA} — a newer push already landed and will pin itself. Skipping."
+          # Stale-run guard: skip if main has newer *code* than this run's
+          # commit — GITHUB_SHA is not on main, or a path other than
+          # deployment.yaml changed between it and the tip. Bump-only movement
+          # (another bump PR merging) does not count, so pinning cannot roll the
+          # deployment backwards. Exit 2 from the guard fails this step.
+          stale="$(tools/ci/stale-guard.sh)"
+          if [ "$stale" = "stale=true" ]; then
+            echo "main has newer code than this run's ${GITHUB_SHA} — a newer run will pin itself. Skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
+          # The rewrite applies to main's tip, which may already carry another bump.
           short="sha-${GITHUB_SHA::7}"
           f=deploy/kubernetes/deployment.yaml
           sed -i -E "s#(image: registry\.tumidanski/jtumidanski/harbormaster):.*#\1:${short}#" "$f"
 
           if git diff --quiet "$f"; then
             echo "already pinned to ${short} — nothing to bump"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # Fail loudly rather than pushing a manifest the rewrite missed.
+          # Fail loudly rather than opening a PR for a manifest the rewrite missed.
           grep -q "image: registry.tumidanski/jtumidanski/harbormaster:${short}$" "$f"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+      - name: Supersede older bump PRs
+        id: supersede
+        if: steps.pin.outputs.skip != 'true'
+        env:
+          FORGE_TOKEN: ${{ secrets.FORGE_PUSH_TOKEN }}
+          API: ${{ github.server_url }}/api/v1/repos/${{ github.repository }}
+        run: |
+          set -euo pipefail
 
-          git config user.name  "harbormaster-image-bot"
-          git config user.email "harbormaster-image-bot@git.tumidanski"
-          git add "$f"
-          git commit -m "chore(deploy): pin harbormaster image to ${short}
+          # api METHOD PATH EXPECTED_CODES [JSON] — EXPECTED_CODES is comma-separated.
+          # Sets API_CODE; body in "$resp". Unexpected code: print ≤300 bytes, exit 1.
+          api() {
+            local m="$1" p="$2" ok="$3" data="${4:-}"
+            local args=(-sS -o "$resp" -w '%{http_code}' -X "$m"
+                        -H "Authorization: token ${FORGE_TOKEN}" -H 'Content-Type: application/json')
+            [ -n "$data" ] && args+=(--data "$data")
+            API_CODE="$(curl "${args[@]}" "${API}${p}")"
+            echo "$m $p → HTTP $API_CODE"
+            case ",$ok," in *",$API_CODE,"*) return 0 ;; esac
+            echo "::error::$m $p returned HTTP $API_CODE"; head -c 300 "$resp"; echo; exit 1
+          }
+
+          BRANCH="bot/image-bump-${GITHUB_SHA::7}"
+          resp="$(mktemp)"
+
+          # Older bump PRs pin something older (the stale guard has shown this
+          # run's commit is the newest built one); close them before our own
+          # branch exists, so two PRs never race to rewrite the same line.
+          # Collect every page first: closing while paging would shift pages.
+          matches=""
+          page=1
+          while :; do
+            api GET "/pulls?state=open&limit=50&page=$page" 200
+            matches+="$(jq -r --arg me "$BRANCH" '.[] | select((.head.ref | startswith("bot/image-bump-")) and .head.repo.full_name == .base.repo.full_name and .head.ref != $me) | "\(.number) \(.head.ref)"' "$resp")"$'\n'
+            [ "$(jq 'length' "$resp")" -lt 50 ] && break
+            page=$((page + 1))
+          done
+
+          superseded=0
+          while read -r num ref; do
+            [ -n "$num" ] || continue
+            api PATCH "/pulls/$num" 200,201 '{"state":"closed"}'
+            api DELETE "/branches/${ref//\//%2F}" 204,404
+            echo "superseded #$num ($ref)"
+            superseded=$((superseded + 1))
+          done <<< "$matches"
+          [ "$superseded" -gt 0 ] || echo "no older bump PRs"
+      - name: Push branch and open PR
+        id: pr
+        if: steps.pin.outputs.skip != 'true'
+        env:
+          FORGE_TOKEN: ${{ secrets.FORGE_PUSH_TOKEN }}
+          API: ${{ github.server_url }}/api/v1/repos/${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # api METHOD PATH EXPECTED_CODES [JSON] — EXPECTED_CODES is comma-separated.
+          # Sets API_CODE; body in "$resp". Unexpected code: print ≤300 bytes, exit 1.
+          api() {
+            local m="$1" p="$2" ok="$3" data="${4:-}"
+            local args=(-sS -o "$resp" -w '%{http_code}' -X "$m"
+                        -H "Authorization: token ${FORGE_TOKEN}" -H 'Content-Type: application/json')
+            [ -n "$data" ] && args+=(--data "$data")
+            API_CODE="$(curl "${args[@]}" "${API}${p}")"
+            echo "$m $p → HTTP $API_CODE"
+            case ",$ok," in *",$API_CODE,"*) return 0 ;; esac
+            echo "::error::$m $p returned HTTP $API_CODE"; head -c 300 "$resp"; echo; exit 1
+          }
+
+          BRANCH="bot/image-bump-${GITHUB_SHA::7}"
+          ENC_BRANCH="${BRANCH//\//%2F}"
+          resp="$(mktemp)"
+          short="sha-${GITHUB_SHA::7}"
+
+          # 1. A PR for this branch already exists (a re-run): reuse it if open;
+          #    a merged PR is done, and one closed by hand is not reopened.
+          api GET "/pulls/main/$ENC_BRANCH" 200,404
+          if [ "$API_CODE" = 200 ]; then
+            num="$(jq -r .number "$resp")"
+            state="$(jq -r 'if .merged then "merged" else .state end' "$resp")"
+            if [ "$state" = "open" ]; then
+              echo "PR #$num is open, reusing it"
+              echo "number=$num" >> "$GITHUB_OUTPUT"
+            else
+              echo "PR #$num is $state"
+            fi
+            exit 0
+          fi
+
+          # 2. Push the branch unless an earlier attempt already did. Never
+          #    force-push: the branch may have been fixed up by hand.
+          rc=0
+          git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null || rc=$?
+          case "$rc" in
+            0)
+              echo "branch exists, reusing (no push)"
+              ;;
+            2)
+              git switch -c "$BRANCH"
+              git config user.name  "harbormaster-image-bot"
+              git config user.email "harbormaster-image-bot@git.tumidanski"
+              git add deploy/kubernetes/deployment.yaml
+              git commit -m "chore(deploy): pin harbormaster image to ${short}
 
           Generated by main.yml run ${GITHUB_RUN_ID}. Argo CD's
           Application(harbormaster-main) on the bee cluster picks this up on its
           next reconcile."
-          git push "https://harbormaster-image-bot:${FORGE_PUSH_TOKEN}@git.tumidanski/jtumidanski/Harbormaster.git" HEAD:main
+              # Authenticates through the credentials checkout persisted
+              # (FORGE_PUSH_TOKEN); the token is never put in a URL.
+              git push origin "$BRANCH"
+              ;;
+            *)
+              echo "::error::git ls-remote for $BRANCH failed (exit $rc)"
+              exit 1
+              ;;
+          esac
+
+          # 3. Open the PR.
+          body="Pins deploy/kubernetes/deployment.yaml to \`${short}\`, the image built from ${GITHUB_SHA}.
+
+          Generated by main.yml run ${GITHUB_RUN_ID}. Argo CD's Application \`harbormaster-main\` on the bee cluster picks this up on its next reconcile once merged.
+
+          This PR auto-merges once \`pr / pr-complete\` passes."
+          payload="$(jq -n \
+            --arg head "$BRANCH" \
+            --arg title "chore(deploy): pin harbormaster image to ${short}" \
+            --arg body "$body" \
+            '{head: $head, base: "main", title: $title, body: $body}')"
+          api POST /pulls 201 "$payload"
+          num="$(jq -r .number "$resp")"
+          echo "opened PR #$num"
+          echo "number=$num" >> "$GITHUB_OUTPUT"
+      - name: Enable auto-merge
+        id: automerge
+        if: steps.pr.outputs.number != ''
+        env:
+          FORGE_TOKEN: ${{ secrets.FORGE_PUSH_TOKEN }}
+          API: ${{ github.server_url }}/api/v1/repos/${{ github.repository }}
+          N: ${{ steps.pr.outputs.number }}
+        run: |
+          set -euo pipefail
+
+          # The merge endpoint can briefly refuse a PR that was just opened, so
+          # retry. 409 means auto-merge is already scheduled (a re-run).
+          resp="$(mktemp)"
+          payload='{"Do":"squash","merge_when_checks_succeed":true,"delete_branch_after_merge":true}'
+          for i in $(seq 1 12); do
+            code="$(curl -sS -o "$resp" -w '%{http_code}' -X POST \
+              -H "Authorization: token ${FORGE_TOKEN}" -H 'Content-Type: application/json' \
+              --data "$payload" "${API}/pulls/${N}/merge")"
+            case "$code" in
+              2??|409)
+                echo "auto-merge scheduled (HTTP $code)"
+                exit 0
+                ;;
+            esac
+            echo "attempt $i/12: HTTP $code"
+            head -c 300 "$resp"; echo
+            [ "$i" -lt 12 ] && sleep 10
+          done
+          echo "::error::could not schedule auto-merge for PR #${N}"
+          exit 1

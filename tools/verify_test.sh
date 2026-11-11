@@ -50,19 +50,21 @@ nodocker="$("$VERIFY" --list --no-docker 2>/dev/null)"
 quick="$("$VERIFY" --list --quick 2>/dev/null)"
 both="$("$VERIFY" --list --quick --no-docker 2>/dev/null)"
 
-assert_eq "flagless selects 11 gates" "11" \
+assert_eq "flagless selects 12 gates" "12" \
   "$(printf '%s\n' "$flagless" | grep -cv '^- ')"
+assert_contains "flagless includes ci scripts" "ci scripts" "$flagless"
 assert_contains "flagless includes docker buildx" "docker buildx" "$flagless"
 assert_contains "flagless names the race-enabled test gate" "go test -race" "$flagless"
 assert_eq "flagless skips nothing" "0" \
   "$(printf '%s\n' "$flagless" | grep -c '^- ')"
 
-assert_eq "--no-docker selects 10 gates" "10" \
+assert_eq "--no-docker selects 11 gates" "11" \
   "$(printf '%s\n' "$nodocker" | grep -cv '^- ')"
 assert_eq "--no-docker skips exactly one gate" "1" \
   "$(printf '%s\n' "$nodocker" | grep -c '^- ')"
 assert_contains "--no-docker skips docker buildx" "- docker buildx" "$nodocker"
 
+assert_contains "--quick includes ci scripts" "ci scripts" "$quick"
 assert_contains "--quick skips docker buildx" "- docker buildx" "$quick"
 assert_contains "--quick names the un-raced test gate" "go test" "$quick"
 assert_eq "--quick does not name a race-enabled test gate" "0" \

@@ -89,6 +89,7 @@ Gates, in order:
   npm run format    apps/frontend  (prettier --check; non-mutating)
   npm test          apps/frontend
   npm run build     apps/frontend
+  ci scripts        tools/ci/*_test.sh (classifier, pr-complete, stale guard)
   docker buildx     repo root      (linux/amd64,linux/arm64)
 
 On demand, and deliberately NOT part of any mode above — these are not per-PR
@@ -243,6 +244,22 @@ gate_npm_format() { ( cd "$ROOT/apps/frontend" && npm run format ); }
 gate_npm_test()   { ( cd "$ROOT/apps/frontend" && npm test ); }
 gate_npm_build()  { ( cd "$ROOT/apps/frontend" && npm run build ); }
 
+# ------------------------------------------------------------ ci script tests
+
+gate_ci_scripts() {
+    local t found=0
+    for t in "$ROOT"/tools/ci/*_test.sh; do
+        [ -e "$t" ] || continue
+        found=1
+        echo "== ${t##*/}"
+        bash "$t" || return 1
+    done
+    if [ "$found" -eq 0 ]; then
+        echo "no tools/ci/*_test.sh found" >&2
+        return 1
+    fi
+}
+
 # npm writes node_modules/.package-lock.json on every install as a record of the
 # installed tree, so comparing its mtime against package-lock.json is a real
 # staleness signal rather than a proxy. Bare directory presence would let a
@@ -297,6 +314,7 @@ step 'npm run lint' gate_npm_lint
 step 'npm run format' gate_npm_format
 step 'npm test' gate_npm_test
 step 'npm run build' gate_npm_build
+step 'ci scripts' gate_ci_scripts
 
 if [ "$QUICK" -eq 1 ]; then
     skip 'docker buildx' '--quick'

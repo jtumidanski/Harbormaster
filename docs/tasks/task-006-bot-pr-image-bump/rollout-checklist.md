@@ -17,6 +17,8 @@ noted, update `docs/operator/image-bump.md`.
 
 - [ ] `FORGE_PUSH_TOKEN` exists as a repository secret and belongs to a user
       allowed to push branches and to merge past protection.
+- [x] `FORGE_PUSH_TOKEN` carries the `write:repository` scope (confirmed by
+      the operator, 2026-11-11).
 - [ ] Scope check: `write:repository` alone is sufficient for every call
       (create PR, list/patch PRs, merge, delete branch, push). If any call
       returns 403 in steps 4, 7 or 8, record which call and which extra scope

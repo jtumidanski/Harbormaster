@@ -47,8 +47,6 @@ noted, update `docs/operator/image-bump.md`.
 - [ ] Push credential: `git ls-remote` and `git push` in `bump-manifest`
       authenticated with the credential `actions/checkout` persisted from
       `FORGE_PUSH_TOKEN` (no auth failure in the log).
-- [ ] `%2F`: the `GET /pulls/main/<enc-branch>` lookup found the PR (the
-      encoded branch name was decoded by Forgejo). Confirm in the log.
 
 ## 5. Branch protection (AC3)
 
@@ -65,6 +63,11 @@ noted, update `docs/operator/image-bump.md`.
 ## 7. Re-run `bump-manifest` (AC5)
 
 - [ ] Re-running the same job fails nothing and opens no duplicate PR.
+- [ ] `%2F`: the `pr` step log shows `PR #N is open, reusing it` (the
+      `echo` at `.forgejo/workflows/main.yml:470`). The lookup only returns
+      200 when Forgejo decodes the encoded branch name, so this line confirms
+      `%2F` decoding and that no duplicate PR was created. A first run cannot
+      show it, because the lookup returns 404 when no PR exists yet.
 - [ ] Merge endpoint: record the status returned when auto-merge is already
       scheduled (expected 409 or 2xx; the script must treat it as success).
 - [ ] Closed PRs: record whether `GET /pulls/main/<branch>` returns an

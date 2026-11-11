@@ -78,7 +78,7 @@ deriving it."
 
 ## Why this gate stops at the first failure
 
-`tools/verify.sh` walks eleven gates in registry order and **exits at the first
+`tools/verify.sh` walks twelve gates in registry order and **exits at the first
 one that fails**, naming it on stderr. It does not continue and summarise.
 
 It also has **no change detection of any kind**, and no `--base`-style flag for
@@ -90,7 +90,7 @@ Both choices are deliberate, and both differ from the atlas gate that this
 document was ported from:
 
 > Atlas's 80-module fan-out makes a full picture worth the wall time, so its
-> gate runs everything and summarises. Harbormaster has eleven gates over one Go
+> gate runs everything and summarises. Harbormaster has twelve gates over one Go
 > module and one frontend, and the first failure is almost always the whole
 > story. A verifier agent asked for "the first failing block" wants the run to
 > have stopped there — otherwise it has to work out which of several failures
@@ -345,7 +345,7 @@ the form "X never happens" needs a structural check, not a green test.
 Tracked here so it is visible rather than folklore. **CI is the authority for
 everything it runs.** Neither side is a strict superset, but the asymmetry is
 one-directional today: CI runs four things the script does not, and the script
-runs two things CI does not.
+runs three things CI does not.
 
 | CI-only gate | Where | Why it is not in the script |
 |---|---|---|
@@ -359,7 +359,10 @@ Script-only: the **toolchain drift** check (gate 0) and untagged **`go vet
 toolchain check compares, so it cannot check itself, and CI's only vet coverage
 is `go test`'s default subset plus the integration-tagged vet, never an
 untagged `go vet ./...` job. A pin mismatch landed without ever running
-`tools/verify.sh` locally would go unnoticed until the next local run.
+`tools/verify.sh` locally would go unnoticed until the next local run. The third is **`ci scripts`**, which runs
+`tools/ci/*_test.sh`; CI doesn't run them because those scripts *are* the CI
+gate's logic and a PR could edit both the scripts and their tests together. CI
+exercises them by running them, not by testing them.
 
 Also nightly-only: the real integration suite
 (`.github/workflows/nightly.yml`). It is neither a local gate nor a PR gate.
@@ -373,7 +376,7 @@ CI's result.
 ## When a gate fails
 
 1. **Quote the verdict line**, including the gate label. `VERIFY: FAILED — go
-   vet` tells a reader which of eleven things broke; "verify failed" does not.
+   vet` tells a reader which of twelve things broke; "verify failed" does not.
 2. **Report the first failing block, not the whole transcript.** The run stopped
    at the first failure, so the tail of the output is the failure. See
    [`slice-first.md`](slice-first.md) for reading long output without paying for

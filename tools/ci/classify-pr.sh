@@ -60,9 +60,17 @@ if ! diff_out=$(git diff --no-renames -U0 "origin/${BASE_REF}...HEAD" -- "$DEPLO
 fi
 removed=()
 added=()
+in_hunk=false
 while IFS= read -r line; do
+  # Everything before the first "@@" hunk header is the file header; skip it
+  # by position, not by text, so content lines like "--- x" are still counted.
+  if [ "$in_hunk" = false ]; then
+    case "$line" in
+      "@@"*) in_hunk=true ;;
+    esac
+    continue
+  fi
   case "$line" in
-    "+++ "* | "--- "*) ;;
     +*) added+=("${line#+}") ;;
     -*) removed+=("${line#-}") ;;
   esac

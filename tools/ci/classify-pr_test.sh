@@ -45,6 +45,7 @@ spec:
         - name: harbormaster
           image: registry.tumidanski/jtumidanski/harbormaster:sha-780b019
           imagePullPolicy: IfNotPresent
+-- evil
 EOF
 echo "readme" > README.md
 git add -A
@@ -101,7 +102,12 @@ swap_policy_for_image() {
   echo "          image: registry.tumidanski/jtumidanski/harbormaster:sha-abc1234" >> "$DEP"
 }
 
+pin_and_deleted_dashes() { pin; sed -i '/^-- evil$/d' "$DEP"; }
+pin_and_added_pluses() { pin; printf '%s\n' '++ x' >> "$DEP"; }
+
 run_case "bot pin" true "$bot" -- pin
+run_case "bot pin + deleted '-- x' line" false "$bot" -- pin_and_deleted_dashes
+run_case "bot pin + added '++ x' line" false "$bot" -- pin_and_added_pluses
 run_case "human pin" false task-007-x -- pin
 run_case "bot + second file" false "$bot" -- pin_and_readme
 run_case "bot deletes a file" false "$bot" -- pin_and_rm

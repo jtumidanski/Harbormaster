@@ -67,7 +67,7 @@
 **Interfaces:**
 - Produces: `tools/ci/classify-pr.sh`, run with cwd = a git checkout that has `origin/$BASE_REF`. Env inputs: `HEAD_REF`, `HEAD_REPO`, `REPO`, `BASE_REF`. **Stdout: exactly one line**, `bump-only=true` or `bump-only=false`, so it can be appended straight to `$GITHUB_OUTPUT`. All diagnostics go to stderr: each condition with its value, and on false, `classified full: <reason>`. Exit 0 whenever it classifies. Non-zero only on an unexpected crash.
 
-- [ ] **Step 1: Write the failing test** `tools/ci/classify-pr_test.sh`.
+- [x] **Step 1: Write the failing test** `tools/ci/classify-pr_test.sh`.
 
   Fixture: `mktemp -d` repo, `git init -q -b main`, local `user.name`/`user.email`. Commit `deploy/kubernetes/deployment.yaml` with these lines:
   ```yaml
@@ -101,9 +101,9 @@
 
   Also assert, for every case, that stdout has exactly 1 line and that the exit code is 0. For the `false` cases, assert stderr contains `classified full:`.
 
-- [ ] **Step 2: Run it and confirm it fails.** `bash tools/ci/classify-pr_test.sh`. Expected: FAIL (script missing).
+- [x] **Step 2: Run it and confirm it fails.** `bash tools/ci/classify-pr_test.sh`. Expected: FAIL (script missing).
 
-- [ ] **Step 3: Implement `tools/ci/classify-pr.sh`.**
+- [x] **Step 3: Implement `tools/ci/classify-pr.sh`.**
 
   Check in this order, stopping at the first failure (`echo bump-only=false`, reason on stderr):
   1. Empty `HEAD_REF`, `HEAD_REPO`, `REPO` or `BASE_REF`.
@@ -114,9 +114,9 @@
 
   If all pass, print `bump-only=true`. Before deciding, log each input (`HEAD_REF=…`, etc.) and the changed-file list to stderr.
 
-- [ ] **Step 4: Run the tests and confirm they pass.** `bash tools/ci/classify-pr_test.sh` then `shellcheck tools/ci/classify-pr.sh tools/ci/classify-pr_test.sh`. Expected: all `ok`, a final pass line, exit 0, and no shellcheck output.
+- [x] **Step 4: Run the tests and confirm they pass.** `bash tools/ci/classify-pr_test.sh` then `shellcheck tools/ci/classify-pr.sh tools/ci/classify-pr_test.sh`. Expected: all `ok`, a final pass line, exit 0, and no shellcheck output.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
   ```bash
   git add tools/ci/classify-pr.sh tools/ci/classify-pr_test.sh
   git commit -m "feat(ci): bump-only PR classifier with table tests"
@@ -132,7 +132,7 @@
 - Produces: `tools/ci/pr-complete.sh`. Env inputs: `CHANGES_RESULT`, `BUMP_ONLY`, and one `RESULT_<JOB>` per suite job, where `<JOB>` is the job id upper-cased with `-`→`_` (e.g. `RESULT_BACKEND_INTEGRATION_BUILD`). Exit 0 = pass, 1 = fail. Output goes through `say() { printf '%s\n' "$*" | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"; }`: a `Mode: full|bump-only` line, then a `| Job | Result |` table of all eleven (`changes` first), then either `pr-complete: PASS` or `pr-complete: FAIL — <reason>`, where the reason names every offending job.
 - Produces: `tools/ci/pr-complete.sh --list-jobs` prints the ten job ids, one per line, from the single `SUITE_JOBS=(…)` array (Global Constraints order) and exits 0. Task 5 relies on this.
 
-- [ ] **Step 1: Write the failing test** `tools/ci/pr-complete_test.sh`. A helper sets all ten `RESULT_*` to one value, with optional per-job overrides, and runs the script under `env -i PATH="$PATH" …` so the caller's environment can't leak in. Cases:
+- [x] **Step 1: Write the failing test** `tools/ci/pr-complete_test.sh`. A helper sets all ten `RESULT_*` to one value, with optional per-job overrides, and runs the script under `env -i PATH="$PATH" …` so the caller's environment can't leak in. Cases:
 
   | Case | CHANGES_RESULT | BUMP_ONLY | Results | Expect |
   |---|---|---|---|---|
@@ -152,13 +152,13 @@
 
   Plus: `--list-jobs` prints exactly the ten ids in Global Constraints order. In the full-success case, a `GITHUB_STEP_SUMMARY` temp file receives the `| Job | Result |` header.
 
-- [ ] **Step 2: Run it and confirm it fails.** `bash tools/ci/pr-complete_test.sh`. Expected: FAIL.
+- [x] **Step 2: Run it and confirm it fails.** `bash tools/ci/pr-complete_test.sh`. Expected: FAIL.
 
-- [ ] **Step 3: Implement `tools/ci/pr-complete.sh`.** Logic in design §5.4 order: print the mode and the table, then `CHANGES_RESULT != success` → fail; mode = bump-only iff `BUMP_ONLY` is exactly `true`; expected per-job value is `success` (full) or `skipped` (bump-only); collect every job whose value differs (indirect expansion `${!var:-}`), and fail naming all of them. Use `set -euo pipefail`. Unset vars are read with `:-`.
+- [x] **Step 3: Implement `tools/ci/pr-complete.sh`.** Logic in design §5.4 order: print the mode and the table, then `CHANGES_RESULT != success` → fail; mode = bump-only iff `BUMP_ONLY` is exactly `true`; expected per-job value is `success` (full) or `skipped` (bump-only); collect every job whose value differs (indirect expansion `${!var:-}`), and fail naming all of them. Use `set -euo pipefail`. Unset vars are read with `:-`.
 
-- [ ] **Step 4: Run the tests and confirm they pass.** `bash tools/ci/pr-complete_test.sh` and `shellcheck tools/ci/pr-complete.sh tools/ci/pr-complete_test.sh`. Expected: all `ok`, exit 0.
+- [x] **Step 4: Run the tests and confirm they pass.** `bash tools/ci/pr-complete_test.sh` and `shellcheck tools/ci/pr-complete.sh tools/ci/pr-complete_test.sh`. Expected: all `ok`, exit 0.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
   ```bash
   git add tools/ci/pr-complete.sh tools/ci/pr-complete_test.sh
   git commit -m "feat(ci): fail-closed pr-complete aggregate verdict with tests"
@@ -173,7 +173,7 @@
 **Interfaces:**
 - Produces: `tools/ci/stale-guard.sh`, run with cwd = a checkout whose `HEAD` is `main`'s tip. Env input `GITHUB_SHA` (full SHA). **Stdout: exactly one line**, `stale=true` or `stale=false`. The reason goes to stderr (`<sha> is not on main` / `main has newer code changes: <files>` / `no newer code on main`). Exit 0 when decided. Exit 2 with a stderr message when `GITHUB_SHA` is empty, or when `git merge-base --is-ancestor` returns anything other than 0 or 1 (unknown object). A silent skip would lose a deploy, so this fails loudly instead.
 
-- [ ] **Step 1: Write the failing test** `tools/ci/stale-guard_test.sh`. Throwaway repo with `deploy/kubernetes/deployment.yaml` and `apps/x.txt`. Commit `A` is the built SHA. Cases (each in a fresh repo or a reset branch):
+- [x] **Step 1: Write the failing test** `tools/ci/stale-guard_test.sh`. Throwaway repo with `deploy/kubernetes/deployment.yaml` and `apps/x.txt`. Commit `A` is the built SHA. Cases (each in a fresh repo or a reset branch):
 
   | Case | History after A (HEAD) | Expect |
   |---|---|---|
@@ -187,13 +187,13 @@
 
   Assert one stdout line in every exit-0 case.
 
-- [ ] **Step 2: Run it and confirm it fails.** `bash tools/ci/stale-guard_test.sh`. Expected: FAIL.
+- [x] **Step 2: Run it and confirm it fails.** `bash tools/ci/stale-guard_test.sh`. Expected: FAIL.
 
-- [ ] **Step 3: Implement `tools/ci/stale-guard.sh`** following the design §4.2 snippet. The diff is `git diff --no-renames --name-only "$GITHUB_SHA" HEAD -- . ':(exclude)deploy/kubernetes/deployment.yaml'`. Capture the `--is-ancestor` code explicitly (`rc=0; git merge-base … || rc=$?`): 0 → continue, 1 → `stale=true`, else exit 2.
+- [x] **Step 3: Implement `tools/ci/stale-guard.sh`** following the design §4.2 snippet. The diff is `git diff --no-renames --name-only "$GITHUB_SHA" HEAD -- . ':(exclude)deploy/kubernetes/deployment.yaml'`. Capture the `--is-ancestor` code explicitly (`rc=0; git merge-base … || rc=$?`): 0 → continue, 1 → `stale=true`, else exit 2.
 
-- [ ] **Step 4: Run the tests and confirm they pass.** `bash tools/ci/stale-guard_test.sh`, then `shellcheck` on both files. Expected: all `ok`, exit 0.
+- [x] **Step 4: Run the tests and confirm they pass.** `bash tools/ci/stale-guard_test.sh`, then `shellcheck` on both files. Expected: all `ok`, exit 0.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
   ```bash
   git add tools/ci/stale-guard.sh tools/ci/stale-guard_test.sh
   git commit -m "feat(ci): code-newest stale-run guard for bump-manifest with tests"
@@ -212,15 +212,15 @@ No existing gate runs shell tests (`tools/verify.sh --list` shows 11 Go/npm/dock
 - Consumes: `tools/ci/*_test.sh` from Tasks 1–3 (and Task 5's extension).
 - Produces: gate label `ci scripts`. It runs in every mode, never skipped.
 
-- [ ] **Step 1: Update the tests first.** In `tools/verify_test.sh`, change the counts: `flagless selects 12 gates`, `--no-docker selects 11 gates`. Add `assert_contains "flagless includes ci scripts" "ci scripts" "$flagless"` and the same for `$quick`. Run `bash tools/verify_test.sh`. Expected: FAIL on the counts and the `ci scripts` asserts.
+- [x] **Step 1: Update the tests first.** In `tools/verify_test.sh`, change the counts: `flagless selects 12 gates`, `--no-docker selects 11 gates`. Add `assert_contains "flagless includes ci scripts" "ci scripts" "$flagless"` and the same for `$quick`. Run `bash tools/verify_test.sh`. Expected: FAIL on the counts and the `ci scripts` asserts.
 
-- [ ] **Step 2: Implement `gate_ci_scripts()`.** It globs `"$ROOT"/tools/ci/*_test.sh`. If the glob matches nothing, it returns 1 with `no tools/ci/*_test.sh found` (no vacuous pass). It runs each one with `bash`, prints the file name first, and returns 1 at the first failure. Add the usage line `  ci scripts        tools/ci/*_test.sh (classifier, pr-complete, stale guard)`.
+- [x] **Step 2: Implement `gate_ci_scripts()`.** It globs `"$ROOT"/tools/ci/*_test.sh`. If the glob matches nothing, it returns 1 with `no tools/ci/*_test.sh found` (no vacuous pass). It runs each one with `bash`, prints the file name first, and returns 1 at the first failure. Add the usage line `  ci scripts        tools/ci/*_test.sh (classifier, pr-complete, stale guard)`.
 
-- [ ] **Step 3: Run the tests and confirm they pass.** `bash tools/verify_test.sh` → all ok. `tools/verify.sh --list` → 12 lines, including `ci scripts` before `docker buildx`.
+- [x] **Step 3: Run the tests and confirm they pass.** `bash tools/verify_test.sh` → all ok. `tools/verify.sh --list` → 12 lines, including `ci scripts` before `docker buildx`.
 
-- [ ] **Step 4: Docs.** In `docs/verification.md`, change "eleven" to "twelve" at the three sites. In "Known drift", change "the script runs two things CI does not" to three. Add a sentence to the script-only paragraph: `ci scripts` runs `tools/ci/*_test.sh`, which CI doesn't run, because those scripts *are* the CI gate's logic and a PR could edit both the scripts and their tests together. CI exercises them by running them, not by testing them.
+- [x] **Step 4: Docs.** In `docs/verification.md`, change "eleven" to "twelve" at the three sites. In "Known drift", change "the script runs two things CI does not" to three. Add a sentence to the script-only paragraph: `ci scripts` runs `tools/ci/*_test.sh`, which CI doesn't run, because those scripts *are* the CI gate's logic and a PR could edit both the scripts and their tests together. CI exercises them by running them, not by testing them.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
   ```bash
   git add tools/verify.sh tools/verify_test.sh docs/verification.md
   git commit -m "feat(verify): ci scripts gate runs tools/ci shell tests"
@@ -236,7 +236,7 @@ No existing gate runs shell tests (`tools/verify.sh --list` shows 11 Go/npm/dock
 - Consumes: `tools/ci/classify-pr.sh` (Task 1) and `tools/ci/pr-complete.sh` + `--list-jobs` (Task 2), with exactly their env/stdout contracts.
 - Produces: job `changes` with `outputs: { bump-only: ${{ steps.classify.outputs.bump-only }} }`, and job `pr-complete`, the single future required context.
 
-- [ ] **Step 1: Write the failing agreement test.** Append a section to `tools/ci/pr-complete_test.sh` that reads `$ROOT/.forgejo/workflows/pr.yml` with `yq` (fail the test if `yq` is missing) and asserts:
+- [x] **Step 1: Write the failing agreement test.** Append a section to `tools/ci/pr-complete_test.sh` that reads `$ROOT/.forgejo/workflows/pr.yml` with `yq` (fail the test if `yq` is missing) and asserts:
   - (a) the sorted list of all job ids minus `changes` and `pr-complete` equals the sorted `pr-complete.sh --list-jobs`;
   - (b) `.jobs."pr-complete".needs` equals `changes` plus that same set;
   - (c) the `RESULT_*` keys in `pr-complete`'s step `env`, mapped back (lower-case, `_`→`-`), equal the same set, and that env also has `CHANGES_RESULT` and `BUMP_ONLY`;
@@ -246,20 +246,20 @@ No existing gate runs shell tests (`tools/verify.sh --list` shows 11 Go/npm/dock
 
   Run `bash tools/ci/pr-complete_test.sh`. Expected: FAIL on (a)–(f).
 
-- [ ] **Step 2: Trigger and header.** Delete lines 5–13 (the comment and `paths-ignore`). Insert the design §5.5 paragraph as a comment above `permissions:`. It says that bump PRs now run this workflow; that `changes` classifies them; that the suite is skipped only for a same-repo `bot/image-bump-*` branch whose sole change is the image pin (`tools/ci/classify-pr.sh`); that `pr-complete` is the single required context; and that it fails closed. Point to `docs/operator/image-bump.md`.
+- [x] **Step 2: Trigger and header.** Delete lines 5–13 (the comment and `paths-ignore`). Insert the design §5.5 paragraph as a comment above `permissions:`. It says that bump PRs now run this workflow; that `changes` classifies them; that the suite is skipped only for a same-repo `bot/image-bump-*` branch whose sole change is the image pin (`tools/ci/classify-pr.sh`); that `pr-complete` is the single required context; and that it fails closed. Point to `docs/operator/image-bump.md`.
 
-- [ ] **Step 3: `changes` job.** `runs-on: ubuntu-24.04`. Checkout (same pinned SHA as the other jobs) with `fetch-depth: 0` and `filter: blob:none`, then the `Reset toolchain caches` step. Then step `id: classify` with env `HEAD_REF: ${{ github.head_ref }}`, `HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}`, `REPO: ${{ github.repository }}`, `BASE_REF: ${{ github.base_ref }}`, run `tools/ci/classify-pr.sh | tee -a "$GITHUB_OUTPUT"`, with `set -euo pipefail` so a crash fails the job.
+- [x] **Step 3: `changes` job.** `runs-on: ubuntu-24.04`. Checkout (same pinned SHA as the other jobs) with `fetch-depth: 0` and `filter: blob:none`, then the `Reset toolchain caches` step. Then step `id: classify` with env `HEAD_REF: ${{ github.head_ref }}`, `HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}`, `REPO: ${{ github.repository }}`, `BASE_REF: ${{ github.base_ref }}`, run `tools/ci/classify-pr.sh | tee -a "$GITHUB_OUTPUT"`, with `set -euo pipefail` so a crash fails the job.
 
-- [ ] **Step 4: Ten suite jobs.** Add `needs: [changes]` and `if: needs.changes.outputs.bump-only != 'true'` directly under each job id. Change nothing else, and keep the golangci-lint `with:` line untouched.
+- [x] **Step 4: Ten suite jobs.** Add `needs: [changes]` and `if: needs.changes.outputs.bump-only != 'true'` directly under each job id. Change nothing else, and keep the golangci-lint `with:` line untouched.
 
-- [ ] **Step 5: `pr-complete` job.** `if: always()`, `needs: [changes, <ten in Global Constraints order>]`, `runs-on: ubuntu-24.04`. Checkout with `sparse-checkout: tools/ci`. One step `env:` with `CHANGES_RESULT: ${{ needs.changes.result }}`, `BUMP_ONLY: ${{ needs.changes.outputs.bump-only }}`, and the ten `RESULT_*: ${{ needs.<job>.result }}`, `run: tools/ci/pr-complete.sh`. No `${{ }}` inside `run:`.
+- [x] **Step 5: `pr-complete` job.** `if: always()`, `needs: [changes, <ten in Global Constraints order>]`, `runs-on: ubuntu-24.04`. Checkout with `sparse-checkout: tools/ci`. One step `env:` with `CHANGES_RESULT: ${{ needs.changes.result }}`, `BUMP_ONLY: ${{ needs.changes.outputs.bump-only }}`, and the ten `RESULT_*: ${{ needs.<job>.result }}`, `run: tools/ci/pr-complete.sh`. No `${{ }}` inside `run:`.
 
-- [ ] **Step 6: Verify.**
+- [x] **Step 6: Verify.**
   - `bash tools/ci/pr-complete_test.sh` → all ok.
   - `actionlint .forgejo/workflows/pr.yml .forgejo/workflows/main.yml` → only the baseline `main.yml:208` finding.
   - The drift gate still finds the pin: `bash tools/verify_test.sh`. Its first-failure section runs the real drift gate before the stubbed `go` fails, and asserts the verdict names `go test`. That assertion only holds if drift passed. Expected: all ok.
 
-- [ ] **Step 7: Commit.**
+- [x] **Step 7: Commit.**
   ```bash
   git add .forgejo/workflows/pr.yml tools/ci/pr-complete_test.sh
   git commit -m "feat(ci): pr.yml changes classifier and pr-complete aggregate"
@@ -276,13 +276,13 @@ No existing gate runs shell tests (`tools/verify.sh --list` shows 11 Go/npm/dock
 
 No local test can exercise the API calls. Verification is static, plus Task 8's live checklist.
 
-- [ ] **Step 1: Comments.** Lines 6–9: "its commit" → "its squash-merge commit" (design §4.5). Replace lines 313–321 with the design §4.5 content. It covers: `main` is protected (required checks, admins enforced) and Forgejo applies required checks to pushes, so a direct push is rejected; the job opens `bot/image-bump-<7>` and schedules auto-merge, and `pr / pr-complete` gates it; it uses `FORGE_PUSH_TOKEN` because a PR opened by the run token triggers no `pull_request` workflow; loop prevention is still the `paths-ignore` above. Remove "the forge repository carries no such rule". Keep the 7-char tag paragraph (lines 323–327). Link `docs/operator/image-bump.md`.
+- [x] **Step 1: Comments.** Lines 6–9: "its commit" → "its squash-merge commit" (design §4.5). Replace lines 313–321 with the design §4.5 content. It covers: `main` is protected (required checks, admins enforced) and Forgejo applies required checks to pushes, so a direct push is rejected; the job opens `bot/image-bump-<7>` and schedules auto-merge, and `pr / pr-complete` gates it; it uses `FORGE_PUSH_TOKEN` because a PR opened by the run token triggers no `pull_request` workflow; loop prevention is still the `paths-ignore` above. Remove "the forge repository carries no such rule". Keep the 7-char tag paragraph (lines 323–327). Link `docs/operator/image-bump.md`.
 
-- [ ] **Step 2: Checkout.** `ref: main`, `fetch-depth: 0`, `filter: blob:none`, `token: ${{ secrets.FORGE_PUSH_TOKEN }}`. Keep the existing `ref: main` comment. Keep the `Reset toolchain caches` step.
+- [x] **Step 2: Checkout.** `ref: main`, `fetch-depth: 0`, `filter: blob:none`, `token: ${{ secrets.FORGE_PUSH_TOKEN }}`. Keep the existing `ref: main` comment. Keep the `Reset toolchain caches` step.
 
-- [ ] **Step 3: `pin` step.** `set -euo pipefail`. Run `stale="$(tools/ci/stale-guard.sh)"`. If it's `stale=true`, write `skip=true` and exit 0. Then apply today's `sed` (line 365, unchanged) to the tip's `deployment.yaml`. If `git diff --quiet` → `already pinned to <tag>`, `skip=true`, exit 0. Then today's post-rewrite `grep -q` sanity check, then `skip=false`. Each `skip=` line is appended to `$GITHUB_OUTPUT`. No commit here.
+- [x] **Step 3: `pin` step.** `set -euo pipefail`. Run `stale="$(tools/ci/stale-guard.sh)"`. If it's `stale=true`, write `skip=true` and exit 0. Then apply today's `sed` (line 365, unchanged) to the tip's `deployment.yaml`. If `git diff --quiet` → `already pinned to <tag>`, `skip=true`, exit 0. Then today's post-rewrite `grep -q` sanity check, then `skip=false`. Each `skip=` line is appended to `$GITHUB_OUTPUT`. No commit here.
 
-- [ ] **Step 4: Shared API helper.** Use this exact shape. It is duplicated verbatim at the top of the `supersede` and `pr` steps (design §4.1, builder's call: stay inline unless a second function appears):
+- [x] **Step 4: Shared API helper.** Use this exact shape. It is duplicated verbatim at the top of the `supersede` and `pr` steps (design §4.1, builder's call: stay inline unless a second function appears):
   ```sh
   # api METHOD PATH EXPECTED_CODES [JSON] — EXPECTED_CODES is comma-separated.
   # Sets API_CODE; body in "$resp". Unexpected code: print ≤300 bytes, exit 1.
@@ -299,22 +299,22 @@ No local test can exercise the API calls. Verification is static, plus Task 8's 
   ```
   Step env (both steps): `FORGE_TOKEN: ${{ secrets.FORGE_PUSH_TOKEN }}` and `API: ${{ github.server_url }}/api/v1/repos/${{ github.repository }}`. Inside each step, compute `BRANCH="bot/image-bump-${GITHUB_SHA::7}"` (shell, not `${{ github.sha }}`, which is the full SHA), `ENC_BRANCH="${BRANCH//\//%2F}"`, and `resp="$(mktemp)"`.
 
-- [ ] **Step 5: `supersede` step** (`if: steps.pin.outputs.skip != 'true'`). Page `api GET "/pulls?state=open&limit=50&page=$n" 200` from `n=1` until a page has fewer than 50 items. Select with `jq -r --arg me "$BRANCH" '.[] | select((.head.ref | startswith("bot/image-bump-")) and .head.repo.full_name == .base.repo.full_name and .head.ref != $me) | "\(.number) \(.head.ref)"'`. For each: `api PATCH "/pulls/$n" 200,201 '{"state":"closed"}'`, then `api DELETE "/branches/<encoded ref>" 204,404`. Log `superseded #n (<ref>)`. If nothing matches, log `no older bump PRs`.
+- [x] **Step 5: `supersede` step** (`if: steps.pin.outputs.skip != 'true'`). Page `api GET "/pulls?state=open&limit=50&page=$n" 200` from `n=1` until a page has fewer than 50 items. Select with `jq -r --arg me "$BRANCH" '.[] | select((.head.ref | startswith("bot/image-bump-")) and .head.repo.full_name == .base.repo.full_name and .head.ref != $me) | "\(.number) \(.head.ref)"'`. For each: `api PATCH "/pulls/$n" 200,201 '{"state":"closed"}'`, then `api DELETE "/branches/<encoded ref>" 204,404`. Log `superseded #n (<ref>)`. If nothing matches, log `no older bump PRs`.
 
-- [ ] **Step 6: `pr` step** (`id: pr`, `if: steps.pin.outputs.skip != 'true'`). Follow design §4.3 exactly:
+- [x] **Step 6: `pr` step** (`id: pr`, `if: steps.pin.outputs.skip != 'true'`). Follow design §4.3 exactly:
   1. `api GET "/pulls/main/$ENC_BRANCH" 200,404`. On 200: if `.state == "open"`, write `number=<n>` and exit 0. Otherwise log `PR #n is <state>`, write no number, and exit 0.
   2. Run `git ls-remote --exit-code --heads origin "$BRANCH"` and capture the rc. 0 → `branch exists, reusing (no push)`. 2 → `git switch -c "$BRANCH"`, then `git config user.name/user.email` (bot identity), `git add deploy/kubernetes/deployment.yaml`, a commit with today's message (lines 377–381) and no `[skip ci]`, then `git push origin "$BRANCH"`. Any other rc → fail.
   3. `api POST /pulls 201` with the body built by `jq -n --arg …` (no hand-quoted JSON). It contains `head`, `base: "main"`, the title from Global Constraints, and a body naming `main.yml run ${GITHUB_RUN_ID}`, `${GITHUB_SHA}`, the tag, Argo CD `harbormaster-main`, and "auto-merges once `pr / pr-complete` passes". Write `number=$(jq -r .number "$resp")` to `$GITHUB_OUTPUT`.
 
-- [ ] **Step 7: `automerge` step** (`if: steps.pr.outputs.number != ''`). This is atlas's retry loop: 12 attempts, `sleep 10` between them. `curl` the merge endpoint `POST "$API/pulls/$N/merge"` with the Global Constraints payload, `-o "$resp" -w '%{http_code}'`, and the auth header. On 2xx or 409, log `auto-merge scheduled (HTTP …)` and exit 0. On anything else, log `attempt i/12: HTTP <code>` + `head -c 300`. After 12 failures: `::error::could not schedule auto-merge for PR #N`, exit 1.
+- [x] **Step 7: `automerge` step** (`if: steps.pr.outputs.number != ''`). This is atlas's retry loop: 12 attempts, `sleep 10` between them. `curl` the merge endpoint `POST "$API/pulls/$N/merge"` with the Global Constraints payload, `-o "$resp" -w '%{http_code}'`, and the auth header. On 2xx or 409, log `auto-merge scheduled (HTTP …)` and exit 0. On anything else, log `attempt i/12: HTTP <code>` + `head -c 300`. After 12 failures: `::error::could not schedule auto-merge for PR #N`, exit 1.
 
-- [ ] **Step 8: Verify (static).**
+- [x] **Step 8: Verify (static).**
   - `actionlint .forgejo/workflows/pr.yml .forgejo/workflows/main.yml` → only the baseline finding (shellcheck runs on the `run:` blocks too).
   - `grep -n 'FORGE_PUSH_TOKEN}@\|skip ci\|no such rule' .forgejo/workflows/main.yml` → no output.
   - `yq '.jobs."bump-manifest".concurrency' .forgejo/workflows/main.yml` → `group: bump-manifest`, `cancel-in-progress: false`.
   - `yq '.on.push."paths-ignore"' .forgejo/workflows/main.yml` → `deploy/kubernetes/deployment.yaml`.
 
-- [ ] **Step 9: Commit.**
+- [x] **Step 9: Commit.**
   ```bash
   git add .forgejo/workflows/main.yml
   git commit -m "fix(ci): bump-manifest pins the image through an auto-merged bot PR"
@@ -329,13 +329,13 @@ No local test can exercise the API calls. Verification is static, plus Task 8's 
 **Interfaces:**
 - Consumes: the job ids, step names, scripts and context string from Tasks 1–6.
 
-- [ ] **Step 1: Write `docs/operator/image-bump.md`.** Use the six sections from design §7, in order: Flow; Bump-only classification (all **five** checks as implemented in Task 1, including the removed-line tightening, and why it fails closed); Required context; Token precondition (`write:repository`; a missing scope shows up as an HTTP 403 body in the `bump-manifest` log); Rollout order (design §6, steps 1–5, plus rollback); Stuck-PR recovery (three symptoms → fixes, plus the §4.4 residual race). Add a short "Trust boundary" note (Review Focus 1). In Required context, write it exactly as: ``Required context: `pr / pr-complete (pull_request)` — **unconfirmed**: replace this line with the string from this task's PR status list before merge.`` Use repo-relative paths and links only.
+- [x] **Step 1: Write `docs/operator/image-bump.md`.** Use the six sections from design §7, in order: Flow; Bump-only classification (all **five** checks as implemented in Task 1, including the removed-line tightening, and why it fails closed); Required context; Token precondition (`write:repository`; a missing scope shows up as an HTTP 403 body in the `bump-manifest` log); Rollout order (design §6, steps 1–5, plus rollback); Stuck-PR recovery (three symptoms → fixes, plus the §4.4 residual race). Add a short "Trust boundary" note (Review Focus 1). In Required context, write it exactly as: ``Required context: `pr / pr-complete (pull_request)` — **unconfirmed**: replace this line with the string from this task's PR status list before merge.`` Use repo-relative paths and links only.
 
-- [ ] **Step 2: README callout.** Replace `.github/workflows/main.yml` with `.forgejo/workflows/main.yml`, and change the text to say the job rewrites the tag "through an auto-merged bot PR (`bot/image-bump-<short-sha>`)". Add a link to `../../docs/operator/image-bump.md`.
+- [x] **Step 2: README callout.** Replace `.github/workflows/main.yml` with `.forgejo/workflows/main.yml`, and change the text to say the job rewrites the tag "through an auto-merged bot PR (`bot/image-bump-<short-sha>`)". Add a link to `../../docs/operator/image-bump.md`.
 
-- [ ] **Step 3: Verify.** `grep -rn '/home/' docs/operator/image-bump.md` → nothing. `grep -n '.github/workflows' deploy/kubernetes/README.md` → nothing. Every relative link resolves (`ls` each target).
+- [x] **Step 3: Verify.** `grep -rn '/home/' docs/operator/image-bump.md` → nothing. `grep -n '.github/workflows' deploy/kubernetes/README.md` → nothing. Every relative link resolves (`ls` each target).
 
-- [ ] **Step 4: Commit.**
+- [x] **Step 4: Commit.**
   ```bash
   git add docs/operator/image-bump.md deploy/kubernetes/README.md
   git commit -m "docs: image-bump runbook and corrected deploy README callout"
@@ -346,7 +346,7 @@ No local test can exercise the API calls. Verification is static, plus Task 8's 
 **Files:**
 - Create: `docs/tasks/task-006-bot-pr-image-bump/rollout-checklist.md`
 
-- [ ] **Step 1: Write `rollout-checklist.md`.** This is a checkbox list for the operator, ordered as follows:
+- [x] **Step 1: Write `rollout-checklist.md`.** This is a checkbox list for the operator, ordered as follows:
   1. Confirm `FORGE_PUSH_TOKEN` scopes.
   2. Open the PR. From its status list, copy the exact `pr-complete` context string into `docs/operator/image-bump.md`, remove the "unconfirmed" wording, and commit to the same branch. Also confirm in the `changes` job log that `HEAD_REF` and `HEAD_REPO` are non-empty (design §2 unknowns).
   3. Merge.
@@ -359,11 +359,11 @@ No local test can exercise the API calls. Verification is static, plus Task 8's 
 
   Map each item to its PRD §10 criterion.
 
-- [ ] **Step 2: Full gate.** Dispatch `task-verifier` with the plain flagless `tools/verify.sh` (don't run it in the implementer). Expected terminal line: `VERIFY: DONE — all gates passed; the branch may be called done.` and `ci scripts` in the transcript.
+- [x] **Step 2: Full gate.** Dispatch `task-verifier` with the plain flagless `tools/verify.sh` (don't run it in the implementer). Expected terminal line: `VERIFY: DONE — all gates passed; the branch may be called done.` and `ci scripts` in the transcript.
 
-- [ ] **Step 3: Static workflow check.** `actionlint .forgejo/workflows/pr.yml .forgejo/workflows/main.yml` → only the baseline finding.
+- [x] **Step 3: Static workflow check.** `actionlint .forgejo/workflows/pr.yml .forgejo/workflows/main.yml` → only the baseline finding.
 
-- [ ] **Step 4: Commit.**
+- [x] **Step 4: Commit.**
   ```bash
   git add docs/tasks/task-006-bot-pr-image-bump/rollout-checklist.md
   git commit -m "docs(task-006): live rollout checklist for the operator"

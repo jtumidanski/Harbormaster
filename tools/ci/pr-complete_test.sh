@@ -7,7 +7,6 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck disable=SC2034  # consumed by sections appended in later tasks
 ROOT="$(cd "$HERE/../.." && pwd)"
 SCRIPT="$HERE/pr-complete.sh"
 
@@ -110,6 +109,38 @@ env -i PATH="$PATH" GITHUB_STEP_SUMMARY="$SUM" CHANGES_RESULT=success BUMP_ONLY=
   "$(varname dependency-scan)=success" "$(varname license-allowlist)=success" \
   bash "$SCRIPT" >/dev/null 2>&1
 assert_contains "step summary header" "| Job | Result |" "$(cat "$SUM")"
+
+# --- agreement with .forgejo/workflows/pr.yml ---------------------------------
+# The SUITE_JOBS array, the pr-complete needs list, its step env, and the
+# per-job gating must all name the same ten jobs.
+WF="$ROOT/.forgejo/workflows/pr.yml"
+if ! command -v yq >/dev/null 2>&1; then
+  echo "FAIL - yq is required for the workflow agreement checks"
+  fails=$((fails + 1))
+else
+  listed="$(bash "$SCRIPT" --list-jobs | sort)"
+  wf_jobs="$(yq -r '.jobs | keys | .[]' "$WF" | grep -vx -e changes -e pr-complete | sort)"
+  assert_eq "(a) workflow jobs == --list-jobs" "$listed" "$wf_jobs"
+
+  want_needs="$({ echo changes; echo "$listed"; } | sort)"
+  got_needs="$(yq -r '.jobs."pr-complete".needs[]' "$WF" | sort)"
+  assert_eq "(b) pr-complete needs == changes + suite" "$want_needs" "$got_needs"
+
+  env_results="$(yq -r '.jobs."pr-complete".steps[].env // {} | keys | .[]' "$WF" \
+    | grep '^RESULT_' | sed -e 's/^RESULT_//' -e 's/_/-/g' | tr '[:upper:]' '[:lower:]' | sort)"
+  assert_eq "(c) RESULT_* env keys == suite" "$listed" "$env_results"
+  env_other="$(yq -r '.jobs."pr-complete".steps[].env // {} | keys | .[]' "$WF" | grep -v '^RESULT_' | sort)"
+  assert_eq "(c) CHANGES_RESULT and BUMP_ONLY present" "$(printf 'BUMP_ONLY\nCHANGES_RESULT')" "$env_other"
+
+  for j in $listed; do
+    assert_eq "(d) $j needs" "changes" "$(yq -r ".jobs.\"$j\" | (.needs // []) | join(\",\")" "$WF")"
+    assert_eq "(d) $j if" "needs.changes.outputs.bump-only != 'true'" "$(yq -r ".jobs.\"$j\".if" "$WF")"
+  done
+
+  assert_eq "(e) pr-complete if" "always()" "$(yq -r '.jobs."pr-complete".if' "$WF")"
+  assert_eq "(e) pr-complete has no name" "null" "$(yq -r '.jobs."pr-complete".name' "$WF")"
+  assert_eq "(f) no paths-ignore" "null" "$(yq -r '.on.pull_request."paths-ignore"' "$WF")"
+fi
 
 echo
 if [ "$fails" -ne 0 ]; then echo "$fails failure(s)"; exit 1; fi

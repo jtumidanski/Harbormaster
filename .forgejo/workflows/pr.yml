@@ -2,15 +2,14 @@ name: pr
 on:
   pull_request:
     branches: [main, "task-*"]
-    # Skip the machine-written image pin. bump-manifest in main.yml commits the
-    # new image digest to this file and pushes it straight to main -- the GitHub
-    # workflow instead pushed a bot/image-bump-<sha> branch and squash-merged it
-    # with the `gh` CLI, which does not speak to Forgejo. The gate guards that
-    # bump commit: wherever it surfaces, there is nothing in it left to
-    # validate, because the image the pin names was already built and
-    # Trivy-scanned by the run that produced it.
-    paths-ignore:
-      - "deploy/kubernetes/deployment.yaml"
+
+# Image-bump PRs run this workflow too. The `changes` job classifies the PR
+# (tools/ci/classify-pr.sh): the ten suite jobs are skipped only for a
+# same-repo `bot/image-bump-*` branch whose sole change is the image pin in
+# deploy/kubernetes/deployment.yaml. Every other PR runs the whole suite.
+# `pr-complete` is the single required status context; it fails closed, so a
+# failed, cancelled, or missing job -- or a classifier crash -- never passes.
+# See docs/operator/image-bump.md.
 
 permissions:
   contents: read
@@ -51,7 +50,28 @@ permissions:
 # holds even for a consumer that does compare exactly.
 
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      bump-only: ${{ steps.classify.outputs.bump-only }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0, filter: "blob:none" }
+      - name: Reset toolchain caches
+        run: rm -rf /work/ci-cache
+      - id: classify
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          tools/ci/classify-pr.sh | tee -a "$GITHUB_OUTPUT"
+
   frontend-lint:
+    needs: [changes]
+    if: needs.changes.outputs.bump-only != 'true'
     runs-on: ubuntu-24.04
     defaults: { run: { working-directory: apps/frontend } }
     env:
@@ -71,6 +91,8 @@ jobs:
       - run: npm run format
 
   frontend-test:
+    needs: [changes]
+    if: needs.changes.outputs.bump-only != 'true'
     runs-on: ubuntu-24.04
     defaults: { run: { working-directory: apps/frontend } }
     env:
@@ -89,6 +111,8 @@ jobs:
       - run: npm test
 
   frontend-build:
+    needs: [changes]
+    if: needs.changes.outputs.bump-only != 'true'
     runs-on: ubuntu-24.04
     defaults: { run: { working-directory: apps/frontend } }
     env:
@@ -107,6 +131,8 @@ jobs:
       - run: npm run build
 
   backend-lint:
+    needs: [changes]
+    if: needs.changes.outputs.bump-only != 'true'
     runs-on: ubuntu-24.04
     defaults: { run: { working-directory: apps/backend } }
     env:
@@ -129,6 +155,8 @@ jobs:
         with: { version: v2.15.0, working-directory: apps/backend }
 
   backend-test:
+    needs: [changes]
+    if: needs.changes.outputs.bump-only != 'true'
     runs-on: ubuntu-24.04
     defaults: { run: { working-directory: apps/backend } }
     env:
@@ -150,6 +178,8 @@ jobs:
       - run: go test -race -count=1 ./...
 
   backend-build:
+    needs: [changes]
+    if: needs.changes.outputs.bump-only != 'true'
     runs-on: ubuntu-24.04
     defaults: { run: { working-directory: apps/backend } }
     env:
@@ -174,6 +204,8 @@ jobs:
   # the tagged non-test files AND the _test.go files (plain `go build` skips test
   # files), but never executes a test body or TestMain, so no MinIO is required.
   backend-integration-build:
+    needs: [changes]
+    if: needs.changes.outputs.bump-only != 'true'
     runs-on: ubuntu-24.04
     defaults: { run: { working-directory: apps/backend } }
     env:
@@ -197,6 +229,8 @@ jobs:
   # gitleaks/gitleaks-action is not used here: it calls the GitHub API to post
   # PR comments and expects an organisation licence. The binary does the scan.
   gitleaks:
+    needs: [changes]
+    if: needs.changes.outputs.bump-only != 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -218,6 +252,8 @@ jobs:
         run: gitleaks detect --source . --redact --verbose --exit-code 1
 
   dependency-scan:
+    needs: [changes]
+    if: needs.changes.outputs.bump-only != 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -247,6 +283,8 @@ jobs:
           cache-dir: /work/ci-cache/trivy
 
   license-allowlist:
+    needs: [changes]
+    if: needs.changes.outputs.bump-only != 'true'
     runs-on: ubuntu-24.04
     env:
       GOMODCACHE: /work/ci-cache/go/mod
@@ -276,3 +314,36 @@ jobs:
           go-licenses check ./... \
             --allowed_licenses=Apache-2.0,MIT,BSD-2-Clause,BSD-3-Clause,ISC,MPL-2.0,AGPL-3.0,AGPL-3.0-or-later,GPL-3.0,GPL-3.0-or-later \
             --ignore="$IGNORES"
+
+  pr-complete:
+    if: always()
+    needs:
+      - changes
+      - frontend-lint
+      - frontend-test
+      - frontend-build
+      - backend-lint
+      - backend-test
+      - backend-build
+      - backend-integration-build
+      - gitleaks
+      - dependency-scan
+      - license-allowlist
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { sparse-checkout: tools/ci }
+      - env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          BUMP_ONLY: ${{ needs.changes.outputs.bump-only }}
+          RESULT_FRONTEND_LINT: ${{ needs.frontend-lint.result }}
+          RESULT_FRONTEND_TEST: ${{ needs.frontend-test.result }}
+          RESULT_FRONTEND_BUILD: ${{ needs.frontend-build.result }}
+          RESULT_BACKEND_LINT: ${{ needs.backend-lint.result }}
+          RESULT_BACKEND_TEST: ${{ needs.backend-test.result }}
+          RESULT_BACKEND_BUILD: ${{ needs.backend-build.result }}
+          RESULT_BACKEND_INTEGRATION_BUILD: ${{ needs.backend-integration-build.result }}
+          RESULT_GITLEAKS: ${{ needs.gitleaks.result }}
+          RESULT_DEPENDENCY_SCAN: ${{ needs.dependency-scan.result }}
+          RESULT_LICENSE_ALLOWLIST: ${{ needs.license-allowlist.result }}
+        run: tools/ci/pr-complete.sh

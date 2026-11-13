@@ -190,9 +190,14 @@ describe("AppRoutes", () => {
         <AppRoutes />
       </Wrapper>,
     );
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /sign in/i })).toBeInTheDocument();
-    });
+    // Several sequential hops (lazy route, /auth/me, the 401, the re-check,
+    // the redirect) — the 1000ms default is too tight on a loaded CI runner.
+    await waitFor(
+      () => {
+        expect(screen.getByRole("button", { name: /sign in/i })).toBeInTheDocument();
+      },
+      { timeout: 5000 },
+    );
   });
 
   it("returns to the originally requested page after signing in", async () => {
